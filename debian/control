@@ -1,0 +1,104 @@
+Source: elmerfem
+Section: science
+Priority: extra
+Maintainer: Debian Science Maintainers <debian-science-maintainers@lists.alioth.debian.org>
+Uploaders: "Adam C. Powell, IV" <hazelsct@debian.org>
+Standards-Version: 3.8.3
+Build-Depends: debhelper (>= 5), po-debconf, quilt, autoconf, automake,
+ gfortran, libblas-dev | libblas-3gf.so, liblapack-dev | liblapack-3gf.so,
+ mpi-default-dev, mpi-default-bin,
+ libhypre-dev, libsuitesparse-dev, libarpack2-dev, libreadline-dev,
+ libncurses5-dev, libx11-dev, tk8.4-dev, tcl8.4-dev, libfreetype6-dev,
+ libftgl-dev, libgl1-mesa-dev | libgl-dev, libglu1-mesa-dev | libglu-dev,
+ libopencascade-modeling-dev, libqt4-dev, qt4-qmake, libqt4-opengl-dev,
+ libqwt5-qt4-dev, libvtk5-qt4-dev, python-qt4-dev, libscotchmetis-dev,
+ r-base-core
+Homepage: http://www.csc.fi/elmer/
+
+Package: elmer
+Architecture: any
+Section: science
+Depends: elmer-common (= ${source:Version}), ${shlibs:Depends}, mpi-default-bin, ${misc:Depends}
+Suggests: elmer-doc
+Description: finite element multiphysics suite - binaries
+ The Elmer multiphysics simulation package includes physical models of
+ fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
+ acoustics, among others. These are described by partial differential equations
+ which Elmer solves by the Finite Element Method (FEM).
+ .
+ Elmer uses METIS (or its free counterpart Scotch) for mesh partitioning, and
+ (P)ARPACK, UMFPACK, BLAS/LAPACK, and hypre to solve the sparse linear systems
+ resulting from FEM discretization. It includes pre- and post-processors, and
+ several examples illustrating simulation of various physical phenomena.
+ .
+ Elmer's lead institution is CSC in collaboration with Finnish universities,
+ research institutes, and industry.
+ .
+ This package provides the Elmer binaries, including the solver (single- and
+ multi-processor versions), GUI, and post-processor.
+
+Package: elmer-common
+Architecture: all
+Section: science
+Depends: ttf-freefont, ${misc:Depends}
+Recommends: elmer (>= ${source:Version})
+Description: finite element multiphysics suite - architecture-independent files
+ The Elmer multiphysics simulation package includes physical models of
+ fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
+ acoustics, among others. These are described by partial differential equations
+ which Elmer solves by the Finite Element Method (FEM).
+ .
+ Elmer uses METIS (or its free counterpart Scotch) for mesh partitioning, and
+ (P)ARPACK, UMFPACK, BLAS/LAPACK, and hypre to solve the sparse linear systems
+ resulting from FEM discretization. It includes pre- and post-processors, and
+ several examples illustrating simulation of various physical phenomena.
+ .
+ Elmer's lead institution is CSC in collaboration with Finnish universities,
+ research institutes, and industry.
+ .
+ This package provides the architecture-independent files for Elmer.
+
+Package: libelmersolver-5.5.0
+Architecture: any
+Section: libs
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Suggests: libelmer-dev
+Conflicts: libelmersolver-5.4.1
+Replaces: libelmersolver-5.4.1
+Description: finite element multiphysics suite - library
+ The Elmer multiphysics simulation package includes physical models of
+ fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
+ acoustics, among others. These are described by partial differential equations
+ which Elmer solves by the Finite Element Method (FEM).
+ .
+ Elmer uses METIS (or its free counterpart Scotch) for mesh partitioning, and
+ (P)ARPACK, UMFPACK, BLAS/LAPACK, and hypre to solve the sparse linear systems
+ resulting from FEM discretization. It includes pre- and post-processors, and
+ several examples illustrating simulation of various physical phenomena.
+ .
+ Elmer's lead institution is CSC in collaboration with Finnish universities,
+ research institutes, and industry.
+ .
+ This package provides the Elmer solver shared library.
+
+Package: libelmer-dev
+Architecture: any
+Depends: elmer (= ${binary:Version}), libelmersolver-5.5.0 (= ${binary:Version}), libarpack2-dev, ${misc:Depends}
+Section: libdevel
+Description: finite element multiphysics suite - development files
+ The Elmer multiphysics simulation package includes physical models of
+ fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
+ acoustics, among others. These are described by partial differential equations
+ which Elmer solves by the Finite Element Method (FEM).
+ .
+ Elmer uses METIS (or its free counterpart Scotch) for mesh partitioning, and
+ (P)ARPACK, UMFPACK, BLAS/LAPACK, and hypre to solve the sparse linear systems
+ resulting from FEM discretization. It includes pre- and post-processors, and
+ several examples illustrating simulation of various physical phenomena.
+ .
+ Elmer's lead institution is CSC in collaboration with Finnish universities,
+ research institutes, and industry.
+ .
+ This package contains the static libraries and header files for eio, huti, and
+ matc, as well as the Elmer solver shared library symlink. These are used for
+ developing Elmer, and are not needed to run the software.

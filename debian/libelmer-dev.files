@@ -1,0 +1,3 @@
+usr/lib/*.a
+usr/lib/libelmersolver.so
+usr/include/*

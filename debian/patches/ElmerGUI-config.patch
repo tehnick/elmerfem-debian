@@ -1,0 +1,25 @@
+Have ElmerGUI use PythonQt, update VTK version, and specify OCC includes and
+libs correctly.
+
+--- elmerfem-5.5.0.svn.4041.dfsg/ElmerGUI/ElmerGUI.pri~	2009-03-17 15:12:17.000000000 -0400
++++ elmerfem-5.5.0.svn.4041.dfsg/ElmerGUI/ElmerGUI.pri	2009-03-17 15:22:37.000000000 -0400
+@@ -11,7 +11,7 @@
+ DEFINES += EG_VTK      # Use VTK for postprocessing?
+ DEFINES += EG_MATC     # Use MATC for internal operations in postprocessing?
+ DEFINES += EG_OCC      # Use OpenCASCADE 6.3 for importing CAD files? Needs VTK.
+-DEFINES -= EG_PYTHONQT # Use PythonQt for scripting in post processor?
++DEFINES += EG_PYTHONQT # Use PythonQt for scripting in post processor?
+ 
+ #------------------------------------------------------------------------------
+ # 64 bit system?
+@@ -75,8 +75,8 @@
+ # VTK library:
+ #------------------------------------------------------------------------------
+ unix {
+-   VTK_INCLUDEPATH = /usr/include/vtk-5.0
+-   VTK_LIBPATH = /usr/lib
++   VTK_INCLUDEPATH = /usr/include/vtk-5.2
++   VTK_LIBPATH = /usr/lib/vtk-5.2
+    VTK_LIBS = -lvtkHybrid \
+               -lvtkWidgets \
+     	      -lQVTK

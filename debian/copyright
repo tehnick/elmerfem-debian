@@ -1,0 +1,176 @@
+Format-Specification: http://wiki.debian.org/Proposals/CopyrightFormat
+Debianized-By: Adam C. Powell, IV <hazelsct@debian.org>
+Debianized-Date: Fri, 18 Jul 2008 13:01:45 -0400
+Upstream-Author: CSC -- IT Center for Science Ltd
+Original-Source: http://www.csc.fi/elmer/
+
+Notes: I removed the directories mathlibs, umfpack, elmergrid/src/metis, and
+ post/src/fonts/TrueType from the upstream tarball because they were either
+ non-free (metis) or redunadnt with other Debian packages (mathlibs and
+ umfpack; TrueType contains ttf-freefont files).  I also removed the notes
+ about those packages from the quote below of the upstream copyright statement,
+ which you can see in full in the LICENSES file.
+
+Files: *
+Copyright: Copyright (C) 1995- , CSC - IT Center for Science Ltd.
+License: GPL-2
+ Elmer - A finite elements software for multiphysical problems
+ Copyright (C) 1995- , CSC - IT Center for Science Ltd.
+ .
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ .
+ ==============================================================================
+ .
+ The Elmer source files consist of the following modules (in alphabetical order): 
+ .
+ buildtools - sripts used in building Elmer
+ ElmerGUI - the new graphical user interface of Elmer based on QT 
+ ElmerGUIlogger - launcher for ElmerGUI based on QT
+ eio - elmer I/O library used by ElmerSolver for some tasks
+ elmergrid - simple mesh creation and manipulation utility
+ elmerparam - optimization wrapper
+ fem - elmersolver, the computational kernel
+ front - ElmerFront, the old graphical user interface
+ hutiter - iterative linear algebra 
+ matc - library for on-the-line arithmetics  
+ meshgen2d - 2d Delaunay mesh generation 
+ post - ElmerPost, the visualization program of Elmer 
+ misc - miscallenous stuff
+ .
+ The following exception applied to ElmerGUI module:
+ .
+ ElmerGUI GPL Exception v. 1.0
+ =============================
+ .
+ Additional rights granted by the copyright holder, beyond GPL version 2.
+ -------------------------------------------------------------------------
+ .
+ As an exception to the conditions of Gnu Public Licence version 2 (GPL-2),
+ CSC - IT Center for Science Ltd., the copyright holder of ElmerGUI, hereby
+ grants you the right to link the source code within this directory against
+ the library of
+ .
+ "Open CASCADE" v. 6.3 by Open CASCADE S.A.S.
+ .
+ You may also link ElmerGUI against any later versions of Open CASCADE,
+ provided that the lincense of Open CASCADE permits such usage. The licence
+ terms for the Open CASCADE library can be found from
+ .
+ http://www.opencascade.org/
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ Version 2 (GPL-2) can be found in file "/usr/share/common-licenses/GPL-2".
+
+Files: elmergrid/acx_metis.m4
+Copyright: Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008 by the deal.II authors
+Note: Header and METIS section copied by maintainer from the deal.ii package;
+ deal.II authors refers to Wolfgang Bangerth <bangerth@math.tamu.edu>, Ralf
+ Hartmann <Ralf.Hartmann@dlr.de>, and Guido Kanschat <kanschat@tamu.edu>
+License: QPL
+ deal.II is distributed under the Open Source license called the Q Public License (or "QPL") listed in full below.
+ .
+ In addition to the terms imposed by the QPL, we ask for the following courtesy:
+ .
+ Every publication presenting numerical results obtained with the help of deal.II should state the name of the library and its principal authors, as well as cite the canonical deal.II reference listed at the top of the publications page.
+ .
+ THE Q PUBLIC LICENSE
+ version 1.0
+ .
+ Copyright (C) 1999 Troll Tech AS, Norway.
+ Everyone is permitted to copy and
+ distribute this license document.
+ .
+ The intent of this license is to establish freedom to share and change the software regulated by this license under the open source model.
+ .
+ This license applies to any software containing a notice placed by the copyright holder saying that it may be distributed under the terms of the Q Public License version 1.0. Such software is herein referred to as the Software. This license covers modification and distribution of the Software, use of third-party application programs based on the Software, and development of free software which uses the Software.
+ Granted Rights
+ .
+ 1. You are granted the non-exclusive rights set forth in this license provided you agree to and comply with any and all conditions in this license. Whole or partial distribution of the Software, or software items that link with the Software, in any form signifies acceptance of this license.
+ .
+ 2. You may copy and distribute the Software in unmodified form provided that the entire package, including - but not restricted to - copyright, trademark notices and disclaimers, as released by the initial developer of the Software, is distributed.
+ .
+ 3. You may make modifications to the Software and distribute your modifications, in a form that is separate from the Software, such as patches. The following restrictions apply to modifications:
+ .
+ a. Modifications must not alter or remove any copyright notices in the Software.
+ .
+ b. When modifications to the Software are released under this license, a non-exclusive royalty-free right is granted to the initial developer of the Software to distribute your modification in future versions of the Software provided such versions remain available under these terms in addition to any other license(s) of the initial developer. 
+ .
+ 4. You may distribute machine-executable forms of the Software or machine-executable forms of modified versions of the Software, provided that you meet these restrictions:
+ .
+ a. You must include this license document in the distribution.
+ .
+ b. You must ensure that all recipients of the machine-executable forms are also able to receive the complete machine-readable source code to the distributed Software, including all modifications, without any charge beyond the costs of data transfer, and place prominent notices in the distribution explaining this.
+ .
+ c. You must ensure that all modifications included in the machine-executable forms are available under the terms of this license. 
+ .
+ 5. You may use the original or modified versions of the Software to compile, link and run application programs legally developed by you or by others.
+ .
+ 6. You may develop application programs, reusable components and other software items that link with the original or modified versions of the Software. These items, when distributed, are subject to the following requirements:
+ .
+ a. You must ensure that all recipients of machine-executable forms of these items are also able to receive and use the complete machine-readable source code to the items without any charge beyond the costs of data transfer.
+ .
+ b. You must explicitly license all recipients of your items to use and re-distribute original and modified versions of the items in both machine-executable and source code forms. The recipients must be able to do so without any charges whatsoever, and they must be able to re-distribute to anyone they choose.
+ .
+ c. If the items are not available to the general public, and the initial developer of the Software requests a copy of the items, then you must supply one. 
+ .
+ Limitations of Liability
+ .
+ In no event shall the initial developers or copyright holders be liable for any damages whatsoever, including - but not restricted to - lost revenue or profits or other direct, indirect, special, incidental or consequential damages, even if they have been advised of the possibility of such damages, except to the extent invariable law, if any, provides otherwise.
+ .
+ No Warranty
+ .
+ The Software and this license document are provided AS IS with NO WARRANTY OF ANY KIND, INCLUDING THE WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+Choice of Law
+ .
+ This license is governed by the Laws of Germany. Disputes shall be settled by Amtsgericht Heidelberg.
+
+Files: elmergrid/src/nrutil.*
+Copyright: Numerical Recipes' uncopyrighted vector and matrix allocation and deallocation routines.
+License: Public domain
+
+Files: post/src/help/html_library-0.3/*
+Copyright: Copyright (c) 1995 by Sun Microsystems
+License:
+ Sun Microsystems, Inc.  The following terms apply to all files
+ associated with the software unless explicitly disclaimed in individual
+ files.
+ .
+ The authors hereby grant permission to use, copy, modify, distribute,
+ and license this software and its documentation for any purpose, provided
+ that existing copyright notices are retained in all copies and that this
+ notice is included verbatim in any distributions. No written agreement,
+ license, or royalty fee is required for any of the authorized uses.
+ Modifications to this software may be copyrighted by their authors
+ and need not follow the licensing terms described here, provided that
+ the new terms are clearly indicated on the first page of each file where
+ they apply.
+ .
+ IN NO EVENT SHALL THE AUTHORS OR DISTRIBUTORS BE LIABLE TO ANY PARTY
+ FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES
+ ARISING OUT OF THE USE OF THIS SOFTWARE, ITS DOCUMENTATION, OR ANY
+ DERIVATIVES THEREOF, EVEN IF THE AUTHORS HAVE BEEN ADVISED OF THE
+ POSSIBILITY OF SUCH DAMAGE.
+ .
+ THE AUTHORS AND DISTRIBUTORS SPECIFICALLY DISCLAIM ANY WARRANTIES,
+ INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.  THIS SOFTWARE
+ IS PROVIDED ON AN "AS IS" BASIS, AND THE AUTHORS AND DISTRIBUTORS HAVE
+ NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR
+ MODIFICATIONS.
+ .
+ RESTRICTED RIGHTS: Use, duplication or disclosure by the government
+ is subject to the restrictions as set forth in subparagraph (c) (1) (ii)
+ of the Rights in Technical Data and Computer Software Clause as DFARS
+ 252.227-7013 and FAR 52.227-19.

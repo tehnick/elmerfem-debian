@@ -1,0 +1,8 @@
+include-all-libs.patch
+mpi-includes.patch
+banish-rpath.patch
+no-metis-partmesh.patch
+ElmerGUI-config.patch
+edf-extra.patch
+node-partition.patch
+destdir.patch
