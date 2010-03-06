@@ -3,8 +3,9 @@ elmerfem (5.5.0.svn.4388.dfsg-1) unstable; urgency=low
   * New upstream revision.
   * Changed to 3.0 (quilt) source format.
   * Changed to VTK 5.4 (closes: #569406, #569951).
+  * Made clean target really work.
 
- -- Adam C. Powell, IV <hazelsct@debian.org>  Sat, 06 Mar 2010 10:02:08 -0500
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Sat, 06 Mar 2010 11:26:02 -0500
 
 elmerfem (5.5.0.svn.4298.dfsg-1) unstable; urgency=low
 

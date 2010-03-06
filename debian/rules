@@ -13,16 +13,56 @@ endif
 
 ELMER_MODULES = eio matc elmerparam hutiter meshgen2d fem front elmergrid post
 
+# The build process modifies these files, so we need to move them aside in
+# order for the clean process to restore the tree to its original state
+BACKUP_FILES = eio/Makefile.in eio/configure eio/include/Makefile.in \
+  eio/src/Makefile.in elmergrid/Makefile.in elmergrid/aclocal.m4 \
+  elmergrid/configure elmergrid/src/Makefile.in elmerparam/Makefile.in \
+  elmerparam/aclocal.m4 elmerparam/config.h.in elmerparam/configure \
+  elmerparam/src/Makefile.in elmerparam/src/R/Makefile \
+  elmerparam/src/R/elmerparam/src/Makevars elmerparam/src/matlab/Makefile \
+  elmerparam/test/Makefile.in fem/Makefile.in fem/aclocal.m4 fem/config.h \
+  fem/configure fem/src/Makefile.in fem/src/binio/Makefile.in \
+  fem/src/binio/test/Makefile.in fem/src/view3d/Makefile.in \
+  fem/src/viewaxis/Makefile.in fem/tests/Makefile.in fem/tests/runtests \
+  front/Makefile.in front/aclocal.m4 front/configure front/include/Makefile.in\
+  front/src/Makefile.in front/src/tcl/ecif_tcl_mainScript.tcl \
+  hutiter/Makefile.in hutiter/configure hutiter/examples/Makefile.in \
+  hutiter/examples/ex1/Makefile.in hutiter/include/Makefile.in \
+  hutiter/src/Makefile.in matc/Makefile.in matc/aclocal.m4 matc/configure \
+  matc/src/Makefile.in meshgen2d/Makefile.in meshgen2d/aclocal.m4 \
+  meshgen2d/configure meshgen2d/src/Makefile.in \
+  meshgen2d/src/include/Makefile.in post/Makefile.in post/aclocal.m4 \
+  post/configure post/src/Makefile.in post/src/camera/Makefile.in \
+  post/src/elements/Makefile.in post/src/glaux/Makefile.in \
+  post/src/graphics/Makefile.in post/src/modules/Makefile.in \
+  post/src/objects/Makefile.in post/src/sico2elmer/Makefile.in \
+  post/src/tcl/Makefile.in post/src/tk/Makefile.in post/src/visuals/Makefile.in
+
+MISSING_FILES = eio/NEWS eio/README eio/AUTHORS eio/ChangeLog \
+  matc/NEWS matc/README matc/AUTHORS matc/ChangeLog \
+  meshgen2d/NEWS meshgen2d/README meshgen2d/AUTHORS meshgen2d/ChangeLog \
+  fem/NEWS fem/AUTHORS fem/ChangeLog \
+  front/NEWS front/README front/AUTHORS \
+  elmergrid/NEWS elmergrid/README elmergrid/AUTHORS elmergrid/ChangeLog \
+  elmergrid/src/metis/Makefile.am \
+  post/NEWS post/AUTHORS post/ChangeLog
+
 clean:
 	dh_testdir
 	for elmermodule in $(ELMER_MODULES) ElmerGUI ElmerGUIlogger; do \
 	  if [ -e $$elmermodule/Makefile ]; then \
 	    echo; echo CLEANING ELMER MODULE $$elmermodule; echo; \
-	    make -C $$elmermodule clean; \
+	    make -C $$elmermodule maintainer-clean; \
 	  fi; \
 	done
-	rm -rf elmergrid/src/metis
-	rm -rf post/src/fonts/TrueType
+	make -C ElmerGUI clean
+	make -C ElmerGUIlogger clean
+	for missingfile in $(MISSING_FILES); do rm -f $$missingfile; done
+	for backupfile in $(BACKUP_FILES); do \
+	  mv -f $$backupfile.bak $$backupfile; \
+	done
+	rm -rf elmergrid/src/metis post/src/fonts/TrueType
 	rm -f stamp-*
 	dh_clean
 
@@ -31,17 +71,14 @@ clean:
 build: stamp-build
 stamp-build:
 	dh_testdir
-	mkdir post/src/fonts/TrueType
-	(cd eio && touch NEWS README AUTHORS ChangeLog && aclocal && automake --add-missing)
-	(cd matc && touch NEWS README AUTHORS ChangeLog && aclocal && automake --add-missing)
-	(cd elmerparam && aclocal && automake)
-	(cd hutiter && touch NEWS README AUTHORS ChangeLog && aclocal && automake --add-missing)
-	(cd meshgen2d && touch NEWS README AUTHORS ChangeLog && aclocal && automake --add-missing)
-	(cd fem && touch NEWS AUTHORS ChangeLog && aclocal && automake --add-missing)
-	(cd front && touch NEWS README AUTHORS && aclocal && automake --add-missing)
-	(cd elmergrid && mkdir src/metis && touch src/metis/Makefile.am && \
-	 touch NEWS README AUTHORS ChangeLog && aclocal && automake --add-missing)
-	(cd post && touch NEWS AUTHORS ChangeLog && aclocal && automake --add-missing)
+	for backupfile in $(BACKUP_FILES); do \
+	  mv $$backupfile $$backupfile.bak; \
+	done
+	mkdir elmergrid/src/metis
+	for missingfile in $(MISSING_FILES); do touch $$missingfile; done
+	for aclocaldir in eio matc elmerparam hutiter meshgen2d fem front elmergid post; do \
+	  (cd $$aclocaldir && aclocal && automake --add-missing); \
+	done
 	for elmermodule in $(ELMER_MODULES); do \
 	  echo; echo CONFIGURING ELMER MODULE $$elmermodule; echo; \
 	  (cd $$elmermodule && \
