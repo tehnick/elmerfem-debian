@@ -16,6 +16,7 @@ void STDCALLBULL FC_FUNC_(mpi_barrier,MPI_BARRIER)
      (int *a,int *b) {}
 void STDCALLBULL FC_FUNC_(mpi_finalize,MPI_FINALIZE)
      (int *a) {}
+void STDCALLBULL FC_FUNC_(mpi_conversion_fn_null,MPI_CONVERSION_FN_NULL) () {}
 void STDCALLBULL FC_FUNC_(mpi_dup_fn,MPI_DUP_FN) () {}
 void STDCALLBULL FC_FUNC_(mpi_null_copy_fn,MPI_NULL_COPY_FN) () {}
 void STDCALLBULL FC_FUNC_(mpi_buffer_detach,MPI_BUFFER_DETACH) ( void *buf, int *i, int *ierr ) {}
@@ -64,8 +65,13 @@ void STDCALLBULL FC_FUNC_(mpi_comm_free,MPI_COMM_FREE) () {}
 void STDCALLBULL FC_FUNC_(mpi_comm_group,MPI_COMM_GROUP) () {}
 void STDCALLBULL FC_FUNC_(mpi_group_incl,MPI_GROUP_INCL) () {}
 
+void STDCALLBULL FC_FUNC(dmumps,DMUMPS) () {}
+
 void STDCALLBULL FC_FUNC_(mpi_statuses_ignore,MPI_STATUSES_IGNORE) () {}
 
+void STDCALLBULL MPI_Testall() {}
+void STDCALLBULL MPI_Iprobe() {}
+void STDCALLBULL MPI_Test() {}
 void STDCALLBULL MPI_Type_free() {}
 void STDCALLBULL MPI_Startall() {}
 void STDCALLBULL MPI_Gather() {}

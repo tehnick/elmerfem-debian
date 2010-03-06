@@ -32,7 +32,7 @@
 #define ELMER_LINKTYP 1
 
 /* Elmer solver default install directory */
-#define ELMER_SOLVER_HOME "/usr/local/share/elmersolver"
+#define ELMER_SOLVER_HOME "/wrk/jpr/ff/share/elmersolver"
 
 /* Define if using dynamic linking */
 #define ENABLE_DYNAMIC_LINKING 1
@@ -199,7 +199,7 @@
 #define PACKAGE_VERSION ""
 
 /* svn revision */
-#define REVISION "4233"
+#define REVISION "4296"
 
 /* Detected platform. */
 /* #undef SGI */
@@ -211,7 +211,7 @@
 /* #undef SIZEOF_LONG */
 
 /* The size of `off_t', as computed by sizeof. */
-#define SIZEOF_OFF_T 4
+#define SIZEOF_OFF_T 8
 
 /* The size of `void*', as computed by sizeof. */
 #define SIZEOF_VOIDP 0
@@ -233,3 +233,9 @@
 
 /* Detected platform2. */
 /* #undef WIN32 */
+
+/* Number of bits in a file offset, on hosts where this is settable. */
+#define _FILE_OFFSET_BITS 64
+
+/* Define for large files, on AIX-style hosts. */
+/* #undef _LARGE_FILES */

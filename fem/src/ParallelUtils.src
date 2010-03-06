@@ -81,12 +81,15 @@ CONTAINS
 !-------------------------------------------------------------------------------
        TYPE(ParallelInfo_t), POINTER :: MatrixPI, MeshPI
        INTEGER :: i, j, k, l, m, n, DOFs
-       LOGICAL :: DGSolver, Found
+       LOGICAL :: DGSolver, Found, GB
        TYPE(Mesh_t), POINTER :: Mesh
        TYPE(Element_t), POINTER :: Element
        TYPE(NeighbourList_t), POINTER :: MtrxN, MeshN
 
-real(kind=dp) :: realtime,tt
+       INTEGER :: maxnode, maxedge, maxface, fdofs, maxfdofs, &
+                  edofs, maxedofs, maxbdofs, l_beg, g_beg
+
+       REAL(KIND=dp) :: realtime,tt
 !-------------------------------------------------------------------------------
 
 !tt = realtime()
@@ -116,25 +119,126 @@ real(kind=dp) :: realtime,tt
        END DO
 
        IF ( .NOT. Matrix % DGMatrix ) THEN
-         n = Solver % Mesh % NumberOfNodes
+         n = SIZE(Matrix % Perm)
          ALLOCATE( Matrix % ParallelInfo )
-         ALLOCATE( Matrix % ParallelInfo % NeighbourList(DOFs*n) )
-         CALL AllocateVector( Matrix % ParallelInfo % Interface, DOFs*n)
-         CALL AllocateVector( Matrix % ParallelInfo % GlobalDOFs, DOFs*n)
+         ALLOCATE( Matrix % ParallelInfo % NeighbourList(n) )
+         CALL AllocateVector( Matrix % ParallelInfo % Interface, n)
+         CALL AllocateVector( Matrix % ParallelInfo % GlobalDOFs, n)
 
          DO i=1,n
-            DO j=1,DOFs
-               k = (i-1)*DOFs+j
-               Matrix % ParallelInfo % GlobalDOFs(k) = &
-                 DOFs*(Solver % Mesh % ParallelInfo % GlobalDOFs(i)-1)+j
-               Matrix % ParallelInfo % Interface(k) = &
-                 Solver % Mesh % ParallelInfo % Interface(i)
-               ALLOCATE( Matrix % ParallelInfo % NeighbourList(k) % Neighbours(SIZE( &
-                    Solver % Mesh % ParallelInfo % NeighbourList(i) % Neighbours)) )
-               Matrix % ParallelInfo % NeighbourList(k) % Neighbours = &
-                 Solver % Mesh % ParallelInfo % NeighbourList(i) % Neighbours
-            END DO
+           Matrix % ParallelInfo % Interface(i) = .FALSE.
+           Matrix % ParallelInfo % GlobalDOFs(i) = 0
+           Matrix % ParallelInfo % NeighbourList(i) % Neighbours => NULL()
          END DO
+
+         DO i=1,Solver % Mesh % NumberOfNodes
+           DO j=1,DOFs
+              k = (i-1)*DOFs+j
+              Matrix % ParallelInfo % GlobalDOFs(k) = &
+                DOFs*(Solver % Mesh % ParallelInfo % GlobalDOFs(i)-1)+j
+              Matrix % ParallelInfo % Interface(k) = &
+                Solver % Mesh % ParallelInfo % Interface(i)
+              ALLOCATE( Matrix % ParallelInfo % NeighbourList(k) % Neighbours(SIZE( &
+                   Solver % Mesh % ParallelInfo % NeighbourList(i) % Neighbours)) )
+              Matrix % ParallelInfo % NeighbourList(k) % Neighbours = &
+                Solver % Mesh % ParallelInfo % NeighbourList(i) % Neighbours
+           END DO
+         END DO
+
+         GB = ListGetLogical( Solver % Values, 'Bubbles in Global System', Found )
+         IF (.NOT.Found) GB = .TRUE.
+
+         maxnode = MAXVAL(Solver % Mesh % ParallelInfo % GlobalDOFs)
+         maxnode = NINT(ParallelReduction(1._dp*maxnode,2))
+
+         edofs = 0; fdofs = 0; maxedofs = 0; maxfdofs = 0
+         maxedge = 0; maxface = 0
+
+         IF ( ASSOCIATED(Solver % Mesh % Edges) ) THEN
+           g_beg = maxnode
+           l_beg = Solver % Mesh % NumberOfNodes
+
+           n = Solver % Mesh % NumberOfEdges
+
+           edofs = Solver % Mesh % MaxEdgeDOFS
+           maxedofs = NINT(ParallelReduction(edofs*1._dp,2))
+
+           maxedge = 0
+           DO i=1,n
+             maxedge = MAX(maxedge, Solver % Mesh % Edges(i) % GElementindex)
+           END DO
+           maxedge = NINT(ParallelReduction(1._dp*maxedge,2))
+
+           DO i=1,n
+             Element => Solver % Mesh % Edges(i)
+             DO j=1,Element % BDOFs
+               DO m=1,DOFs
+                 l = DOFs*(l_beg + edofs*(i-1)+j-1)+m
+                 Matrix % ParallelInfo % GlobalDOFs(l) = &
+                     DOFs*(g_beg+maxedofs*(Element % GelementIndex-1)+j-1)+m
+                 Matrix % ParallelInfo % Interface(l) = Mesh % ParallelInfo % EdgeInterface(i)
+                 Matrix % Parallelinfo % NeighbourList(l) % Neighbours => &
+                            Mesh % ParallelInfo % EdgeNeighbourList(i) % Neighbours
+               END DO
+             END DO
+           END DO
+         END IF
+
+         IF ( ASSOCIATED(Solver % Mesh % Faces) ) THEN
+           g_beg = maxnode + maxedofs*maxedge
+           l_beg = Solver % Mesh % NumberOfNodes + &
+                   Solver % Mesh % NumberOfEdges*Solver % Mesh % MaxEdgeDOFs
+
+           n = Solver % Mesh % NumberOfFaces
+
+           fdofs = Solver % Mesh % MaxFaceDOFS
+           maxfdofs = NINT(ParallelReduction(fdofs*1._dp,2))
+
+           maxface = 0
+           DO i=1,n
+             maxface = MAX(maxface, Solver % Mesh % Faces(i) % GElementindex)
+           END DO
+           maxface = NINT(ParallelReduction(1._dp*maxface,2))
+
+           DO i=1,n
+             Element => Solver % Mesh % Faces(i)
+             DO j=1,Element % BDOFs
+               DO m=1,DOFs
+                 l = DOFs*(l_beg + fdofs*(i-1)+j-1)+m
+                 Matrix % ParallelInfo % GlobalDOFs(l) = &
+                     DOFs*(g_beg+maxfdofs*(Element % GelementIndex-1)+j-1)+m
+                 Matrix % ParallelInfo % Interface(l) = Mesh % ParallelInfo % FaceInterface(i)
+                 Matrix % Parallelinfo % NeighbourList(l) % Neighbours => &
+                            Mesh % ParallelInfo % FaceNeighbourList(i) % Neighbours
+               END DO
+             END DO
+           END DO
+         END IF
+
+         IF ( GB ) THEN
+           l_beg = Solver % Mesh % NumberOfNodes + &
+                   Solver % Mesh % NumberOfEdges*Solver % Mesh % MaxEdgeDOFs + &
+                   Solver % Mesh % NumberOfFaces*Solver % Mesh % MaxFaceDOFs
+
+           g_beg = Maxnode +  maxedge*maxedofs + maxface*maxfdofs
+           maxbdofs = NINT(ParallelReduction(1._dp*Solver % Mesh % MaxBDOFs,2))
+
+           DO i=1,Solver % Mesh % NumberOfBulkElements
+             Element=>Solver % Mesh % Elements(i)
+             DO l=1,Element % BDOFs
+               DO j=1,DOFs 
+                 k = DOFs*(l_beg+Element % BubbleIndexes(l)-1)+j
+                 Matrix % ParallelInfo % GlobalDOFs(k) = &
+                   DOFs*(g_beg+maxbdofs*(Element % GElementIndex-1)+l-1)+j
+                 Matrix % ParallelInfo % Interface(k) = .FALSE.
+                 ALLOCATE(Matrix % ParallelInfo % NeighbourList(k) % Neighbours(1))
+                 Matrix % ParallelInfo % NeighbourList(k) % Neighbours=ParEnv % MyPE
+               END DO
+             END DO
+           END DO
+         END IF
+
+
        ELSE
          MeshPI => Solver % Mesh % ParallelInfo
 
@@ -155,7 +259,7 @@ real(kind=dp) :: realtime,tt
            IF ( .NOT. ASSOCIATED(Element % DGIndexes) ) CYCLE
            DO j=1,SIZE(Element % DGIndexes)
              k = Element % DGIndexes(j)
-             MatrixPI % GlobalDOFs(k) = 8*(Element % ElementIndex-1)+j
+             MatrixPI % GlobalDOFs(k) = 8*(Element % GElementIndex-1)+j
            END DO
          END DO
          ALLOCATE( MatrixPI % Interface(n), MatrixPI % NeighbourList(n) )
@@ -382,6 +486,28 @@ real(kind=dp) :: realtime,tt
     END SUBROUTINE ParallelMatrixVector
 !-------------------------------------------------------------------------------
 
+
+!-------------------------------------------------------------------------------
+    SUBROUTINE ParallelVector(A, vec)
+!-------------------------------------------------------------------------------
+      TYPE(Matrix_t), INTENT(in) :: A
+      REAL(KIND=dp), INTENT(inout) :: vec(:)
+!-------------------------------------------------------------------------------
+      INTEGER :: i,j,k
+!-------------------------------------------------------------------------------
+      j = 0
+      DO i=1,A % NumberOfRows
+        k = A  % INVPerm(i)
+        IF ( A % ParallelInfo % Neighbourlist(k) % &
+                   Neighbours(1)==Parenv % Mype ) THEN
+          j=j+1
+          vec(j) = vec(i)
+        END IF
+      END DO
+!-------------------------------------------------------------------------------
+    END SUBROUTINE ParallelVector
+!-------------------------------------------------------------------------------
+    
 
 !-------------------------------------------------------------------------------
     SUBROUTINE ParallelUpdateResult( Matrix, x, r )

@@ -155,6 +155,7 @@ public:
 
 signals:
   void canProceedWithNextSignal(vtkRenderWindow*);
+  void povrayState(int value);
 
 public slots:
   void redrawSlot();                                // redraw all actors
@@ -292,6 +293,7 @@ private slots:
   void clipAllToggledSlot(bool);
 
   void savePictureSlot();
+  void savePovraySlot();
   void timeStepChangedSlot();
   void reloadPostSlot();
 
@@ -318,6 +320,7 @@ private:
   QAction *exitAct;
   QAction *redrawAct;
   QAction *savePictureAct;
+  QAction *savePovrayAct;
   QAction *preferencesAct;
   QAction *drawMeshPointAct;
   QAction *drawMeshEdgeAct;
