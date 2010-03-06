@@ -1,7 +1,7 @@
 Index: elmerfem/eio/Makefile.am
 ===================================================================
---- elmerfem.orig/eio/Makefile.am	2010-03-06 16:51:53.000000000 -0500
-+++ elmerfem/eio/Makefile.am	2010-03-06 17:01:07.000000000 -0500
+--- elmerfem.orig/eio/Makefile.am	2010-03-06 17:28:57.000000000 -0500
++++ elmerfem/eio/Makefile.am	2010-03-06 17:33:36.000000000 -0500
 @@ -1,2 +1,4 @@
  SUBDIRS=include src
  EXTRA_DIST=GPL-2
@@ -9,8 +9,8 @@ Index: elmerfem/eio/Makefile.am
 +DISTCLEANFILES = aclocal.m4
 Index: elmerfem/elmerparam/Makefile.am
 ===================================================================
---- elmerfem.orig/elmerparam/Makefile.am	2010-03-06 16:51:53.000000000 -0500
-+++ elmerfem/elmerparam/Makefile.am	2010-03-06 17:01:07.000000000 -0500
+--- elmerfem.orig/elmerparam/Makefile.am	2010-03-06 17:28:57.000000000 -0500
++++ elmerfem/elmerparam/Makefile.am	2010-03-06 17:33:36.000000000 -0500
 @@ -5,3 +5,5 @@
  dist-hook:
  	cd $(distdir)/doc; \
@@ -19,8 +19,8 @@ Index: elmerfem/elmerparam/Makefile.am
 +DISTCLEANFILES = config.log config.status
 Index: elmerfem/fem/Makefile.am
 ===================================================================
---- elmerfem.orig/fem/Makefile.am	2010-03-06 16:51:54.000000000 -0500
-+++ elmerfem/fem/Makefile.am	2010-03-06 17:01:07.000000000 -0500
+--- elmerfem.orig/fem/Makefile.am	2010-03-06 17:28:57.000000000 -0500
++++ elmerfem/fem/Makefile.am	2010-03-06 17:33:36.000000000 -0500
 @@ -17,6 +17,4 @@
  #	  sh nodist.sh;                        \
  #	fi
@@ -31,8 +31,8 @@ Index: elmerfem/fem/Makefile.am
 +CLEANFILES = a.out
 Index: elmerfem/fem/src/Makefile.am
 ===================================================================
---- elmerfem.orig/fem/src/Makefile.am	2010-03-06 17:01:07.000000000 -0500
-+++ elmerfem/fem/src/Makefile.am	2010-03-06 17:01:07.000000000 -0500
+--- elmerfem.orig/fem/src/Makefile.am	2010-03-06 17:33:36.000000000 -0500
++++ elmerfem/fem/src/Makefile.am	2010-03-06 17:33:36.000000000 -0500
 @@ -214,7 +214,7 @@
  endif
  
@@ -44,8 +44,8 @@ Index: elmerfem/fem/src/Makefile.am
  if HAVE_WINDRES
 Index: elmerfem/fem/src/binio/Makefile.am
 ===================================================================
---- elmerfem.orig/fem/src/binio/Makefile.am	2010-03-06 16:51:54.000000000 -0500
-+++ elmerfem/fem/src/binio/Makefile.am	2010-03-06 17:01:07.000000000 -0500
+--- elmerfem.orig/fem/src/binio/Makefile.am	2010-03-06 17:28:57.000000000 -0500
++++ elmerfem/fem/src/binio/Makefile.am	2010-03-06 17:33:36.000000000 -0500
 @@ -12,3 +12,5 @@
  install-exec-local:
  	mkdir -p $(DESTDIR)$(ELMER_SOLVER_DATADIR)/include
@@ -54,19 +54,30 @@ Index: elmerfem/fem/src/binio/Makefile.am
 +CLEANFILES = *.mod
 Index: elmerfem/hutiter/Makefile.am
 ===================================================================
---- elmerfem.orig/hutiter/Makefile.am	2010-03-06 16:51:54.000000000 -0500
-+++ elmerfem/hutiter/Makefile.am	2010-03-06 17:01:07.000000000 -0500
+--- elmerfem.orig/hutiter/Makefile.am	2010-03-06 17:28:57.000000000 -0500
++++ elmerfem/hutiter/Makefile.am	2010-03-06 17:33:36.000000000 -0500
 @@ -1 +1,3 @@
  SUBDIRS = src include examples
 +
 +DISTCLEANFILES = aclocal.m4
 Index: elmerfem/elmerparam/src/matlab/Makefile.in
 ===================================================================
---- elmerfem.orig/elmerparam/src/matlab/Makefile.in	2010-03-06 17:27:15.000000000 -0500
-+++ elmerfem/elmerparam/src/matlab/Makefile.in	2010-03-06 17:27:38.000000000 -0500
+--- elmerfem.orig/elmerparam/src/matlab/Makefile.in	2010-03-06 17:28:57.000000000 -0500
++++ elmerfem/elmerparam/src/matlab/Makefile.in	2010-03-06 17:33:36.000000000 -0500
 @@ -12,4 +12,6 @@
  clean:
  	rm -f elmer_param.@mex_ext@
+ 
++maintainer-clean: clean
++
+ check:
+Index: elmerfem/elmerparam/src/R/Makefile.in
+===================================================================
+--- elmerfem.orig/elmerparam/src/R/Makefile.in	2010-03-06 17:50:44.000000000 -0500
++++ elmerfem/elmerparam/src/R/Makefile.in	2010-03-06 17:50:58.000000000 -0500
+@@ -11,4 +11,6 @@
+ clean:
+ 	rm -f elmerparam/src/*.{o,so}
  
 +maintainer-clean: clean
 +
