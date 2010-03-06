@@ -22,7 +22,7 @@ BACKUP_FILES = eio/Makefile.in eio/configure eio/include/Makefile.in \
   elmerparam/src/Makefile.in elmerparam/src/R/Makefile \
   elmerparam/src/R/elmerparam/src/Makevars elmerparam/src/matlab/Makefile \
   elmerparam/test/Makefile.in fem/Makefile.in fem/aclocal.m4 fem/config.h \
-  fem/configure fem/src/Makefile.in fem/src/binio/Makefile.in \
+  fem/configure fem/stamp-h1 fem/src/Makefile.in fem/src/binio/Makefile.in \
   fem/src/binio/test/Makefile.in fem/src/view3d/Makefile.in \
   fem/src/viewaxis/Makefile.in fem/tests/Makefile.in fem/tests/runtests \
   front/Makefile.in front/aclocal.m4 front/configure front/include/Makefile.in\
@@ -81,6 +81,7 @@ stamp-build:
 	  mv $$backupfile $$backupfile.bak; \
 	done
 	mkdir elmergrid/src/metis
+	mkdir post/src/fonts/TrueType
 	for missingfile in $(MISSING_FILES); do touch $$missingfile; done
 	for aclocaldir in eio matc elmerparam hutiter meshgen2d fem front elmergrid post; do \
 	  (cd $$aclocaldir && aclocal && automake --add-missing); \
