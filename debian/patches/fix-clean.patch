@@ -6,7 +6,7 @@ Index: elmerfem/eio/Makefile.am
  SUBDIRS=include src
  EXTRA_DIST=GPL-2
 +
-+DISTCLEAN = aclocal.m4
++DISTCLEANFILES = aclocal.m4
 Index: elmerfem/elmerparam/Makefile.am
 ===================================================================
 --- elmerfem.orig/elmerparam/Makefile.am	2010-03-06 16:51:53.000000000 -0500
