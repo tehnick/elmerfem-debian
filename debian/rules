@@ -13,24 +13,6 @@ endif
 
 ELMER_MODULES = eio matc elmerparam hutiter meshgen2d fem front elmergrid post
 
-stamp-patch:
-	if [ ! -e stamp-patch ]; then \
-	  QUILT_PATCHES=debian/patches quilt push -a || test $$? = 2; \
-	fi
-	if [ ! -e post/src/fonts/TrueType ]; then \
-	  mkdir post/src/fonts/TrueType; \
-	fi
-	touch $@
-
-unpatch:
-	if [ -e stamp-patch ]; then \
-	  QUILT_PATCHES=debian/patches quilt pop -a -R || test $$? = 2; \
-	  rm -f stamp-patch; \
-	fi
-	if [ -e post/src/fonts/TrueType ]; then \
-	  rm -rf post/src/fonts/TrueType; \
-	fi
-
 clean:
 	dh_testdir
 	for elmermodule in $(ELMER_MODULES) ElmerGUI ElmerGUIlogger; do \
@@ -39,16 +21,17 @@ clean:
 	    make -C $$elmermodule clean; \
 	  fi; \
 	done
-	debian/rules unpatch
 	rm -rf elmergrid/src/metis
+	rm -rf post/src/fonts/TrueType
 	rm -f stamp-*
 	dh_clean
 
 # In a bit of a hack, the "build" target configures, builds and installs, so
 # modules can depend on each other
 build: stamp-build
-stamp-build: stamp-patch
+stamp-build:
 	dh_testdir
+	mkdir post/src/fonts/TrueType
 	(cd eio && touch NEWS README AUTHORS ChangeLog && aclocal && automake --add-missing)
 	(cd matc && touch NEWS README AUTHORS ChangeLog && aclocal && automake --add-missing)
 	(cd elmerparam && aclocal && automake)
