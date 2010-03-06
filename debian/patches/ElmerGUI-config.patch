@@ -12,14 +12,12 @@ libs correctly.
  
  #------------------------------------------------------------------------------
  # 64 bit system?
-@@ -75,8 +75,8 @@
+@@ -75,7 +75,7 @@
  # VTK library:
  #------------------------------------------------------------------------------
  unix {
--   VTK_INCLUDEPATH = /usr/include/vtk-5.0
--   VTK_LIBPATH = /usr/lib
-+   VTK_INCLUDEPATH = /usr/include/vtk-5.2
-+   VTK_LIBPATH = /usr/lib/vtk-5.2
+-   VTK_INCLUDEPATH = /usr/include/vtk-5.2
++   VTK_INCLUDEPATH = /usr/include/vtk-5.4
+    VTK_LIBPATH = /usr/lib
     VTK_LIBS = -lvtkHybrid \
                -lvtkWidgets \
-     	      -lQVTK
