@@ -64,7 +64,9 @@ clean:
 	fi
 	for missingfile in $(MISSING_FILES); do rm -f $$missingfile; done
 	for backupfile in $(BACKUP_FILES); do \
-	  mv -f $$backupfile.bak $$backupfile; \
+	  if [ -e $$backupfile.bak ]; then \
+	    mv -f $$backupfile.bak $$backupfile; \
+	  fi; \
 	done
 	rm -rf elmergrid/src/metis post/src/fonts/TrueType
 	rm -f stamp-*
