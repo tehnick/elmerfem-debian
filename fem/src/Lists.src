@@ -1,0 +1,2443 @@
+!/*****************************************************************************/
+! *
+! *  Elmer, A Finite Element Software for Multiphysical Problems
+! *
+! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
+! * 
+! *  This program is free software; you can redistribute it and/or
+! *  modify it under the terms of the GNU General Public License
+! *  as published by the Free Software Foundation; either version 2
+! *  of the License, or (at your option) any later version.
+! * 
+! *  This program is distributed in the hope that it will be useful,
+! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+! *  GNU General Public License for more details.
+! *
+! *  You should have received a copy of the GNU General Public License
+! *  along with this program (in file fem/GPL-2); if not, write to the 
+! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
+! *  Boston, MA 02110-1301, USA.
+! *
+! *****************************************************************************/
+!
+!/******************************************************************************
+! *
+! *  List handling utilities ...
+! *
+! ******************************************************************************
+! *
+! *  Authors: Juha Ruokolainen
+! *  Email:   Juha.Ruokolainen@csc.fi
+! *  Web:     http://www.csc.fi/elmer
+! *  Address: CSC - IT Center for Science Ltd.
+! *           Keilaranta 14
+! *           02101 Espoo, Finland 
+! *
+! *  Original Date: 02 Jun 1997
+! *
+! *****************************************************************************/
+
+!------------------------------------------------------------------------------
+
+MODULE Lists
+
+   USE Messages
+   USE GeneralUtils
+
+   IMPLICIT NONE
+
+   INTEGER, PARAMETER :: LIST_TYPE_CONSTANT_SCALAR = 1
+   INTEGER, PARAMETER :: LIST_TYPE_CONSTANT_TENSOR = 2
+   INTEGER, PARAMETER :: LIST_TYPE_VARIABLE_SCALAR = 3
+   INTEGER, PARAMETER :: LIST_TYPE_VARIABLE_TENSOR = 4
+   INTEGER, PARAMETER :: LIST_TYPE_LOGICAL = 5
+   INTEGER, PARAMETER :: LIST_TYPE_STRING  = 6
+   INTEGER, PARAMETER :: LIST_TYPE_INTEGER = 7
+   INTEGER, PARAMETER :: LIST_TYPE_CONSTANT_SCALAR_STR = 8
+   INTEGER, PARAMETER :: LIST_TYPE_CONSTANT_TENSOR_STR = 9
+   INTEGER, PARAMETER :: LIST_TYPE_VARIABLE_SCALAR_STR = 10
+   INTEGER, PARAMETER :: LIST_TYPE_VARIABLE_TENSOR_STR = 11
+
+   INTERFACE
+     FUNCTION ExecIntFunction( Proc,Md ) RESULT(int)
+       USE Types
+#ifdef SGI
+       INTEGER :: Proc
+#else
+       INTEGER(KIND=AddrInt) :: Proc
+#endif
+       TYPE(Model_t) :: Md
+
+       INTEGER :: int
+     END FUNCTION ExecIntFunction
+   END INTERFACE
+
+   INTERFACE
+     FUNCTION ExecRealFunction( Proc,Md,Node,Temp ) RESULT(dbl)
+       USE Types
+
+#ifdef SGI
+       INTEGER :: Proc
+#else
+       INTEGER(KIND=AddrInt) :: Proc
+#endif
+       TYPE(Model_t) :: Md
+       INTEGER :: Node
+       REAL(KIND=dp) :: Temp(*)
+
+       REAL(KIND=dp) :: dbl
+     END FUNCTION ExecRealFunction
+   END INTERFACE
+
+   INTERFACE
+     SUBROUTINE ExecRealArrayFunction( Proc,Md,Node,Temp,F )
+       USE Types
+
+#ifdef SGI
+       INTEGER :: Proc
+#else
+       INTEGER(KIND=AddrInt) :: Proc
+#endif
+       TYPE(Model_t) :: Md
+       INTEGER :: Node,n1,n2
+       REAL(KIND=dp) :: Temp(*)
+
+       REAL(KIND=dp) :: F(:,:)
+     END SUBROUTINE ExecRealArrayFunction
+   END INTERFACE
+
+   INTERFACE
+     FUNCTION ExecConstRealFunction( Proc,Md,x,y,z ) RESULT(dbl)
+       USE Types
+
+#ifdef SGI
+       INTEGER :: Proc
+#else
+       INTEGER(KIND=AddrInt) :: Proc
+#endif
+       TYPE(Model_t) :: Md
+
+       REAL(KIND=dp) :: dbl,x,y,z
+     END FUNCTION ExecConstRealFunction
+   END INTERFACE
+
+   TYPE(Varying_string), SAVE, PRIVATE :: Namespace
+
+CONTAINS
+
+!------------------------------------------------------------------------------
+  FUNCTION InitialPermutation( Perm,Model,Solver,Mesh, &
+                   Equation,DGSolver,GlobalBubbles ) RESULT(k)
+!------------------------------------------------------------------------------
+     USE PElementMaps
+     TYPE(Model_t)  :: Model
+     TYPE(Mesh_t)   :: Mesh
+     TYPE(Solver_t) :: Solver
+     INTEGER :: Perm(:)
+     INTEGER :: k
+     CHARACTER(LEN=*) :: Equation
+     LOGICAL, OPTIONAL :: DGSolver, GlobalBubbles
+!------------------------------------------------------------------------------
+     INTEGER i,j,l,t,n,e, EDOFs, FDOFs, BDOFs, ndofs
+     INTEGER :: Indexes(128)
+     INTEGER, POINTER :: Def_Dofs(:)
+     INTEGER, ALLOCATABLE :: EdgeDOFs(:), FaceDOFs(:)
+     LOGICAL :: FoundDG, DG, GB, Found, Radiation
+     TYPE(Element_t),POINTER :: Element, Edge, Face
+!------------------------------------------------------------------------------
+     Perm = 0
+     k = 0
+     EDOFs = Mesh % MaxEdgeDOFs
+     FDOFs = Mesh % MaxFaceDOFs
+     BDOFs = Mesh % MaxBDOFs
+
+     GB = .FALSE.
+     IF ( PRESENT(GlobalBubbles) ) GB=GlobalBubbles
+
+     DG = .FALSE.
+     IF ( PRESENT(DGSolver) ) DG=DGSolver
+     FoundDG = .FALSE.
+     IF ( DG ) THEN
+       DO t=1,Mesh % NumberOfEdges
+         n = 0
+         Element => Mesh % Edges(t) % BoundaryInfo % Left
+         IF ( ASSOCIATED( Element ) ) THEN
+             IF ( CheckElementEquation(Model,Element,Equation) ) THEN
+                FoundDG = FoundDG .OR. Element % DGDOFs > 0
+                DO j=1,Element % DGDOFs
+                   n = n + 1
+                   Indexes(n) = Element % DGIndexes(j)
+                END DO
+             END IF
+         END IF
+
+         Element => Mesh % Edges(t) % BoundaryInfo % Right
+         IF ( ASSOCIATED( Element ) ) THEN
+             IF ( CheckElementEquation(Model,Element,Equation) ) THEN
+                FoundDG = FoundDG .OR. Element % DGDOFs > 0
+                DO j=1,Element % DGDOFs
+                   n = n + 1
+                   Indexes(n) = Element % DGIndexes(j)
+                END DO
+             END IF
+         END IF
+
+         DO i=1,n
+            j = Indexes(i)
+            IF ( Perm(j) == 0 ) THEN
+                k = k + 1
+               Perm(j) = k
+            END IF
+         END DO
+       END DO
+
+       DO t=1,Mesh % NumberOfFaces
+         n = 0
+         Element => Mesh % Faces(t) % BoundaryInfo % Left
+         IF ( ASSOCIATED( Element ) ) THEN
+             IF ( CheckElementEquation(Model,Element,Equation) ) THEN
+                FoundDG = FoundDG .OR. Element % DGDOFs > 0
+                DO j=1,Element % DGDOFs
+                   n = n + 1
+                   Indexes(n) = Element % DGIndexes(j)
+                END DO
+             END IF
+         END IF
+
+         Element => Mesh % Faces(t) % BoundaryInfo % Right
+         IF ( ASSOCIATED( Element ) ) THEN
+             IF ( CheckElementEquation(Model,Element,Equation) ) THEN
+                FoundDG = FoundDG .OR. Element % DGDOFs > 0
+                DO j=1,Element % DGDOFs
+                   n = n + 1
+                   Indexes(n) = Element % DGIndexes(j)
+                END DO
+             END IF
+         END IF
+
+         DO i=1,n
+            j = Indexes(i)
+            IF ( Perm(j) == 0 ) THEN
+                k = k + 1
+               Perm(j) = k
+            END IF
+         END DO
+       END DO
+
+       IF ( FoundDG ) THEN
+          RETURN ! Discontinuous galerkin !!!
+       END IF
+     END IF
+
+
+     IF ( ANY(Solver % Def_Dofs(:,6)>0) ) THEN
+       IF ( Mesh % NumberOFEdges>0 ) THEN
+          ALLOCATE(EdgeDOFs(Mesh % NumberOfEdges))
+          EdgeDOFs=0;
+       END IF
+
+       IF ( Mesh % NumberOFFaces>0 ) THEN
+         ALLOCATE(FaceDOFs(Mesh % NumberOfFaces))
+         FaceDOFs=0;
+       END IF
+
+       n = Mesh % NumberOfBulkElements + Mesh % NumberOFBoundaryElements
+       t = 1
+       DO WHILE( t <= n )
+         DO WHILE( t<=n )
+           Element => Mesh % Elements(t)
+           IF ( CheckElementEquation( Model, Element, Equation ) ) EXIT
+           t = t + 1
+         END DO
+         IF ( t>n ) EXIT
+
+         Def_Dofs => Solver % Def_Dofs(Element % BodyId,:)
+         IF ( ASSOCIATED(Element % EdgeIndexes) ) THEN
+           DO i=1,Element % Type % NumberOfEdges
+             j = Element % EdgeIndexes(i)
+             EdgeDOFs(j)=MAX(EdgeDOFs(j),getEdgeDOFs(Element,Def_Dofs(6)))
+           END DO
+         END IF
+
+         IF ( ASSOCIATED(Element % FaceIndexes) ) THEN
+           DO i=1,Element % Type % NumberOfFaces
+             j = Element % FaceIndexes(i)
+             FaceDOFs(j)=MAX(FaceDOFs(j),getFaceDOFs(Element,Def_Dofs(6),i))
+           END DO
+         END IF
+         t=t+1
+       END DO
+     END IF
+
+
+     n = Mesh % NumberOfBulkElements + Mesh % NumberOFBoundaryElements
+     t = 1
+     DO WHILE( t <= n )
+       DO WHILE( t<=n )
+         Element => Mesh % Elements(t)
+         IF ( CheckElementEquation( Model, Element, Equation ) ) EXIT
+         t = t + 1
+       END DO
+
+       IF ( t > n ) EXIT
+
+       Def_Dofs => Solver % Def_Dofs(Element % BodyId,:)
+
+       ndofs = Element % NDOFs
+       IF ( Def_Dofs(1) >= 0 ) ndofs=Def_Dofs(1)*Element % Type % NumberOfNodes
+       DO i=1,ndofs
+         j = Element % NodeIndexes(i)
+         IF ( Perm(j) == 0 ) THEN
+           k = k + 1
+           Perm(j) = k
+         END IF
+       END DO
+
+       IF ( ASSOCIATED( Element % EdgeIndexes ) ) THEN
+          DO i=1,Element % Type % NumberOfEdges
+             Edge => Mesh % Edges( Element % EdgeIndexes(i) )
+             ndofs = Edge % BDOFs
+             IF ( Def_Dofs(2) >= 0) THEN
+               ndofs = Def_Dofs(2)
+             ELSE IF ( Def_Dofs(1)>=0) THEN
+               ndofs = 0
+             ELSE IF (Def_Dofs(6)>0) THEN
+               ndofs = EdgeDOFs(Element % EdgeIndexes(i))
+             END IF
+
+             DO e=1,ndofs
+                j = Mesh % NumberOfNodes + EDOFs*(Element % EdgeIndexes(i)-1) + e
+                IF ( Perm(j) == 0 ) THEN
+                   k = k + 1
+                   Perm(j) =  k
+                END IF
+             END DO
+          END DO
+       END IF
+
+       IF ( ASSOCIATED( Element % FaceIndexes ) ) THEN
+          DO i=1,Element % Type % NumberOfFaces
+             Face => Mesh % Faces( Element % FaceIndexes(i) )
+             ndofs = Face % BDOFs
+             IF ( Def_Dofs(3) >= 0) THEN
+               ndofs = Def_Dofs(3)
+             ELSE IF ( Def_Dofs(1)>=0) THEN
+               ndofs = 0
+             ELSE IF (Def_Dofs(6)>0) THEN
+               ndofs = FaceDOFs(Element % FaceIndexes(i))
+             END IF
+             DO e=1,ndofs
+                j = Mesh % NumberOfNodes + EDOFs*Mesh % NumberOfEdges + &
+                          FDOFs*(Element % FaceIndexes(i)-1) + e
+                IF ( Perm(j) == 0 ) THEN
+                   k = k + 1
+                   Perm(j) =  k
+                END IF
+             END DO
+          END DO
+       END IF
+
+       IF ( GB .AND. ASSOCIATED( Element % BubbleIndexes ) ) THEN
+         ndofs = Element % BDOFs
+         IF ( Def_Dofs(1) >= 0 ) THEN
+            ndofs = 0
+         ELSE IF ( Def_Dofs(5) >= 0) THEN
+            ndofs = Def_Dofs(5)
+         ELSE IF (Def_Dofs(6)>0) THEN
+            ndofs = GetBubbleDOFs( Element, Def_Dofs(6) )
+         END IF
+
+         DO i=1,ndofs
+            j = Mesh % NumberOfNodes + EDOFs*Mesh % NumberOfEdges + &
+                 FDOFs*Mesh % NumberOfFaces + Element % BubbleIndexes(i)
+            IF ( Perm(j) == 0 ) THEN
+               k = k + 1
+               Perm(j) =  k
+            END IF
+         END DO
+       END IF
+
+       t = t + 1
+     END DO
+
+     Radiation = ListGetLogical( Solver % Values, 'Radiation Solver', Found )
+     IF ( Radiation .OR. Equation == 'heat equation' ) THEN
+        t = Mesh % NumberOfBulkElements + 1
+        n = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
+        DO WHILE( t<= n )
+          Element => Mesh % Elements(t)
+          IF ( ASSOCIATED( Element % BoundaryInfo % GebhardtFactors) ) THEN
+             DO i=1,Element % Type % NumberOfNodes
+               j = Element % NodeIndexes(i)
+               IF ( Perm(j) == 0 ) THEN
+                 k = k + 1
+                 Perm(j) = k
+               END IF
+             END DO
+          END IF
+          t = t + 1
+        END DO
+     END IF
+
+     t = Mesh % NumberOfBulkElements + 1
+     n = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
+     DO WHILE( t<= n )
+       Element => Mesh % Elements(t)
+       IF ( Element % Type % ElementCode == 102 ) THEN
+          DO i=1,Element % Type % NumberOfNodes
+            j = Element % NodeIndexes(i)
+            IF ( Perm(j) == 0 ) THEN
+              k = k + 1
+              Perm(j) = k
+            END IF
+          END DO
+       END IF
+       t = t + 1
+     END DO
+
+     IF ( ALLOCATED(EdgeDOFs) ) DEALLOCATE(EdgeDOFs)
+     IF ( ALLOCATED(FaceDOFs) ) DEALLOCATE(FaceDOFs)
+!------------------------------------------------------------------------------
+   END FUNCTION InitialPermutation
+!------------------------------------------------------------------------------
+
+
+!---------------------------------------------------------------------------
+!   Check if given element belongs to a body for which given equation
+!   should be solved
+!---------------------------------------------------------------------------
+    FUNCTION CheckElementEquation( Model,Element,Equation ) Result(Flag)
+      TYPE(Element_t), POINTER :: Element
+      TYPE(Model_t) :: Model
+      CHARACTER(LEN=*) :: Equation
+
+      LOGICAL :: Flag,Found
+
+      INTEGER :: k,body_id
+       
+      Flag = .FALSE.
+      body_id = Element % BodyId
+      IF ( body_id > 0 .AND. body_id <= Model % NumberOfBodies ) THEN
+         k = ListGetInteger( Model % Bodies(body_id) % Values, 'Equation', &
+                 minv=1, maxv=Model % NumberOFEquations )
+         IF ( k > 0 ) THEN
+           Flag = ListGetLogical(Model % Equations(k) % Values,Equation,Found)
+         END IF
+      END IF
+!---------------------------------------------------------------------------
+   END FUNCTION CheckElementEquation
+!---------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    FUNCTION StringToLowerCase( to,from,same_len ) RESULT(n)
+!------------------------------------------------------------------------------
+      CHARACTER(LEN=*), INTENT(in)  :: from
+      CHARACTER(LEN=*), INTENT(out) :: to
+      LOGICAL, OPTIONAL, INTENT(in) :: same_len
+!------------------------------------------------------------------------------
+      INTEGER :: n
+      INTEGER :: i,j,nlen
+      INTEGER, PARAMETER :: A=ICHAR('A'),Z=ICHAR('Z'),U2L=ICHAR('a')-ICHAR('A')
+
+      n = LEN(to)
+      IF (.NOT.PRESENT(same_len)) THEN
+        DO i=LEN(from),1,-1
+          IF ( from(i:i) /= ' ' ) EXIT
+        END DO
+        IF ( n>i ) THEN
+          to(i+1:n) = ' '
+          n=i
+        END IF
+      END IF
+
+      nlen = n
+      DO i=1,nlen
+        j = ICHAR( from(i:i) )
+        IF ( j >= A .AND. j <= Z ) THEN
+          to(i:i) = CHAR(j+U2L)
+        ELSE
+          to(i:i) = from(i:i)
+          IF ( to(i:i)=='[') n=i-1
+        END IF
+      END DO
+    END FUNCTION StringToLowerCase
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    SUBROUTINE VariableAdd( Variables,Mesh,Solver,Name,DOFs,Values,Perm,Output )
+!------------------------------------------------------------------------------
+      TYPE(Variable_t), POINTER :: Variables
+      TYPE(Mesh_t),   TARGET :: Mesh
+      TYPE(Solver_t), TARGET :: Solver
+      CHARACTER(LEN=*) :: Name
+      INTEGER :: DOFs
+      REAL(KIND=dp), POINTER :: Values(:)
+      LOGICAL, OPTIONAL :: Output
+      INTEGER, OPTIONAL, POINTER :: Perm(:)
+!------------------------------------------------------------------------------
+      LOGICAL :: stat
+      TYPE(Variable_t), POINTER :: ptr,ptr1,ptr2
+!------------------------------------------------------------------------------
+
+      IF ( .NOT.ASSOCIATED(Variables) ) THEN
+        ALLOCATE(Variables)
+        ptr => Variables
+      ELSE
+        ALLOCATE( ptr )
+      END IF
+
+      ptr % NameLen = StringToLowerCase( ptr % Name,Name )
+
+      IF ( .NOT. ASSOCIATED(ptr, Variables) ) THEN
+        ptr1 => Variables
+        ptr2 => Variables
+        DO WHILE( ASSOCIATED( ptr1 ) )
+           IF ( ptr % Name == ptr1 % Name ) THEN
+              DEALLOCATE( ptr )
+              RETURN
+           END IF
+           ptr2 => ptr1
+           ptr1 => ptr1 % Next
+         END DO
+         ptr2 % Next => ptr
+      END IF
+      NULLIFY( ptr % Next )
+
+      ptr % DOFs = DOFs
+      IF ( PRESENT( Perm ) ) THEN
+        ptr % Perm => Perm
+      ELSE
+        NULLIFY( ptr % Perm )
+      END IF
+      ptr % Norm = 0.0d0
+      ptr % PrevNorm = 0.0d0
+      ptr % Values => Values
+      NULLIFY( ptr % PrevValues )
+      NULLIFY( ptr % EigenValues, ptr % EigenVectors )
+
+      ptr % NonlinChange = 0.0_dp
+      ptr % SteadyChange = 0.0_dp
+      NULLIFY( ptr % NonlinValues, ptr % SteadyValues )
+
+      ptr % Solver => Solver
+      ptr % PrimaryMesh => Mesh
+
+      ptr % Valid  = .TRUE.
+      ptr % Output = .TRUE.
+      ptr % ValuesChanged = .TRUE.
+      IF ( PRESENT( Output ) ) ptr % Output = Output
+
+!------------------------------------------------------------------------------
+    END SUBROUTINE VariableAdd
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+     SUBROUTINE InterpolateMeshToMesh( OldMesh, NewMesh, OldVariables, &
+                NewVariables, UseQuadrantTree, Projector, MaskName )
+!------------------------------------------------------------------------------
+!******************************************************************************
+!  DESCRIPTION:
+!    Interpolates values of all variables from a mesh associated with
+!    the old model to the mesh of the new model
+!  ARGUMENTS:
+!
+!   TYPE(Mesh_t) :: OldMesh, NewMesh
+!     INPUT: Old and new mesh structures
+!   TYPE(Variable_t), POINTER :: OldVariables, NewVariables
+!     INPUT, OUTPUT: Old and new model variable structures
+!            NB. NewVariables defines the variables to be interpolated
+!   TYPE(Quadrant_t), POINTER :: RootQuadrant
+!     INPUT: RootQuadrant of the old mesh
+!            NB. If RoodQuadrant is associated (and QuadrantTree thus
+!            exists), QuadrantTree is used
+!   INTEGER :: dim
+!     INPUT: CoordinateSystemDimension of the old mesh.
+!            NB. Currently it s assumed that the new system has same dim,
+!            but this could be generalized.
+!
+!******************************************************************************
+       USE Interpolation
+       USE CRSMatrix
+       USE CoordinateSystems
+!-------------------------------------------------------------------------------
+       TYPE(Mesh_t), TARGET  :: OldMesh, NewMesh
+       TYPE(Variable_t), POINTER, OPTIONAL :: OldVariables, NewVariables
+       LOGICAL, OPTIONAL :: UseQuadrantTree
+       TYPE(Projector_t), POINTER, OPTIONAL :: Projector
+       CHARACTER(LEN=*),OPTIONAL :: MaskName
+!------------------------------------------------------------------------------
+       INTEGER :: dim
+       Type(Nodes_t) :: ElementNodes
+       INTEGER :: nBulk, i, j, k, l, n, bf_id
+       REAL(KIND=dp), DIMENSION(3) :: Point
+       INTEGER, POINTER :: NodeIndexes(:)
+       REAL(KIND=dp), DIMENSION(3) :: LocalCoordinates
+       TYPE(Variable_t), POINTER :: OldSol, NewSol, Var
+       INTEGER, POINTER :: OldPerm(:)
+       REAL(KIND=dp), POINTER :: OldValue(:), NewValue(:), ElementValues(:)
+       TYPE(Quadrant_t), POINTER :: LeafQuadrant
+       TYPE(Element_t),POINTER :: Element
+
+       REAL(KIND=dp), ALLOCATABLE :: Basis(:),dBasisdx(:,:)
+       REAL(KIND=dp) :: BoundingBox(6), detJ, u,v,w,s
+
+       LOGICAL :: UseQTree, Stat, UseProjector
+       TYPE(Quadrant_t), POINTER :: RootQuadrant
+
+       INTEGER, POINTER   :: Rows(:), Cols(:)
+
+       TYPE Epntr_t
+          TYPE(Element_t), POINTER :: Element
+       END TYPE Epntr_t
+
+       TYPE(Epntr_t), ALLOCATABLE :: ElemPtrs(:)
+
+       INTEGER, ALLOCATABLE:: RInd(:)
+       LOGICAL :: Found, EpsAbsGiven,EpsRelGiven, MaskExists
+       REAL(KIND=dp) :: eps1 = 0.1, eps2, eps_abs, eps_rel
+       REAL(KIND=dp), POINTER :: Values(:), LocalU(:), LocalV(:), LocalW(:)
+!------------------------------------------------------------------------------
+
+!
+!      If projector argument given, search for existing
+!      projector matrix, or generate new projector, if
+!      not already there:
+!      ------------------------------------------------
+       IF ( PRESENT(Projector) ) THEN
+          Projector => NewMesh % Projector
+
+          DO WHILE( ASSOCIATED( Projector ) )
+             IF ( ASSOCIATED(Projector % Mesh, OldMesh) ) THEN
+                IF ( PRESENT(OldVariables) ) CALL ApplyProjector
+                RETURN
+             END IF
+             Projector => Projector % Next
+          END DO
+
+          n = NewMesh % NumberOfNodes
+          ALLOCATE( LocalU(n), LocalV(n), LocalW(n), ElemPtrs(n) )
+          DO i=1,n
+            NULLIFY( ElemPtrs(i) % Element )
+          END DO
+       END IF
+!
+!      Check if using the spatial division hierarchy for the search:
+!      -------------------------------------------------------------
+       RootQuadrant => OldMesh % RootQuadrant
+       dim = CoordinateSystemDimension()
+
+       IF ( .NOT. PRESENT( UseQuadrantTree ) ) THEN
+         UseQTree = .TRUE.
+       ELSE
+         UseQTree = UseQuadrantTree
+       ENDIF
+
+       IF ( UseQTree ) THEN
+          IF ( .NOT.ASSOCIATED( RootQuadrant ) ) THEN
+             BoundingBox(1) = MINVAL( OldMesh % Nodes % x )
+             BoundingBox(2) = MINVAL( OldMesh % Nodes % y )
+             BoundingBox(3) = MINVAL( OldMesh % Nodes % z )
+             BoundingBox(4) = MAXVAL( OldMesh % Nodes % x )
+             BoundingBox(5) = MAXVAL( OldMesh % Nodes % y )
+             BoundingBox(6) = MAXVAL( OldMesh % Nodes % z )
+
+             eps2 = eps1 * MAXVAL( BoundingBox(4:6) - BoundingBox(1:3) )
+             BoundingBox(1:3) = BoundingBox(1:3) - eps2
+             BoundingBox(4:6) = BoundingBox(4:6) + eps2
+
+             CALL BuildQuadrantTree( OldMesh,BoundingBox,OldMesh % RootQuadrant)
+             RootQuadrant => OldMesh % RootQuadrant
+          END IF
+       END IF
+
+! Use mask or not
+!---------------------------------------
+       MaskExists = PRESENT( MaskName )
+
+!------------------------------------------------------------------------------
+
+       n = OldMesh % MaxElementNodes
+       ALLOCATE( ElementNodes % x(n), ElementNodes % y(n), &
+                 ElementNodes % z(n), ElementValues(n) )
+
+       eps_rel = ListGetConstReal( CurrentModel % Simulation,  &
+          'Interpolation Relative Epsilon', EpsRelGiven )
+
+       eps_abs = ListGetConstReal( CurrentModel % Simulation,  &
+          'Interpolation Absolute Epsilon', EpsAbsGiven )
+
+!------------------------------------------------------------------------------
+! Loop over all nodes in the new mesh
+!------------------------------------------------------------------------------
+       DO i=1,NewMesh % NumberOfNodes
+!------------------------------------------------------------------------------
+          Point(1) = NewMesh % Nodes % x(i)
+          Point(2) = NewMesh % Nodes % y(i)
+          Point(3) = NewMesh % Nodes % z(i)
+!------------------------------------------------------------------------------
+! Find in which old mesh bulk element the point belongs to
+!------------------------------------------------------------------------------
+          IF ( ASSOCIATED(RootQuadrant) .AND. UseQTree ) THEN
+!------------------------------------------------------------------------------
+! Find the last existing quadrant that the point belongs to
+!------------------------------------------------------------------------------
+             NULLIFY(Element)
+             CALL FindLeafElements(Point, dim, RootQuadrant, LeafQuadrant)
+             IF ( ASSOCIATED(LeafQuadrant) ) THEN
+               ! Go through the bulk elements in the last ChildQuadrant
+               ! only.  Try to find matching element with progressively
+               ! sloppier tests. Allow at most 100 % of slack:
+               ! -------------------------------------------------------
+               Found = .FALSE.
+
+               IF ( EpsRelGiven ) THEN
+                 Eps2 = Eps_rel*1.d-12
+               ELSE IF ( EpsAbsGiven ) THEN
+                 Eps2 = Eps_abs*1.d-12
+               ELSE
+                 Eps2 = 1.d-12
+               END IF
+
+               DO j=1,12
+                 DO k=1, LeafQuadrant % NElemsInQuadrant
+                    Element => OldMesh % Elements(LeafQuadrant % Elements(k))
+
+                    IF( MaskExists ) THEN
+                      bf_id = ListGetInteger( CurrentModel % Bodies(Element % BodyId) % Values, &
+                       'Body Force', Found )
+                    IF( .NOT. Found ) CYCLE
+                    IF(.NOT. ListCheckPresent( &
+                        CurrentModel % BodyForces(bf_id) % Values,MaskName) ) CYCLE
+                    END IF
+
+                    NodeIndexes => Element % NodeIndexes
+                    n = Element % Type % NumberOfNodes
+
+                    ElementNodes % x(1:n) = OldMesh % Nodes % x(NodeIndexes)
+                    ElementNodes % y(1:n) = OldMesh % Nodes % y(NodeIndexes)
+                    ElementNodes % z(1:n) = OldMesh % Nodes % z(NodeIndexes)
+
+                    IF ( EpsAbsGiven ) THEN
+                      Found = PointInElement( Element, ElementNodes, &
+                              Point, LocalCoordinates, Eps_abs=Eps2 )
+                    ELSE
+                      Found = PointInElement( Element, ElementNodes, &
+                              Point, LocalCoordinates, Eps2 )
+                    END IF
+                    IF ( Found ) EXIT
+                 END DO
+                 IF ( Found ) EXIT
+                 Eps2  = 10*Eps2
+               END DO
+               IF (.NOT.Found) NULLIFY(Element)
+             END IF
+!------------------------------------------------------------------------------
+          ELSE
+!------------------------------------------------------------------------------
+! Go through all old mesh bulk elements
+!------------------------------------------------------------------------------
+             DO k=1,OldMesh % NumberOfBulkElements
+                Element => OldMesh % Elements(k)
+
+                n = Element % Type % NumberOfNodes
+                NodeIndexes => Element % NodeIndexes
+
+                ElementNodes % x(1:n) = OldMesh % Nodes % x(NodeIndexes)
+                ElementNodes % y(1:n) = OldMesh % Nodes % y(NodeIndexes)
+                ElementNodes % z(1:n) = OldMesh % Nodes % z(NodeIndexes)
+
+                IF ( PointInElement( Element, ElementNodes, &
+                        Point, LocalCoordinates ) ) EXIT
+             END DO
+             IF ( k == OldMesh % NumberOfBulkElements + 1 ) THEN
+                WRITE( Message, * ) 'Point was not found in any of the elements!',i
+                CALL Warn( 'InterpolateMeshToMesh', Message )
+                CYCLE
+             END IF
+          END IF
+!------------------------------------------------------------------------------
+!
+!         Found Element in OldModel:
+!         ---------------------------------
+          IF ( PRESENT(Projector) ) THEN
+             ElemPtrs(i) % Element => Element
+             LocalU(i) = LocalCoordinates(1)
+             LocalV(i) = LocalCoordinates(2)
+             LocalW(i) = LocalCoordinates(3)
+          END IF
+
+          IF ( .NOT.PRESENT(OldVariables).OR.PRESENT(Projector) ) CYCLE
+!------------------------------------------------------------------------------
+!
+!         Go through all variables to be interpolated:
+!         --------------------------------------------
+          Var => OldVariables
+          DO WHILE( ASSOCIATED( Var ) )
+
+             IF( SIZE( Var % Values ) == Var % DOFs ) THEN
+               Var => Var % Next
+               CYCLE
+             END IF          
+
+
+             IF ( Var % DOFs == 1 .AND. &
+                  Var % Name(1:10) /= 'coordinate' .AND. &
+                  Var % Name /= 'coupled iter'     .AND. &
+                  Var % Name /= 'nonlin iter'      .AND. &
+                  Var % Name /= 'time'             .AND. &
+                  Var % Name /= 'timestep'         .AND. &
+                  Var % Name /= 'timestep size'    .AND. &
+                  Var % Name /= 'timestep interval' ) THEN
+
+!------------------------------------------------------------------------------
+!
+!               Interpolate variable at Point in Element:
+!               ------------------------------------------------
+
+                NewSol => VariableGet( NewMesh % Variables, TRIM(Var % Name), .TRUE. )
+                IF ( .NOT. ASSOCIATED( NewSol ) ) THEN
+                   Var => Var % Next
+                   CYCLE
+                END IF
+                NewValue => NewSol % Values
+
+                OldSol => VariableGet( OldMesh % Variables, TRIM(Var % Name), .TRUE. )
+                OldPerm  => OldSol % Perm
+                OldValue => OldSol % Values
+
+
+! Check that the node was found in the old mesh
+                IF ( ASSOCIATED (Element) ) THEN
+!------------------------------------------------------------------------------
+!
+!                  Check for rounding errors:
+!                  --------------------------
+                   WHERE( OldPerm(NodeIndexes)>0 )
+                      ElementValues(1:n) = OldValue(OldPerm(NodeIndexes))
+                   ELSEWHERE
+                      ElementValues(1:n) = 0.0d0
+                   END WHERE
+
+!------------------------------------------------------------------------------
+!
+!                  Check that the variable is available for this node:
+!                  ---------------------------------------------------
+                   IF ( NewSol % Perm(i) /= 0 ) THEN
+                      NewValue(NewSol % Perm(i)) = InterpolateInElement( &
+                           Element, ElementValues, LocalCoordinates(1), &
+                           LocalCoordinates(2), LocalCoordinates(3) )
+                   END IF
+                ELSE
+                   IF ( NewSol % Perm(i)/=0 ) NewValue(NewSol % Perm(i))=0.0_dp
+                END IF
+
+!------------------------------------------------------------------------------
+             END IF
+             Var => Var % Next
+          END DO
+!------------------------------------------------------------------------------
+       END DO
+!------------------------------------------------------------------------------
+!
+!      Construct mesh projector, if requested. Next time around
+!      will use the existing projector to interpolate values:
+!      ---------------------------------------------------------
+       IF ( PRESENT(Projector) ) THEN
+          n = NewMesh % NumberOfNodes
+
+          ALLOCATE( Rows(n+1) )
+          Rows(1) = 1
+          DO i=2,n+1
+             IF ( ASSOCIATED( ElemPtrs(i-1) % Element ) ) THEN
+               Rows(i) = Rows(i-1) + &
+                   ElemPtrs(i-1) % Element % Type % NumberOfNodes
+             ELSE
+               Rows(i) = Rows(i-1)+1
+             END IF
+          END DO
+
+          ALLOCATE( Cols(Rows(n+1)-1), Values(Rows(n+1)-1) )
+          Cols   = 0
+          Values = 0
+
+          ALLOCATE( Projector )
+          Projector % Matrix => AllocateMatrix()
+          Projector % Matrix % NumberOfRows = n
+          Projector % Matrix % Rows   => Rows
+          Projector % Matrix % Cols   => Cols 
+          Projector % Matrix % Values => Values
+
+          Projector % Next => NewMesh % Projector
+          NewMesh % Projector => Projector
+          NewMesh % Projector % Mesh => OldMesh
+
+          ALLOCATE( RInd(OldMesh % NumberOfNodes), Basis(OldMesh % MaxElementNodes) )
+          RInd = 0
+
+          Found = .TRUE.
+          DO i=1,n
+             Element => ElemPtrs(i) % Element
+             IF ( .NOT. ASSOCIATED( Element ) ) THEN
+               Found = .FALSE.
+               Cols(Rows(i))=1
+               Values(Rows(i))=0._dp
+               CYCLE
+             END IF
+
+             k = Element % Type % NumberOfNodes
+             NodeIndexes => Element % NodeIndexes
+             RInd(NodeIndexes) = RInd(NodeIndexes)+1
+
+             u = LocalU(i)
+             v = LocalV(i)
+             w = LocalW(i)
+
+             Basis(1:k) = 0.0d0
+             DO j=1,k
+                l = Rows(i) + j - 1
+                Cols(l)   = NodeIndexes(j)
+                Basis(j)  = 1.0d0
+                Values(l) = &
+                   InterpolateInElement(Element,Basis,u,v,w)
+                Basis(j)  = 0.0d0
+             END DO
+          END DO
+          DEALLOCATE( Basis, ElemPtrs, LocalU, LocalV, LocalW )
+!
+!         Store also the transpose of the projector:
+!         ------------------------------------------ 
+          Projector % TMatrix => NULL()
+          IF ( Found ) THEN
+            n = OldMesh % NumberOfNodes
+            ALLOCATE( Rows(n+1) )
+            Rows(1) = 1
+            DO i=2,n+1
+               Rows(i) = Rows(i-1)+RInd(i-1)
+            END DO
+
+            ALLOCATE( Cols(Rows(n+1)-1), Values(Rows(n+1)-1) )
+            Projector % TMatrix => AllocateMatrix()
+            Projector % TMatrix % NumberOfRows = n
+            Projector % TMatrix % Rows   => Rows
+            Projector % TMatrix % Cols   => Cols 
+            Projector % TMatrix % Values => Values
+
+            RInd = 0
+            DO i=1,Projector % Matrix % NumberOfRows
+              DO j=Projector % Matrix % Rows(i), Projector % Matrix % Rows(i+1)-1
+                 k = Projector % Matrix % Cols(j)
+                 l = Rows(k)+RInd(k)
+                 RInd(k) = RInd(k)+1
+                 Cols(l) = i
+                 Values(l) = Projector % Matrix % Values(j)
+              END DO
+            END DO
+          END IF
+
+          DEALLOCATE(RInd)
+          IF ( PRESENT(OldVariables) ) CALL ApplyProjector
+       END IF
+
+       DEALLOCATE( ElementNodes % x, ElementNodes % y, &
+                   ElementNodes % z, ElementValues )
+
+CONTAINS
+
+!------------------------------------------------------------------------------
+     SUBROUTINE ApplyProjector
+!------------------------------------------------------------------------------
+        INTEGER :: i
+        TYPE(Variable_t), POINTER :: Var
+!------------------------------------------------------------------------------
+        Var => OldVariables
+        DO WHILE( ASSOCIATED(Var) )
+
+           IF( SIZE( Var % Values ) == Var % DOFs ) THEN   
+             Var => Var % Next
+             CYCLE
+           END IF 
+
+           IF ( Var % DOFs == 1 .AND. &
+                Var % Name(1:10) /= 'coordinate' .AND. &
+                Var % Name /= 'coupled iter'     .AND. &
+                Var % Name /= 'nonlin iter'      .AND. &
+                Var % Name /= 'time'             .AND. &
+                Var % Name /= 'timestep'         .AND. &
+                Var % Name /= 'timestep size'    .AND. &
+                Var % Name /= 'timestep interval' ) THEN
+ 
+              OldSol => VariableGet( OldMesh % Variables, Var % Name, .TRUE. )
+              NewSol => VariableGet( NewMesh % Variables, Var % Name, .TRUE. )
+              IF ( .NOT. (ASSOCIATED (NewSol) ) ) THEN
+                 Var => Var % Next
+                 CYCLE
+              END IF
+
+              CALL CRS_ApplyProjector( Projector % Matrix, &
+                   OldSol % Values, OldSol % Perm,         &
+                   NewSol % Values, NewSol % Perm )
+
+              IF ( ASSOCIATED( OldSol % PrevValues ) ) THEN
+                 DO i=1,SIZE(OldSol % PrevValues,2)
+                    CALL CRS_ApplyProjector( Projector % Matrix,  &
+                         OldSol % PrevValues(:,i), OldSol % Perm, &
+                         NewSol % PrevValues(:,i), NewSol % Perm )
+                 END DO
+              END IF
+           END IF
+           Var => Var % Next
+        END DO
+!------------------------------------------------------------------------------
+     END SUBROUTINE ApplyProjector
+!------------------------------------------------------------------------------
+  END SUBROUTINE InterpolateMeshToMesh
+
+
+!------------------------------------------------------------------------------
+    FUNCTION MeshProjector( Mesh1, Mesh2, &
+         UseQuadrantTree, Trans ) RESULT( ProjectorMatrix )
+!------------------------------------------------------------------------------
+       TYPE(Mesh_t) :: Mesh1, Mesh2
+       LOGICAL, OPTIONAL :: UseQuadrantTree,Trans
+       TYPE(Matrix_t), POINTER :: ProjectorMatrix
+!------------------------------------------------------------------------------
+       TYPE(Projector_t), POINTER :: Projector
+!------------------------------------------------------------------------------
+
+       IF ( PRESENT(UseQuadrantTree) ) THEN
+          CALL InterpolateMeshToMesh( Mesh1, Mesh2, &
+                   UseQuadrantTree=UseQuadrantTree, Projector=Projector )
+       ELSE
+          CALL InterpolateMeshToMesh( Mesh1, Mesh2, Projector=Projector )
+       END IF
+ 
+       ProjectorMatrix => Projector % Matrix
+       IF ( PRESENT(Trans) ) THEN
+          IF ( Trans ) THEN
+             ProjectorMatrix => Projector % TMatrix
+          END IF
+       END IF
+!------------------------------------------------------------------------------
+    END FUNCTION MeshProjector
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    RECURSIVE FUNCTION VariableGet( Variables, Name, ThisOnly, MaskName ) RESULT(Var)
+!------------------------------------------------------------------------------
+      TYPE(Variable_t), POINTER :: Variables
+      CHARACTER(LEN=*) :: Name
+      LOGICAL, OPTIONAL :: ThisOnly
+      CHARACTER(LEN=*),OPTIONAL :: MaskName
+!------------------------------------------------------------------------------
+      TYPE(Mesh_t), POINTER :: Mesh
+      TYPE(Projector_t), POINTER :: Projector
+      TYPE(Variable_t), POINTER :: Var,PVar,Tmp
+!------------------------------------------------------------------------------
+      REAL(KIND=dp), POINTER :: Vals(:)
+      INTEGER :: i,k,n, DOFs
+      LOGICAL :: Found, GlobalBubbles
+      CHARACTER(LEN=LEN_TRIM(Name)) :: str
+      CHARACTER(LEN=MAX_NAME_LEN) :: tmpname
+double precision :: t1,CPUTime
+!------------------------------------------------------------------------------
+      k = StringToLowerCase( str,Name,.TRUE. )
+
+      Tmp => Variables
+      DO WHILE( ASSOCIATED(tmp) )
+        IF ( tmp % NameLen == k ) THEN
+          IF ( tmp % Name(1:k) == str(1:k) ) THEN
+
+            IF ( Tmp % Valid ) THEN
+               Var => Tmp
+               RETURN
+            END IF
+            EXIT
+
+          END IF
+        END IF
+        tmp => tmp % Next
+      END DO
+      Var => Tmp
+
+!------------------------------------------------------------------------------
+      IF ( PRESENT(ThisOnly) ) THEN
+         IF ( ThisOnly ) RETURN
+      END IF
+
+!------------------------------------------------------------------------------
+      NULLIFY( PVar )
+      Mesh => CurrentModel % Meshes
+      DO WHILE( ASSOCIATED( Mesh ) )
+
+        IF ( .NOT.ASSOCIATED( Variables, Mesh % Variables ) ) THEN
+          PVar => VariableGet( Mesh % Variables, Name, ThisOnly=.TRUE. )
+          IF ( ASSOCIATED( PVar ) ) THEN
+            IF ( ASSOCIATED( Mesh, PVar % PrimaryMesh ) ) THEN
+              EXIT
+            END IF
+          END IF
+        END IF
+        Mesh => Mesh % Next
+      END DO
+
+      IF ( .NOT.ASSOCIATED( PVar ) ) RETURN
+
+!------------------------------------------------------------------------------
+
+      IF ( .NOT.ASSOCIATED( Tmp ) ) THEN
+         GlobalBubbles = ListGetLogical(Pvar % Solver % Values, &
+               'Bubbles in Global System', Found)
+         IF (.NOT.Found) GlobalBubbles=.TRUE.
+
+         DOFs = CurrentModel % Mesh % NumberOfNodes * PVar % DOFs
+         IF ( GlobalBubbles ) DOFs = DOFs + CurrentModel % Mesh % MaxBDOFs * &
+              CurrentModel % Mesh % NumberOfBulkElements * PVar % DOFs
+
+         ALLOCATE( Var )
+         ALLOCATE( Var % Values(DOFs) )
+         Var % Values = 0
+
+         NULLIFY( Var % Perm )
+         IF ( ASSOCIATED( PVar % Perm ) ) THEN
+            ALLOCATE( Var % Perm( DOFs/Pvar % DOFs ) )
+
+            n = InitialPermutation( Var % Perm, CurrentModel, PVar % Solver, &
+                CurrentModel % Mesh, ListGetString(PVar % Solver % Values,'Equation'), &
+                 GlobalBubbles=GlobalBubbles )
+
+            IF ( n==0 ) n=CurrentModel % Mesh % NumberOfNodes
+
+            IF ( n == CurrentModel % Mesh % NumberOfNodes ) THEN
+               DO i=1,n 
+                  Var % Perm(i) = i
+               END DO
+            END IF
+         END IF
+
+         CALL VariableAdd( Variables, PVar % PrimaryMesh, PVar % Solver, &
+           PVar % Name, PVar % DOFs, Var % Values, Var % Perm, PVar % Output ) 
+
+         Var => VariableGet( Variables, Name, ThisOnly=.TRUE. )
+
+         NULLIFY( Var % PrevValues )
+         IF ( ASSOCIATED( PVar % PrevValues ) ) THEN
+            ALLOCATE( Var % PrevValues( DOFs, SIZE(PVar % PrevValues,2) ) )
+         END IF
+
+         IF ( PVar % Name(1:PVar % NameLen) == 'flow solution' ) THEN
+           Vals => Var % Values( 1: SIZE(Var % Values) : PVar % DOFs )
+           CALL VariableAdd( Variables, PVar % PrimaryMesh, PVar % Solver, &
+                  'Velocity 1', 1,  Vals, Var % Perm, PVar % Output ) 
+
+           Tmp => VariableGet( Variables, 'Velocity 1', .TRUE. )
+           NULLIFY( Tmp % PrevValues )
+           IF ( ASSOCIATED( Var % PrevValues ) )  &
+              Tmp % PrevValues => Var % PrevValues(1::PVar % DOFs,:)
+
+           Vals => Var % Values( 2: SIZE(Var % Values) : PVar % DOFs )
+           CALL VariableAdd( Variables, PVar % PrimaryMesh, PVar % Solver, &
+                  'Velocity 2', 1,  Vals, Var % Perm, PVar % Output ) 
+
+           Tmp => VariableGet( Variables, 'Velocity 2', .TRUE. )
+           NULLIFY( Tmp % PrevValues )
+           IF ( ASSOCIATED( Var % PrevValues ) ) &
+              Tmp % PrevValues => Var % PrevValues(2::PVar % DOFs,:)
+
+           IF ( PVar % DOFs == 3 ) THEN
+             Vals => Var % Values( 3 : SIZE(Var % Values) : PVar % DOFs )
+             CALL VariableAdd( Variables, PVar % PrimaryMesh, PVar % Solver, &
+                    'Pressure', 1,  Vals, Var % Perm, PVar % Output ) 
+           ELSE
+             Vals => Var % Values( 3: SIZE(Var % Values) : PVar % DOFs )
+             CALL VariableAdd( Variables, PVar % PrimaryMesh, PVar % Solver, &
+                  'Velocity 3', 1,  Vals, Var % Perm, PVar % Output ) 
+
+             Tmp => VariableGet( Variables, 'Velocity 3', .TRUE. )
+             NULLIFY( Tmp % PrevValues )
+             IF ( ASSOCIATED( Var % PrevValues ) ) &
+                 Tmp % PrevValues => Var % PrevValues(3::PVar % DOFs,:)
+
+             Vals => Var % Values( 4: SIZE(Var % Values) : PVar % DOFs )
+             CALL VariableAdd( Variables, PVar % PrimaryMesh, PVar % Solver, &
+                    'Pressure', 1,  Vals, Var % Perm, PVar % Output ) 
+           END IF
+
+           Tmp => VariableGet( Variables, 'Pressure', .TRUE. )
+           NULLIFY( Tmp % PrevValues )
+           IF ( ASSOCIATED( Var % PrevValues ) ) &
+              Tmp % PrevValues => Var % PrevValues(PVar % DOFs::PVar % DOFs,:)
+         ELSE
+           IF ( PVar % DOFs > 1 ) THEN
+             DO i=1,PVar % DOFs
+               Vals => Var % Values( i: SIZE(Var % Values) : PVar % DOFs )
+               tmpname = ComponentName( PVar % Name, i )
+               CALL VariableAdd( Variables, PVar % PrimaryMesh, PVar % Solver, &
+                       tmpname, 1, Vals, Var % Perm, PVar % Output ) 
+
+               Tmp => VariableGet( Variables, tmpname, .TRUE. )
+               NULLIFY( Tmp % PrevValues )
+               IF ( ASSOCIATED( Var % PrevValues ) ) &
+                  Tmp % PrevValues => Var % PrevValues(i::PVar % DOFs,:)
+             END DO
+           END IF
+        END IF
+ 
+        Var => VariableGet( Variables, Name, ThisOnly=.TRUE. )
+      END IF
+
+!------------------------------------------------------------------------------
+! Build a temporary variable list of variables to be interpolated
+!------------------------------------------------------------------------------
+      ALLOCATE( Tmp )
+      Tmp = PVar
+      Var => Tmp
+      NULLIFY( Var % Next )
+
+      IF ( PVar % Name(1:PVar % NameLen) == 'flow solution' ) THEN
+        ALLOCATE( Var % Next )
+        Var => Var % Next
+        Var = VariableGet( PVar % PrimaryMesh % Variables, 'Velocity 1' )
+
+        ALLOCATE( Var % Next )
+        Var => Var % Next
+        Var  = VariableGet(  PVar % PrimaryMesh % Variables, 'Velocity 2' )
+
+        IF ( PVar % DOFs == 4 ) THEN
+          ALLOCATE( Var % Next )
+          Var => Var % Next
+          Var  = VariableGet( PVar % PrimaryMesh % Variables, 'Velocity 3' )
+        END IF
+
+        ALLOCATE( Var % Next )
+        Var => Var % Next
+        Var = VariableGet( PVar % PrimaryMesh % Variables, 'Pressure' )
+        NULLIFY( Var % Next )
+        Var => Tmp
+      ELSE IF ( PVar % DOFs > 1 ) THEN
+        DO i=1,PVar % DOFs
+          ALLOCATE( Var % Next )
+          tmpname = ComponentName( PVar % Name, i )
+          Var % Next = VariableGet( PVar % PrimaryMesh % Variables, tmpname )
+          Var => Var % Next
+        END DO
+        NULLIFY( Var % Next )
+        Var => Tmp
+      END IF
+
+!------------------------------------------------------------------------------
+! interpolation call
+!------------------------------------------------------------------------------
+t1 = CPUTime()
+
+      IF( Present( MaskName ) ) THEN
+       CALL InterpolateMeshToMesh( PVar % PrimaryMesh, &
+            CurrentModel % Mesh, Var, Variables, MaskName=MaskName )
+      ELSE
+        CALL InterpolateMeshToMesh( PVar % PrimaryMesh, &
+            CurrentModel % Mesh, Var, Variables, Projector=Projector )
+      END IF
+
+
+WRITE( Message, * ) 'Interpolation time: ', CPUTime()-t1
+CALL Info( 'VariableGet', Message, Level=7 )
+
+!------------------------------------------------------------------------------
+! free the temporary list
+!------------------------------------------------------------------------------
+      DO WHILE( ASSOCIATED( Tmp ) )
+         Var => Tmp % Next
+         DEALLOCATE( Tmp )
+         Tmp => Var
+      END DO
+!------------------------------------------------------------------------------
+      Var => VariableGet( Variables, Name, ThisOnly=.TRUE. )
+      Var % Valid = .TRUE.
+      Var % ValuesChanged = .TRUE.
+
+      IF ( Var % Name(1:Var % NameLen) == 'flow solution' ) THEN
+        Tmp => VariableGet( Variables, 'Velocity 1', ThisOnly=.TRUE. )
+        IF ( ASSOCIATED(Tmp) ) THEN
+          Tmp % Valid = .TRUE.
+          Tmp % ValuesChanged = .TRUE.
+        END IF
+
+        Tmp => VariableGet( Variables, 'Velocity 2', ThisOnly=.TRUE. )
+        IF ( ASSOCIATED(Tmp) ) THEN
+          Tmp % Valid = .TRUE.
+          Tmp % ValuesChanged = .TRUE.
+        END IF
+
+        IF ( Var % DOFs == 4 ) THEN
+          Tmp  => VariableGet( Variables, 'Velocity 3', ThisOnly=.TRUE. )
+          IF ( ASSOCIATED(Tmp) ) THEN
+            Tmp % Valid = .TRUE.
+            Tmp % ValuesChanged = .TRUE.
+          END IF
+        END IF
+
+        Tmp => VariableGet( Variables, 'Pressure', ThisOnly=.TRUE. )
+        IF ( ASSOCIATED(Tmp) ) THEN
+          Tmp % Valid = .TRUE.
+          Tmp % ValuesChanged = .TRUE.
+        END IF
+      ELSE IF ( Var % DOFs > 1 ) THEN
+        DO i = 1,Var % DOFs
+           tmpname = ComponentName( Var % Name, i )
+           Tmp => VariableGet( Variables, tmpname, ThisOnly=.TRUE. )
+           IF ( ASSOCIATED(Tmp) ) THEN
+             Tmp % Valid = .TRUE.
+             Tmp % ValuesChanged = .TRUE.
+           END IF
+        END DO
+      END IF
+!------------------------------------------------------------------------------
+    END FUNCTION VariableGet 
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  FUNCTION ListAllocate() RESULT(ptr)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+
+     ALLOCATE( ptr )
+     ptr % Procedure = 0
+     ptr % Type = 0
+     ptr % Name = ' '
+     ptr % NameLen = 0
+     ptr % CValue = ' '
+     ptr % LValue = .FALSE.
+     NULLIFY( ptr % Next )
+     NULLIFY( ptr % FValues )
+     NULLIFY( ptr % TValues )
+     NULLIFY( ptr % IValues )
+!------------------------------------------------------------------------------
+  END FUNCTION ListAllocate
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  SUBROUTINE ListDelete( ptr )
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+
+     IF ( ASSOCIATED(ptr % FValues) ) DEALLOCATE(ptr % FValues)
+     IF ( ASSOCIATED(ptr % TValues) ) DEALLOCATE(ptr % TValues)
+     IF ( ASSOCIATED(ptr % IValues) ) DEALLOCATE(ptr % IValues)
+     DEALLOCATE( ptr )
+!------------------------------------------------------------------------------
+  END SUBROUTINE ListDelete
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  SUBROUTINE ListRemove( List, Name )
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name
+!------------------------------------------------------------------------------
+     CHARACTER(LEN=LEN_TRIM(Name)) :: str
+     INTEGER :: k
+     LOGICAL :: Found
+     TYPE(ValueList_t), POINTER :: ptr, prev
+!------------------------------------------------------------------------------
+     IF ( ASSOCIATED(List) ) THEN
+       k = StringToLowerCase( str,Name,.TRUE. )
+       ptr  => List
+       Prev => ptr
+       DO WHILE( ASSOCIATED(ptr) )
+         IF ( ptr % NameLen == k .AND. ptr % Name(1:k) == str(1:k) ) THEN
+            IF ( ASSOCIATED(ptr,List) ) THEN
+               List => ptr % Next
+               Prev => List
+            ELSE
+               Prev % Next => ptr % Next
+            END IF
+            CALL ListDelete(ptr)
+            EXIT
+         ELSE
+           Prev => ptr
+           ptr  => ptr % Next 
+         END IF
+       END DO
+     END IF
+!------------------------------------------------------------------------------
+   END SUBROUTINE ListRemove
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  FUNCTION ListAdd( List, Name ) RESULT(new)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List, new
+     CHARACTER(LEN=*) :: Name
+!------------------------------------------------------------------------------
+     CHARACTER(LEN=LEN_TRIM(Name)) :: str
+     INTEGER :: k
+     LOGICAL :: Found
+     TYPE(ValueList_t), POINTER :: ptr, prev
+!------------------------------------------------------------------------------
+     NULLIFY( prev )
+     Found = .FALSE.
+
+     new => ListAllocate()
+
+     IF ( ASSOCIATED(List) ) THEN
+       k = StringToLowerCase( str,Name,.TRUE. )
+       ptr  => List
+       NULLIFY( prev )
+       DO WHILE( ASSOCIATED(ptr) )
+         IF ( ptr % NameLen == k .AND. ptr % Name(1:k) == str(1:k) ) THEN
+           Found = .TRUE.
+           EXIT
+         ELSE
+           Prev => ptr
+           ptr  => ptr % Next 
+         END IF
+       END DO
+
+       IF ( Found ) THEN
+         New % Next => ptr % Next
+         IF ( ASSOCIATED( prev ) ) THEN
+           Prev % Next => New
+         ELSE
+           List => New
+         END IF
+         CALL ListDelete( Ptr )
+       ELSE
+         IF ( ASSOCIATED(prev) ) THEN
+           prev % next => new
+         ELSE
+           New % Next => List % Next
+           List % Next => New
+         END IF
+       END IF
+     ELSE
+       List => New
+     END IF
+!------------------------------------------------------------------------------
+   END FUNCTION ListAdd
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   SUBROUTINE ListSetNamespace(str)
+!------------------------------------------------------------------------------
+     CHARACTER(LEN=*) :: str
+!------------------------------------------------------------------------------
+     NameSpace = str
+!------------------------------------------------------------------------------
+   END SUBROUTINE ListSetNamespace
+!------------------------------------------------------------------------------
+
+!------------------------------------------------------------------------------
+   FUNCTION ListGetNamespace(str) RESULT(l)
+!------------------------------------------------------------------------------
+    LOGICAL :: l 
+    TYPE(Varying_string) :: str
+!------------------------------------------------------------------------------
+    l = .FALSE.
+    IF ( Namespace /= '' ) THEN
+      l = .TRUE.
+      str = Namespace
+    END IF
+!------------------------------------------------------------------------------
+   END FUNCTION ListGetNamespace
+!------------------------------------------------------------------------------
+
+!------------------------------------------------------------------------------
+   FUNCTION ListFind( list, name, Found) RESULT(ptr)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: list, ptr
+     CHARACTER(LEN=*) :: name
+     LOGICAL, OPTIONAL :: Found
+!------------------------------------------------------------------------------
+     TYPE(Varying_string) :: strn
+     CHARACTER(LEN=LEN_TRIM(Name)) :: str
+!------------------------------------------------------------------------------
+     INTEGER :: k, n
+
+     k = StringToLowerCase( str,Name,.TRUE. )
+
+     ptr => List
+     DO WHILE( ASSOCIATED(ptr) )
+       n = ptr % NameLen
+       IF ( n==k ) THEN
+         IF ( ptr % Name(1:n) == str(1:n) ) EXIT
+       END IF
+       ptr => ptr % Next
+     END DO
+
+     IF ( .NOT. ASSOCIATED(ptr) ) THEN
+       IF ( ListGetNamespace(strn) ) THEN
+         strn = strn //' '//str(1:k)
+         k = LEN(strn)
+         ptr => List
+         DO WHILE( ASSOCIATED(ptr) )
+            n = ptr % NameLen
+            IF ( n==k ) THEN
+              IF ( ptr % Name(1:n) == strn ) EXIT
+            END IF
+            ptr => ptr % Next
+         END DO
+       END IF
+     END IF
+
+     IF ( PRESENT(Found) ) THEN
+       Found = ASSOCIATED(ptr)
+     ELSE IF (.NOT.ASSOCIATED(ptr) ) THEN
+       CALL Warn( 'ListFind', ' ' )
+       WRITE(Message,*) 'Requested property: ', '[',TRIM(Name),'], not found'
+       CALL Warn( 'ListFind', Message )
+       CALL Warn( 'ListFind', ' ' )
+     END IF
+!------------------------------------------------------------------------------
+   END FUNCTION ListFind
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   FUNCTION ListCheckPresent( List,Name ) RESULT(Found)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name
+     LOGICAL :: Found
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+     ptr => ListFind(List,Name,Found)
+!------------------------------------------------------------------------------
+   END FUNCTION ListCheckPresent
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    SUBROUTINE ListAddString( List,Name,CValue,CaseConversion )
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: List
+      CHARACTER(LEN=*) :: Name
+      CHARACTER(LEN=*) :: CValue
+      LOGICAL, OPTIONAL :: CaseConversion
+!------------------------------------------------------------------------------
+      INTEGER :: k
+      LOGICAL :: DoCase
+      TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+      ptr => ListAdd( List, Name )
+
+      DoCase = .TRUE.
+      IF ( PRESENT(CaseConversion) ) DoCase = CaseConversion
+
+      IF ( DoCase ) THEN
+        k = StringToLowerCase( ptr % CValue,CValue )
+      ELSE
+        k = MIN( MAX_NAME_LEN,LEN(CValue) )
+        ptr % CValue(1:k) = CValue(1:k)
+      END IF
+
+      ptr % Type   = LIST_TYPE_STRING
+      ptr % NameLen = StringToLowerCase( Ptr % Name,Name )
+!------------------------------------------------------------------------------
+    END SUBROUTINE ListAddString
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    SUBROUTINE ListAddLogical( List,Name,LValue )
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: List
+      CHARACTER(LEN=*) :: Name
+      LOGICAL :: LValue
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+      ptr => ListAdd( List, Name )
+      Ptr % LValue = LValue
+      Ptr % Type   = LIST_TYPE_LOGICAL
+
+      Ptr % NameLen = StringToLowerCase( ptr % Name,Name )
+    END SUBROUTINE ListAddLogical
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    SUBROUTINE ListAddInteger( List,Name,IValue,Proc )
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: List
+      CHARACTER(LEN=*) :: Name
+      INTEGER :: IValue
+      INTEGER(Kind=AddrInt), OPTIONAL :: Proc
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+      ptr => ListAdd( List, Name )
+      IF ( PRESENT(Proc) ) ptr % Procedure = Proc
+
+      ALLOCATE( ptr % IValues(1) )
+      ptr % IValues(1) = IValue
+      ptr % Type       = LIST_TYPE_INTEGER
+
+      ptr % NameLen = StringToLowerCase( ptr % Name,Name )
+    END SUBROUTINE ListAddInteger
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    SUBROUTINE ListAddIntegerArray( List,Name,N,IValues,Proc )
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: List
+      CHARACTER(LEN=*) :: Name
+      INTEGER :: N
+      INTEGER :: IValues(N)
+      INTEGER(KIND=AddrInt), OPTIONAL :: Proc
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+      ptr => ListAdd( List, Name )
+
+      ALLOCATE( ptr % IValues(N) )
+
+      IF ( PRESENT(Proc) ) ptr % Procedure = Proc
+
+      ptr % Type  = LIST_TYPE_CONSTANT_TENSOR
+      ptr % IValues(1:n) = IValues(1:n)
+
+      ptr % NameLen = StringToLowerCase( ptr % Name,Name )
+    END SUBROUTINE ListAddIntegerArray
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    SUBROUTINE ListAddConstReal( List,Name,FValue,Proc,CValue )
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: List
+      CHARACTER(LEN=*) :: Name
+      CHARACTER(LEN=*), OPTIONAL :: Cvalue
+      REAL(KIND=dp) :: FValue
+      INTEGER(KIND=AddrInt), OPTIONAL :: Proc
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+      ptr => ListAdd( List, Name )
+
+      NULLIFY( ptr % TValues )
+      ALLOCATE( ptr % FValues(1,1,1) )
+
+      IF ( PRESENT(Proc) ) ptr % Procedure = Proc
+
+      ptr % FValues = FValue
+      ptr % Type  = LIST_TYPE_CONSTANT_SCALAR
+
+      IF ( PRESENT( CValue ) ) THEN
+         ptr % Cvalue = CValue
+         ptr % Type  = LIST_TYPE_CONSTANT_SCALAR_STR
+      END IF
+
+      ptr % NameLen = StringToLowerCase( ptr % Name,Name )
+    END SUBROUTINE ListAddConstReal
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    SUBROUTINE ListAddDepReal(List,Name,DependName,N,TValues,FValues,Proc,CValue)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name,DependName
+     CHARACTER(LEN=*), OPTIONAL :: Cvalue
+     INTEGER :: N
+     REAL(KIND=dp) :: FValues(N)
+     REAL(KIND=dp) :: TValues(N)
+     INTEGER(KIND=AddrInt), OPTIONAL :: Proc
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+     ptr => ListAdd( List, Name )
+     IF ( PRESENT(Proc) ) ptr % Procedure = Proc
+
+     ALLOCATE( ptr % FValues(1,1,N),ptr % TValues(N) )
+
+     ptr % TValues = TValues(1:N)
+     ptr % FValues(1,1,:) = FValues(1:N)
+     ptr % Type = LIST_TYPE_VARIABLE_SCALAR
+
+     ptr % NameLen = StringToLowerCase( ptr % Name,Name )
+     ptr % DepNameLen = StringToLowerCase( ptr % DependName,DependName )
+
+     IF ( PRESENT( Cvalue ) ) THEN
+        ptr % CValue = CValue
+        ptr % Type = LIST_TYPE_VARIABLE_SCALAR_STR
+     END IF
+
+   END SUBROUTINE ListAddDepReal
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    SUBROUTINE ListAddConstRealArray( List,Name,N,M,FValues,Proc,CValue )
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: List
+      CHARACTER(LEN=*) :: Name
+      CHARACTER(LEN=*), OPTIONAL :: Cvalue
+      INTEGER :: N,M
+      REAL(KIND=dp) :: FValues(:,:)
+      INTEGER(KIND=AddrInt), OPTIONAL :: Proc
+!------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+      ptr => ListAdd( List, Name )
+
+      NULLIFY( ptr % TValues )
+      ALLOCATE( ptr % FValues(N,M,1) )
+
+      IF ( PRESENT(Proc) ) ptr % Procedure = Proc
+
+      ptr % Type  = LIST_TYPE_CONSTANT_TENSOR
+      ptr % FValues(1:n,1:m,1) = FValues(1:n,1:m)
+
+      IF ( PRESENT( Cvalue ) ) THEN
+         ptr % CValue = CValue
+         ptr % Type  = LIST_TYPE_CONSTANT_TENSOR_STR
+      END IF
+
+      ptr % NameLen = StringToLowerCase( ptr % Name,Name )
+    END SUBROUTINE ListAddConstRealArray
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+    SUBROUTINE ListAddDepRealArray(List,Name,DependName, &
+               N,TValues,N1,N2,FValues,Proc,Cvalue)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name,DependName
+     CHARACTER(LEN=*), OPTIONAL :: Cvalue
+     INTEGER :: N,N1,N2
+     REAL(KIND=dp) :: FValues(:,:,:)
+     REAL(KIND=dp) :: TValues(N)
+     INTEGER(KIND=AddrInt), OPTIONAL :: Proc
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+
+     ptr => ListAdd( List, Name )
+     IF ( PRESENT(Proc) ) ptr % Procedure = Proc
+
+     ALLOCATE( ptr % FValues(n1,n2,N),ptr % TValues(N) )
+
+     ptr % TValues = TValues(1:N)
+     ptr % FValues = FValues(1:n1,1:n2,1:N)
+     ptr % Type = LIST_TYPE_VARIABLE_TENSOR
+
+     IF ( PRESENT( Cvalue ) ) THEN
+        ptr % CValue = CValue
+        ptr % Type = LIST_TYPE_VARIABLE_TENSOR_STR
+     END IF
+
+     ptr % NameLen = StringToLowerCase( ptr % Name,Name )
+     ptr % DepNameLen = StringToLowerCase( ptr % DependName,DependName )
+!------------------------------------------------------------------------------
+   END SUBROUTINE ListAddDepRealArray
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   RECURSIVE FUNCTION ListGetInteger( List,Name,Found,minv,maxv ) RESULT(L)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name
+     INTEGER :: L
+     LOGICAL, OPTIONAL :: Found
+     INTEGER, OPTIONAL :: minv,maxv
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+     L = 0
+     ptr => ListFind(List,Name,Found)
+     IF (.NOT.ASSOCIATED(ptr) ) RETURN
+
+     IF ( ptr % Procedure /= 0 ) THEN
+       L = ExecIntFunction( ptr % Procedure, CurrentModel )
+     ELSE
+       IF ( .NOT. ASSOCIATED(ptr % IValues) ) THEN
+         WRITE(Message,*) 'Value type for property [', TRIM(Name), &
+                 '] not used consistently.'
+         CALL Fatal( 'ListGetInteger', Message )
+         RETURN
+       END IF
+
+       L = ptr % IValues(1)
+     END IF
+
+     IF ( PRESENT( minv ) ) THEN
+        IF ( L < minv ) THEN
+           WRITE( Message, *) 'Given value ',L,' for property: ','[', TRIM(Name),']', &
+               ' smaller than given minimum: ', minv
+           CALL Fatal( 'ListGetInteger', Message )
+        END IF
+     END IF
+
+     IF ( PRESENT( maxv ) ) THEN
+        IF ( L > maxv ) THEN
+           WRITE( Message,*) 'Given value ',L,' for property: ','[', TRIM(Name),']', &
+               ' larger than given maximum: ', maxv
+           CALL Fatal( 'ListGetInteger', Message )
+        END IF
+     END IF
+   END FUNCTION ListGetInteger
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   RECURSIVE FUNCTION ListGetIntegerArray( List,Name,Found ) RESULT( IValues )
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*)  :: Name
+     LOGICAL, OPTIONAL :: Found
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+     INTEGER :: i,n
+     INTEGER, POINTER :: IValues(:)
+!------------------------------------------------------------------------------
+     NULLIFY( IValues )
+     ptr => ListFind(List,Name,Found)
+     IF ( .NOT.ASSOCIATED(ptr) ) RETURN
+
+     IF ( .NOT. ASSOCIATED(ptr % IValues) ) THEN
+       WRITE(Message,*) 'Value type for property [', TRIM(Name), &
+               '] not used consistently.'
+       CALL Fatal( 'ListGetIntegerArray', Message )
+       RETURN
+     END IF
+
+     n = SIZE(ptr % IValues)
+     IValues => Ptr % IValues(1:n)
+
+     IF ( ptr % Procedure /= 0 ) THEN
+       IValues = 0
+       DO i=1,N
+         Ivalues(i) = ExecIntFunction( ptr % Procedure,CurrentModel )
+       END DO
+     END IF
+   END FUNCTION ListGetIntegerArray
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   RECURSIVE FUNCTION ListGetLogical( List,Name,Found ) RESULT(L)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name
+     LOGICAL :: L
+     LOGICAL, OPTIONAL :: Found
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+     L = .FALSE.
+     ptr => ListFind(List,Name,Found)
+     IF ( .NOT.ASSOCIATED(ptr) ) RETURN
+     L = ptr % Lvalue
+!------------------------------------------------------------------------------
+   END FUNCTION ListGetLogical
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   RECURSIVE FUNCTION ListGetString( List,Name,Found ) RESULT(S)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name
+     LOGICAL, OPTIONAL :: Found
+     CHARACTER(LEN=MAX_NAME_LEN) :: S
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+     S = ' '
+     ptr => ListFind(List,Name,Found)
+     IF ( .NOT.ASSOCIATED(ptr) ) RETURN
+     S = ptr % Cvalue
+!------------------------------------------------------------------------------
+   END FUNCTION ListGetString
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   RECURSIVE FUNCTION ListGetConstReal( List,Name,Found,x,y,z,minv,maxv ) RESULT(F)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name
+     REAL(KIND=dp) :: F
+     LOGICAL, OPTIONAL :: Found
+     REAL(KIND=dp), OPTIONAL :: x,y,z
+     REAL(KIND=dp), OPTIONAL :: minv,maxv
+!------------------------------------------------------------------------------
+     TYPE(Variable_t), POINTER :: Variable
+     TYPE(ValueList_t), POINTER :: ptr
+     REAL(KIND=dp) :: xx,yy,zz
+     INTEGER :: i,j,k,n
+     CHARACTER(LEN=MAX_NAME_LEN) :: cmd,tmp_str
+!------------------------------------------------------------------------------
+     F = 0.0_dp
+     ptr => ListFind(List,Name,Found)
+     IF ( .NOT.ASSOCIATED(ptr) ) RETURN
+
+     IF ( Ptr % Type >= 8 ) THEN
+        cmd = ptr % CValue
+        k = LEN_TRIM( ptr % CValue )
+        CALL matc( cmd, tmp_str, k )
+        READ( tmp_str(1:k), * ) F
+     ELSE IF ( ptr % Procedure /= 0 ) THEN
+        xx = 0.0_dp
+        yy = 0.0_dp
+        zz = 0.0_dp
+        IF ( PRESENT(x) ) xx = x
+        IF ( PRESENT(y) ) yy = y
+        IF ( PRESENT(z) ) zz = z
+       F = ExecConstRealFunction( ptr % Procedure,CurrentModel,xx,yy,zz )
+     ELSE
+       IF ( .NOT. ASSOCIATED(ptr % FValues) ) THEN
+         WRITE(Message,*) 'Value type for property [', TRIM(Name), &
+                 '] not used consistently.'
+         CALL Fatal( 'ListGetConstReal', Message )
+       ELSE
+         F = ptr % Fvalues(1,1,1)
+       END IF
+     END IF
+
+     IF ( PRESENT( minv ) ) THEN
+        IF ( F < minv ) THEN
+           WRITE( Message, *) 'Given value ', F, ' for property: ', '[', TRIM(Name),']', &
+               ' smaller than given minimum: ', minv
+           CALL Fatal( 'ListGetInteger', Message )
+        END IF
+     END IF
+
+     IF ( PRESENT( maxv ) ) THEN
+        IF ( F > maxv ) THEN
+           WRITE( Message, *) 'Given value ', F, ' for property: ', '[', TRIM(Name),']', &
+               ' larger than given maximum: ', maxv
+           CALL Fatal( 'ListGetInteger', Message )
+        END IF
+     END IF
+   END FUNCTION ListGetConstReal
+!------------------------------------------------------------------------------
+
+!------------------------------------------------------------------------------
+  RECURSIVE FUNCTION ListGetCReal( List, Name, Found ) RESULT(s)
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name
+     LOGICAL, OPTIONAL :: Found
+     INTEGER, TARGET :: Dnodes(1)
+     INTEGER, POINTER :: NodeIndexes(:)
+
+     REAL(KIND=dp) :: s
+     REAL(KIND=dp) :: x(1)
+     TYPE(Element_t), POINTER :: Element
+
+     INTEGER :: n, istat
+
+     IF ( PRESENT( Found ) ) Found = .FALSE.
+
+     NodeIndexes => Dnodes
+     n = 1
+     NodeIndexes(n) = 1
+
+     x = 0.0_dp
+     IF ( ASSOCIATED(List) ) THEN
+        IF ( PRESENT( Found ) ) THEN
+           x(1:n) = ListGetReal( List, Name, n, NodeIndexes, Found )
+        ELSE
+           x(1:n) = ListGetReal( List, Name, n, NodeIndexes )
+        END IF
+     END IF
+     s = x(1)
+!------------------------------------------------------------------------------
+  END FUNCTION ListGetCReal
+!------------------------------------------------------------------------------
+
+
+#define MAX_FNC 32
+
+!------------------------------------------------------------------------------
+   RECURSIVE FUNCTION ListGetReal( List,Name,N,NodeIndexes,Found,minv,maxv ) RESULT(F)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*)  :: Name
+     INTEGER :: N,NodeIndexes(:)
+     REAL(KIND=dp)  :: F(N)
+     LOGICAL, OPTIONAL :: Found
+     REAL(KIND=dp), OPTIONAL :: minv,maxv
+!------------------------------------------------------------------------------
+     TYPE(Variable_t), POINTER :: Variable, CVar, TVar
+     TYPE(ValueList_t), POINTER :: ptr
+     REAL(KIND=dp) :: T(MAX_FNC)
+     INTEGER :: i,j,k,k1,l,l0,l1,lsize
+     CHARACTER(LEN=MAX_NAME_LEN) ::  cmd, tmp_str
+!------------------------------------------------------------------------------
+     F = 0.0_dp
+     ptr => ListFind(List,Name,Found)
+     IF ( .NOT.ASSOCIATED(ptr) ) RETURN
+
+     SELECT CASE(ptr % Type)
+     CASE( LIST_TYPE_CONSTANT_SCALAR )
+       IF ( ptr % Procedure /= 0 ) THEN
+         DO i=1,n
+           F(i) = ExecConstRealFunction( ptr % Procedure,CurrentModel, &
+                CurrentModel % Mesh % Nodes % x( NodeIndexes(i) ), &
+                CurrentModel % Mesh % Nodes % y( NodeIndexes(i) ), &
+                CurrentModel % Mesh % Nodes % z( NodeIndexes(i) ) )
+         END DO
+       ELSE
+         IF ( .NOT. ASSOCIATED(ptr % FValues) ) THEN
+           WRITE(Message,*) 'Value type for property [', TRIM(Name), &
+                   '] not used consistently.'
+           CALL Fatal( 'ListGetReal', Message )
+           RETURN
+         END IF
+         F = ptr % Fvalues(1,1,1)
+       END IF
+     
+     CASE( LIST_TYPE_VARIABLE_SCALAR )
+
+       DO i=1,n
+         k = NodeIndexes(i)
+
+         j=0
+         l0=1
+         lsize = Ptr % DepNameLen
+         DO WHILE( .TRUE. )
+           DO WHILE( Ptr % DependName(l0:l0) == ' ' )
+             l0 = l0 + 1
+           END DO
+           IF ( l0 > lsize ) EXIT
+
+           l1 = INDEX( ptr % DependName(l0:ptr % DepNameLen),',')
+           IF ( l1 > 0 ) THEN
+             l1=l0+l1-2
+           ELSE
+             l1=lsize
+           END IF
+
+           IF ( ptr % DependName(l0:l1) /= 'coordinate' ) THEN
+              Variable => VariableGet( CurrentModel % Variables,TRIM(ptr % DependName(l0:l1)) )
+              IF ( .NOT. ASSOCIATED( Variable ) ) THEN
+                 WRITE( Message, * ) 'Can''t find independent variable:[', &
+                     TRIM(ptr % DependName(l0:l1)),']' // &
+                      'for dependent variable:[', TRIM(Name),']'
+                 CALL Fatal( 'ListGetReal', Message )
+              END IF
+           ELSE
+              Variable => VariableGet( CurrentModel % Variables,'Coordinate 1' )
+           END IF
+
+           k1 = k
+           IF ( ASSOCIATED(Variable % Perm) ) k1 = Variable % Perm(k1)
+
+           IF ( k1>0 .AND. k1<=SIZE(Variable % Values) ) THEN
+             IF ( ptr % DependName(l0:l1) == 'coordinate' ) THEN
+               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 1' )
+               j = j + 1
+               T(1) = CVar % Values(k1)
+               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 2' )
+               j = j + 1
+               T(2) = CVar % Values(k1)
+               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 3' )
+               j = j + 1
+               T(3) = CVar % Values(k1)
+             ELSE
+               IF ( Variable % DOFs == 1 ) THEN
+                  j = j + 1
+                  T(j) = Variable % Values(k1)
+               ELSE
+                  DO l=1,Variable % DOFs
+                     j = j + 1
+                     T(j) = Variable % Values(Variable % DOFs*(k1-1)+l)
+                  END DO
+               END IF
+             END IF
+           ELSE
+             j = j + 1
+             IF ( ASSOCIATED(Variable % Perm) ) THEN
+                T(j) = HUGE(1.0_dp)
+                EXIT
+             ELSE
+                T(j) = Variable % Values(1)
+             END IF
+           END IF
+
+           l0 = l1+2
+           IF ( l0 > lsize ) EXIT
+         END DO
+
+         IF ( .NOT. ANY( T(1:j)==HUGE(1.0_dp) ) ) THEN
+           IF ( ptr % Procedure /= 0 ) THEN
+             F(i) = ExecRealFunction( ptr % Procedure,CurrentModel, &
+                          NodeIndexes(i), T )
+           ELSE
+             IF ( .NOT. ASSOCIATED(ptr % FValues) ) THEN
+               WRITE(Message,*) 'Value type for property [', TRIM(Name), &
+                       '] not used consistently.'
+               CALL Fatal( 'ListGetReal', Message )
+               RETURN
+             END IF
+             F(i) = InterpolateCurve( ptr % TValues,ptr % FValues(1,1,:),T(1) )
+           END IF
+         END IF
+       END DO
+
+
+     CASE( LIST_TYPE_CONSTANT_SCALAR_STR )
+         TVar => VariableGet( CurrentModel % Variables, 'Time' ) 
+         WRITE( cmd, '(a,e15.8)' ) 'st = ', TVar % Values(1)
+         k = LEN_TRIM(cmd)
+         CALL matc( cmd, tmp_str, k )
+
+         cmd = ptr % CValue
+         k = LEN_TRIM(cmd)
+         CALL matc( cmd, tmp_str, k )
+         READ( tmp_str(1:k), * ) F(1)
+         F(2:n) = F(1)
+
+     CASE( LIST_TYPE_VARIABLE_SCALAR_STR )
+       TVar => VariableGet( CurrentModel % Variables, 'Time' ) 
+       WRITE( cmd, * ) 'st = ', TVar % Values(1)
+       k = LEN_TRIM(cmd)
+       CALL matc( cmd, tmp_str, k )
+
+       DO i=1,n
+         k = NodeIndexes(i)
+
+         j=0
+         l0=1
+         lsize = Ptr % DepNamelen
+         DO WHILE( .TRUE. )
+           DO WHILE( Ptr % DependName(l0:l0) == ' ' )
+             l0 = l0 + 1
+           END DO
+           IF ( l0 > lsize ) EXIT
+
+           l1 = INDEX( ptr % DependName(l0:Ptr % DepNameLen),',')
+           IF ( l1 > 0 ) THEN
+             l1=l0+l1-2
+           ELSE
+             l1=lsize
+           END IF
+
+           IF ( ptr % DependName(l0:l1) /= 'coordinate' ) THEN
+              Variable => VariableGet( CurrentModel % Variables,ptr % DependName(l0:l1) )
+              IF ( .NOT. ASSOCIATED( Variable ) ) THEN
+                 WRITE( Message, * ) 'Can''t find independent variable:[', &
+                     TRIM(ptr % DependName(l0:l1)),']' // &
+                      'for dependent variable:[', TRIM(Name),']'
+                 CALL Fatal( 'ListGetReal', Message )
+              END IF
+           ELSE
+              Variable => VariableGet( CurrentModel % Variables,'Coordinate 1' )
+           END IF
+
+           k1 = k
+           IF ( ASSOCIATED(Variable % Perm) ) k1 = Variable % Perm(k1)
+
+           IF ( k1 > 0 .AND. SIZE(Variable % Values) >= k1 ) THEN
+              IF ( ptr % DependName(l0:l1) == 'coordinate' ) THEN
+                CVar => VariableGet( CurrentModel % Variables, 'Coordinate 1' )
+                j = j + 1
+                T(j) = CVar % Values(k1)
+                CVar => VariableGet( CurrentModel % Variables, 'Coordinate 2' )
+                j = j + 1
+                T(j) = CVar % Values(k1)
+                CVar => VariableGet( CurrentModel % Variables, 'Coordinate 3' )
+                j = j + 1
+                T(j) = CVar % Values(k1)
+              ELSE
+                IF ( Variable % DOFs == 1 ) THEN
+                  j = j + 1
+                  T(j) = Variable % Values(k1)
+                ELSE
+                  DO l=1,Variable % DOFs
+                   j = j + 1
+                     T(j) = Variable % Values(Variable % DOFs*(k1-1)+l)
+                  END DO
+                END IF
+              END IF
+           ELSE
+             j = j + 1
+             IF ( ASSOCIATED(Variable % Perm) ) THEN
+               T(j) = HUGE(1.0_dp)
+               EXIT
+             ELSE
+               T(j) = Variable % Values(1)
+             END IF
+           END IF
+           l0 = l1+2
+           IF ( l0 > lsize ) EXIT
+         END DO
+
+         IF ( .NOT. ANY( T(1:j)==HUGE(1.0_dp) ) ) THEN
+           DO l=1,j
+             WRITE( cmd, * ) 'tx(',l-1,') = ', T(l)
+             k1 = LEN_TRIM(cmd)
+             CALL matc( cmd, tmp_str, k1 )
+           END DO
+
+           cmd = ptr % CValue
+           k1 = LEN_TRIM(cmd)
+           CALL matc( cmd, tmp_str, k1 )
+           READ( tmp_str(1:k1), * ) F(i)
+         END IF
+       END DO
+     END SELECT
+
+     IF ( PRESENT( minv ) ) THEN
+        IF ( MINVAL(F(1:n)) < minv ) THEN
+           WRITE( Message,*) 'Given value ', MINVAL(F(1:n)), ' for property: ', '[', TRIM(Name),']', &
+               ' smaller than given minimum: ', minv
+           CALL Fatal( 'ListGetReal', Message )
+        END IF
+     END IF
+
+     IF ( PRESENT( maxv ) ) THEN
+        IF ( MAXVAL(F(1:n)) > maxv ) THEN
+           WRITE( Message,*) 'Given value ', MAXVAL(F(1:n)), ' for property: ', '[', TRIM(Name),']', &
+               ' larger than given maximum ', maxv
+           CALL Fatal( 'ListGetReal', Message )
+        END IF
+     END IF
+   END FUNCTION ListGetReal
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   RECURSIVE FUNCTION ListGetConstRealArray( List,Name,Found ) RESULT( F )
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name
+     LOGICAL, OPTIONAL :: Found
+!------------------------------------------------------------------------------
+     REAL(KIND=dp), POINTER  :: F(:,:)
+     INTEGER :: i,j,N1,N2
+     TYPE(ValueList_t), POINTER :: ptr
+!------------------------------------------------------------------------------
+     NULLIFY( F ) 
+     ptr => ListFind(List,Name,Found)
+     IF ( .NOT.ASSOCIATED(ptr) ) RETURN
+
+     IF ( .NOT. ASSOCIATED(ptr % FValues) ) THEN
+       WRITE(Message,*) 'Value type for property [', TRIM(Name), &
+               '] not used consistently.'
+       CALL Fatal( 'ListGetConstRealArray', Message )
+       RETURN
+     END IF
+
+     N1 = SIZE( ptr % FValues,1 )
+     N2 = SIZE( ptr % FValues,2 )
+
+     F => ptr % FValues(:,:,1)
+
+     IF ( ptr % Procedure /= 0 ) THEN
+       DO i=1,N1
+         DO j=1,N2
+           F(i,j) = ExecConstRealFunction( ptr % Procedure,CurrentModel,0.0d0,0.0d0,0.0d0 )
+         END DO
+       END DO
+     END IF
+   END FUNCTION ListGetConstRealArray
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   RECURSIVE SUBROUTINE ListGetRealArray( List,Name,F,N,NodeIndexes,Found )
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*) :: Name
+     LOGICAL, OPTIONAL :: Found
+     INTEGER :: N,NodeIndexes(:)
+     REAL(KIND=dp), POINTER :: F(:,:,:), G(:,:)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: ptr
+
+     TYPE(Variable_t), POINTER :: Variable, CVar
+
+     REAL(KIND=dp) :: T(MAX_FNC)
+     INTEGER :: i,j,k,nlen,N1,N2
+!------------------------------------------------------------------------------
+     ptr => ListFind(List,Name,Found)
+     IF ( .NOT.ASSOCIATED(ptr) ) RETURN
+
+     IF ( .NOT. ASSOCIATED(ptr % FValues) ) THEN
+       WRITE(Message,*) 'Value type for property [', TRIM(Name), &
+               '] not used consistently.'
+       CALL Fatal( 'ListGetRealArray', Message )
+       RETURN
+     END IF
+
+     N1 = SIZE(ptr % FValues,1)
+     N2 = SIZE(ptr % FValues,2)
+
+     IF ( .NOT.ASSOCIATED( F ) ) THEN
+       ALLOCATE( F(N1,N2,N) )
+     ELSE IF ( SIZE(F,1)/=N1.OR.SIZE(F,2)/=N2.OR.SIZE(F,3)/= N ) THEN
+       DEALLOCATE( F )
+       ALLOCATE( F(N1,N2,N) )
+     END IF
+
+     SELECT CASE(ptr % Type)
+     CASE ( LIST_TYPE_CONSTANT_TENSOR )
+       DO i=1,n
+         F(:,:,i) = ptr % FValues(:,:,1)
+       END DO
+
+       IF ( ptr % Procedure /= 0 ) THEN
+         DO i=1,N1
+           DO j=1,N2
+             F(i,j,1) = ExecConstRealFunction( ptr % Procedure, &
+                  CurrentModel, 0.0_dp, 0.0_dp, 0.0_dp )
+           END DO
+         END DO
+       END IF
+   
+     
+     CASE( LIST_TYPE_VARIABLE_TENSOR )
+       IF ( ptr % DependName /= 'coordinate' ) THEN
+          Variable => VariableGet( CurrentModel % Variables,ptr % DependName ) 
+          IF ( .NOT. ASSOCIATED( Variable ) ) THEN
+             WRITE( Message, * ) 'Can''t find independent variable:[', &
+                TRIM(ptr % DependName),']' // &
+                  'for dependent variable:[', TRIM(Name),']'
+             CALL Fatal( 'ListGetReal', Message )
+          END IF
+       ELSE
+          Variable => VariableGet( CurrentModel % Variables,'Coordinate 1' )
+       END IF
+
+       DO i=1,n
+         k = NodeIndexes(i)
+         IF ( ASSOCIATED(Variable % Perm) ) k = Variable % Perm( k )
+         IF ( k > 0 ) THEN
+           IF ( SIZE( Variable % Values ) >= k ) THEN
+
+             IF ( ptr % DependName == 'coordinate' ) THEN
+               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 1' )
+               T(1) = CVar % Values(k)
+               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 2' )
+               T(2) = CVar % Values(k)
+               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 3' )
+               T(3) = CVar % Values(k)
+             ELSE
+               IF ( Variable % DOFs == 1 ) THEN
+                  T = Variable % Values(k)
+               ELSE
+                  DO j=1,Variable % DOFs
+                     T(j) = Variable % Values(Variable % DOFs*(k-1)+j)
+                  END DO
+               END IF
+             END IF
+           ELSE
+             T(1) = Variable % Values(1)
+           END IF
+           IF ( ptr % Procedure /= 0 ) THEN
+             G => F(:,:,i)
+             CALL ExecRealArrayFunction( ptr % Procedure,CurrentModel, &
+                       NodeIndexes(i), T, G )
+           ELSE
+             DO j=1,N1
+               DO k=1,N2
+                 F(j,k,i) = InterpolateCurve(ptr % TValues, ptr % FValues(j,k,:),T(1))
+               END DO
+             END DO
+           END IF
+         END IF
+       END DO
+
+     CASE DEFAULT
+       F = 0.0d0
+       DO i=1,N1
+         IF ( PRESENT( Found ) ) THEN
+           F(i,1,:) = ListGetReal( List,Name,N,NodeIndexes,Found )
+         ELSE
+           F(i,1,:) = ListGetReal( List,Name,N,NodeIndexes )
+         END IF
+       END DO
+     END SELECT
+!------------------------------------------------------------------------------
+   END SUBROUTINE ListGetRealArray
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   RECURSIVE FUNCTION ListGetDerivValue(List,Name,N,NodeIndexes) RESULT(F)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER ::  List
+     CHARACTER(LEN=*) :: Name
+     INTEGER :: N,NodeIndexes(:)
+     REAL(KIND=dp) :: F(N)
+!------------------------------------------------------------------------------
+     TYPE(Variable_t), POINTER :: Variable
+     TYPE(ValueList_t), POINTER :: ptr
+     INTEGER :: i,k,l
+     REAL(KIND=dp) :: T
+!------------------------------------------------------------------------------
+     F = 0.0D0
+     ptr => ListFind(List,Name)
+     IF ( .NOT.ASSOCIATED(ptr) ) RETURN
+
+     IF ( .NOT. ASSOCIATED(ptr % FValues) ) THEN
+       WRITE(Message,*) 'Value type for property [', TRIM(Name), &
+               '] not used consistently.'
+       CALL Fatal( 'ListGetRealArray', Message )
+       RETURN
+     END IF
+
+     SELECT CASE(ptr % Type)
+       CASE( LIST_TYPE_VARIABLE_SCALAR )
+         Variable => VariableGet( CurrentModel % Variables,ptr % DependName ) 
+         DO i=1,n
+           k = NodeIndexes(i)
+           IF ( ASSOCIATED(Variable % Perm) ) k = Variable % Perm(K)
+           IF ( k > 0 ) THEN
+             T = Variable % Values(k)
+             F(i) = DerivateCurve(ptr % TValues,ptr % FValues(1,1,:),T)
+           END IF
+         END DO
+     END SELECT
+
+   END FUNCTION ListGetDerivValue
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+! Given the body of a keyword find the 1st free keyword in the list structure.
+! The intended use for this is in Solver_init to decleare exported variables
+! without the risk of running over some existing ones. 
+!------------------------------------------------------------------------------
+
+  FUNCTION NextFreeKeyword(keyword0,List) RESULT (Keyword)
+
+    CHARACTER(LEN=*) :: Keyword0
+    TYPE(ValueList_t), POINTER  :: List
+    CHARACTER(LEN=MAX_NAME_LEN) :: Keyword
+    INTEGER :: No
+    
+    DO No = 1, 9999
+      IF( No < 10) THEN
+        WRITE( Keyword,'(A,I2)') TRIM(Keyword0),No
+      ELSE IF( No < 100) THEN
+        WRITE( Keyword,'(A,I3)') TRIM(Keyword0),No
+      ELSE IF( No < 1000) THEN
+        WRITE( Keyword,'(A,I4)') TRIM(Keyword0),No
+      ELSE IF( No < 10000) THEN
+        WRITE( Keyword,'(A,I5)') TRIM(Keyword0),No
+      END IF
+      IF( .NOT. ListCheckPresent(List,Keyword)) EXIT
+    END DO
+
+!------------------------------------------------------------------------------
+  END FUNCTION NextFreeKeyword
+!------------------------------------------------------------------------------
+
+
+END MODULE Lists
