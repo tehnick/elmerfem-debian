@@ -56,8 +56,12 @@ clean:
 	    make -C $$elmermodule maintainer-clean; \
 	  fi; \
 	done
-	make -C ElmerGUI clean
-	make -C ElmerGUIlogger clean
+	if [ -e ElmerGUI/Makefile ]; then \
+	  make -C ElmerGUI clean; \
+	fi
+	if [ -e ElmerGUIlogger/Makefile ]; then \
+	  make -C ElmerGUIlogger clean; \
+	fi
 	for missingfile in $(MISSING_FILES); do rm -f $$missingfile; done
 	for backupfile in $(BACKUP_FILES); do \
 	  mv -f $$backupfile.bak $$backupfile; \
