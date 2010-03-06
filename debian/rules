@@ -82,7 +82,7 @@ stamp-build:
 	done
 	mkdir elmergrid/src/metis
 	for missingfile in $(MISSING_FILES); do touch $$missingfile; done
-	for aclocaldir in eio matc elmerparam hutiter meshgen2d fem front elmergid post; do \
+	for aclocaldir in eio matc elmerparam hutiter meshgen2d fem front elmergrid post; do \
 	  (cd $$aclocaldir && aclocal && automake --add-missing); \
 	done
 	for elmermodule in $(ELMER_MODULES); do \
