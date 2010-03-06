@@ -70,6 +70,8 @@ clean:
 	  fi; \
 	done
 	rm -rf elmergrid/src/metis post/src/fonts/TrueType
+	rm -rf ElmerGUI/PythonQt/lib ElmerGUI/matc/lib ElmerGUI/netgen/ngcore \
+	  ElmerGUIlogger/ElmerGUIlogger.pro
 	rm -f stamp-*
 	dh_clean
 

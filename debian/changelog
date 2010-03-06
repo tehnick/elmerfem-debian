@@ -6,7 +6,7 @@ elmerfem (5.5.0.svn.4388.dfsg-1) unstable; urgency=low
   * Made clean target really work.
   * Bumped Standards-Version.
 
- -- Adam C. Powell, IV <hazelsct@debian.org>  Sat, 06 Mar 2010 17:33:16 -0500
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Sat, 06 Mar 2010 17:54:49 -0500
 
 elmerfem (5.5.0.svn.4298.dfsg-1) unstable; urgency=low
 
