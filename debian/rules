@@ -40,27 +40,28 @@ BACKUP_FILES = eio/Makefile.in eio/configure eio/include/Makefile.in \
   post/src/tcl/Makefile.in post/src/tk/Makefile.in post/src/visuals/Makefile.in
 
 MISSING_FILES = eio/NEWS eio/README eio/AUTHORS eio/ChangeLog \
-  matc/NEWS matc/README matc/AUTHORS matc/ChangeLog \
+  matc/NEWS matc/README matc/AUTHORS matc/ChangeLog matc/COPYING \
   meshgen2d/NEWS meshgen2d/README meshgen2d/AUTHORS meshgen2d/ChangeLog \
-  fem/NEWS fem/AUTHORS fem/ChangeLog \
-  front/NEWS front/README front/AUTHORS \
+  meshgen2d/COPYING meshgen2d/INSTALL \
+  fem/NEWS fem/AUTHORS fem/ChangeLog fem/COPYING fem/INSTALL \
+  front/NEWS front/README front/AUTHORS front/COPYING front/INSTALL \
   elmergrid/NEWS elmergrid/README elmergrid/AUTHORS elmergrid/ChangeLog \
-  elmergrid/src/metis/Makefile.am \
-  post/NEWS post/AUTHORS post/ChangeLog
+  elmergrid/COPYING elmergrid/INSTALL elmergrid/src/metis/Makefile.am \
+  post/NEWS post/AUTHORS post/ChangeLog post/COPYING post/INSTALL
 
 clean:
 	dh_testdir
-	for elmermodule in $(ELMER_MODULES) ElmerGUI ElmerGUIlogger; do \
+	for elmermodule in $(ELMER_MODULES); do \
 	  if [ -e $$elmermodule/Makefile ]; then \
 	    echo; echo CLEANING ELMER MODULE $$elmermodule; echo; \
 	    make -C $$elmermodule maintainer-clean; \
 	  fi; \
 	done
 	if [ -e ElmerGUI/Makefile ]; then \
-	  make -C ElmerGUI clean; \
+	  make -C ElmerGUI distclean; \
 	fi
 	if [ -e ElmerGUIlogger/Makefile ]; then \
-	  make -C ElmerGUIlogger clean; \
+	  make -C ElmerGUIlogger distclean; \
 	fi
 	for missingfile in $(MISSING_FILES); do rm -f $$missingfile; done
 	for backupfile in $(BACKUP_FILES); do \
@@ -78,13 +79,14 @@ build: stamp-build
 stamp-build:
 	dh_testdir
 	for backupfile in $(BACKUP_FILES); do \
-	  mv $$backupfile $$backupfile.bak; \
+	  cp $$backupfile $$backupfile.bak; \
 	done
 	mkdir elmergrid/src/metis
 	mkdir post/src/fonts/TrueType
 	for missingfile in $(MISSING_FILES); do touch $$missingfile; done
 	for aclocaldir in eio matc elmerparam hutiter meshgen2d fem front elmergrid post; do \
-	  (cd $$aclocaldir && aclocal && automake --add-missing); \
+	  echo Running aclocal in module $$aclocaldir; \
+	  (cd $$aclocaldir && aclocal && automake); \
 	done
 	for elmermodule in $(ELMER_MODULES); do \
 	  echo; echo CONFIGURING ELMER MODULE $$elmermodule; echo; \
