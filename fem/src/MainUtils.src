@@ -804,6 +804,7 @@ CONTAINS
       
       VariableOutput = .TRUE.
       VariableGlobal = .FALSE.
+
       DO WHILE( var_name(1:1) == '-' )
         IF ( var_name(1:10) == '-nooutput ' ) THEN
           VariableOutput = .FALSE.
@@ -979,6 +980,7 @@ CONTAINS
                 tmpname, 1, Component, Perm, Output=VariableOutput )
           END DO
         END IF
+        NULLIFY( Solution )
       END IF
     END IF
 
@@ -997,6 +999,7 @@ CONTAINS
           CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver,&
               var_name, 1, Solution, &
               Solver % Variable % Perm, Output=VariableOutput )
+          NULLIFY( Solution )
         END IF
       END IF
     END IF
@@ -1070,7 +1073,7 @@ CONTAINS
                 Solver % Variable % PrevValues(k::Solver % Variable % DOFs,:)
           ELSE
             DO k=1,Solver % Variable % DOFs
-              str = ComponentName( Solver % Variable % Name, k )
+              str = ComponentName( Solver % Variable % Name, k ) 
               Var => VariableGet( Solver % Mesh % Variables, str, .TRUE. )
               Var % PrevValues =>  &
                   Solver % Variable % PrevValues(k::Solver % Variable % DOFs,:)
@@ -1078,6 +1081,59 @@ CONTAINS
           END IF
         END IF
       END IF
+
+
+      IF( ListGetLogical( Solver % Values,'Calculate Velocity',Found) ) THEN
+        IF ( Solver % TimeOrder == 1 ) THEN
+          ALLOCATE( Solution( SIZE( Solver % Variable % Values) ) )
+          Solution = 0.0_dp
+          str = TRIM( Solver % Variable % Name ) // ' Velocity'
+          CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+              str, Solver % Variable % Dofs, Solution, Solver % Variable % Perm )
+          
+          DO k=1,Solver % Variable % DOFs
+            Component => Solution(k::Solver % Variable % DOFs )
+            str = ComponentName( Solver % Variable % Name) // ' Velocity ' // CHAR(i+ICHAR('0'))
+            CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+                str, 1, Component, Solver % Variable % Perm )
+          END DO
+          NULLIFY( Solution )
+        ELSE IF ( Solver % TimeOrder >= 2 ) THEN
+          Component => Solver % Variable % PrevValues(:,1)
+          str = TRIM( Solver % Variable % Name ) // ' Velocity'
+          CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+              str, Solver % Variable % Dofs, Component, Solver % Variable % Perm, &
+              Secondary = .TRUE. )
+          
+          DO k=1,Solver % Variable % DOFs
+            Component => Solver % Variable % PrevValues(k::Solver % Variable % DOFs,1)          
+            str = ComponentName( Solver % Variable % Name) // ' Velocity ' // CHAR(i+ICHAR('0'))
+            CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+                str, 1, Component, Solver % Variable % Perm, Secondary = .TRUE. )
+          END DO
+        END IF
+      END IF
+
+      IF( ListGetLogical( Solver % Values,'Calculate Acceleration',Found) ) THEN
+        IF ( Solver % TimeOrder == 1 ) THEN
+          CALL Warn('AddEquationSolution',&
+              'No velocity computation implemented for 1st order time integration')
+        ELSE IF ( Solver % TimeOrder >= 2 ) THEN
+          Component => Solver % Variable % PrevValues(:,2)
+          str = TRIM( Solver % Variable % Name ) // ' Acceleration'
+          CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+              str, Solver % Variable % Dofs, Component, Solver % Variable % Perm, &
+              Secondary = .TRUE. )
+          
+          DO k=1,Solver % Variable % DOFs
+            Component => Solver % Variable % PrevValues(k::Solver % Variable % DOFs,2)          
+            str = ComponentName( Solver % Variable % Name) // ' Acceleration ' // CHAR(i+ICHAR('0'))
+            CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+                str, 1, Component, Solver % Variable % Perm, Secondary = .TRUE. )
+          END DO
+        END IF
+      END IF
+
     ELSE
       Solver % TimeOrder = 0
       IF ( EigAnal ) THEN
@@ -1142,6 +1198,7 @@ CONTAINS
         END IF
       END IF
     END IF
+
 
 !------------------------------------------------------------------------------
 
@@ -1468,27 +1525,54 @@ CONTAINS
 !         check for coupled system convergence
 !------------------------------------------------------------------------------
 
-          IF ( i >= CoupledMinIter .OR. .NOT. TransientSimulation ) THEN
-             IF ( i /= CoupledMaxIter .OR. .NOT. TransientSimulation ) THEN
+           IF ( Scanning ) THEN
 
-               IF ( ParEnv % PEs>1 ) THEN
-                 IF ( ParEnv % Active(ParEnv % MyPE+1) ) &
-                   CALL ComputeChange(Solver,.TRUE., n)
-               ELSE
-                 CALL ComputeChange(Solver,.TRUE.)
-!                 CALL ComputeChange(Solver,.TRUE.,n)
-               END IF
-               RelativeChange = Solver % Variable % SteadyChange
-               Tolerance = ListGetConstReal( Solver % Values,   &
-                   'Steady State Convergence Tolerance', Found ) 
+              IF ( i >= CoupledMinIter ) THEN
+                 IF ( i /= CoupledMaxIter ) THEN
 
-               IF ( Found ) THEN
-                 DoneThis(k) = (RelativeChange < Tolerance)
-               ELSE
-                 DoneThis(k) = .TRUE.
-               END IF
-             END IF
-          END IF 
+                    IF ( ParEnv % PEs>1 ) THEN
+                       IF ( ParEnv % Active(ParEnv % MyPE+1) ) &
+                            CALL ComputeChange(Solver,.TRUE., n)
+                    ELSE
+                       CALL ComputeChange(Solver,.TRUE.)
+                       !                 CALL ComputeChange(Solver,.TRUE.,n)
+                    END IF
+                    RelativeChange = Solver % Variable % SteadyChange
+                    Tolerance = ListGetConstReal( Solver % Values,   &
+                         'Steady State Convergence Tolerance', Found ) 
+                    
+                    IF ( Found ) THEN
+                       DoneThis(k) = (RelativeChange < Tolerance)
+                    ELSE
+                       DoneThis(k) = .TRUE.
+                    END IF
+                 END IF
+              END IF
+	
+           ELSE
+
+              IF ( i >= CoupledMinIter .OR. .NOT. TransientSimulation ) THEN
+                 IF ( i /= CoupledMaxIter .OR. .NOT. TransientSimulation ) THEN
+
+                    IF ( ParEnv % PEs>1 ) THEN
+                       IF ( ParEnv % Active(ParEnv % MyPE+1) ) &
+                            CALL ComputeChange(Solver,.TRUE., n)
+                    ELSE
+                       CALL ComputeChange(Solver,.TRUE.)
+                       !                 CALL ComputeChange(Solver,.TRUE.,n)
+                    END IF
+                    RelativeChange = Solver % Variable % SteadyChange
+                    Tolerance = ListGetConstReal( Solver % Values,   &
+                         'Steady State Convergence Tolerance', Found ) 
+
+                    IF ( Found ) THEN
+                       DoneThis(k) = (RelativeChange < Tolerance)
+                    ELSE
+                       DoneThis(k) = .TRUE.
+                    END IF
+                 END IF
+              END IF
+           END IF
 
           CALL ParallelAllReduceAnd( DoneThis(k) )
           IF( ALL(DoneThis) ) EXIT
@@ -2384,7 +2468,7 @@ CONTAINS
         END IF
         
         WRITE (str,'(A,I2,A)') 'Constraint',RowVar,' Components'
-        TargetDof = ListGetInteger( Solver % Values, TRIM(str) )
+        TargetDof = ListGetInteger( Solver % Values, TRIM(str), GotIt )
       
         WRITE (str,'(A,I2,A)') 'Constraint',RowVar,' Value'
         ConsValue = GetCReal(Solver % Values,TRIM(str), GotIt)
@@ -2626,7 +2710,6 @@ END SUBROUTINE CoupledSolver
      INTEGER :: comm_active, group_active, group_world, ierr
 
 !------------------------------------------------------------------------------
-
      IF ( Solver % Mesh % Changed .OR. Solver % NumberOfActiveElements <= 0 ) THEN
        Solver % NumberOFActiveElements = 0
        EquationName = ListGetString( Solver % Values, 'Equation', Found)
@@ -2646,9 +2729,8 @@ END SUBROUTINE CoupledSolver
              END IF
           END DO
           CALL ListAddInteger( Solver % Values, 'Active Mesh Dimension', Maxdim )
+          IF (ASSOCIATED(Solver % Variable)) CALL CalculateNodalWeights(Solver)
        END IF
-
-       CALL CalculateNodalWeights(Solver)
      END IF
 !------------------------------------------------------------------------------
 
@@ -2701,16 +2783,25 @@ END SUBROUTINE CoupledSolver
          END DO
        END IF
      END IF
-     IF ( ASSOCIATED(Solver % MAtrix) ) &
+     IF ( ASSOCIATED(Solver % Matrix) ) THEN
        ParEnv % ActiveComm = Solver % Matrix % Comm
+       IF ( ParEnv % PEs>1 .AND. MeActive ) THEN
+         IF (.NOT. ASSOCIATED(Solver % Matrix % ParMatrix) ) &
+           CALL ParallelInitMatrix(Solver, Solver % Matrix )
+
+         Solver % Matrix % ParMatrix % ParEnv % ActiveComm = &
+                  Solver % Matrix % Comm
+         ParEnv = Solver % Matrix % ParMatrix % ParEnv
+       END IF
+     END IF
      str = ListGetString( Solver  % Values,'Procedure', Found )
 
 #ifdef SGIn32
-      SolverAddr = Solver % PROCEDURE
-      CALL ExecSolver( SolverAddr, Model, Solver, dt, TransientSimulation)
+     SolverAddr = Solver % PROCEDURE
+     CALL ExecSolver( SolverAddr, Model, Solver, dt, TransientSimulation)
 #else
-      CALL ExecSolver( Solver % PROCEDURE, &
-          Model, Solver, dt, TransientSimulation)
+     CALL ExecSolver( Solver % PROCEDURE, &
+         Model, Solver, dt, TransientSimulation)
 #endif
 
 !------------------------------------------------------------------------------
@@ -2723,7 +2814,7 @@ END SUBROUTINE CoupledSolver
 !------------------------------------------------------------------------------
      TYPE(Model_t)  :: Model
      TYPE(Solver_t),POINTER :: Solver
-     LOGICAL :: TransientSimulation
+     LOGICAL :: TransientSimulation, UpdateExported
      REAL(KIND=dp) :: dt, OrigDT, DTScal
 !------------------------------------------------------------------------------
      LOGICAL :: stat, Found, IsCoupledSolver, IsAssemblySolver
@@ -2756,15 +2847,20 @@ END SUBROUTINE CoupledSolver
 
 !------------------------------------------------------------------------------
      Solver % Mesh % OutputActive = .TRUE.
-     DTScal = ListGetConstReal( Solver % Values, "Timestep Scale", Found )
-     IF ( .NOT. Found ) DTScal = 1.0_dp
-     Solver % dt = DtScal * dt 
 
-     iterV => VariableGet( Solver % Mesh % Variables, 'nonlin iter' )
-     iterV % Values(1) = 1
+     ! This is to avoid resetting of certain info that could be interesting
+     ! when saving data.
+     IF(.NOT. ListGetLogical( Solver % Values,'Auxiliary Solver',Found)) THEN
+       DTScal = ListGetConstReal( Solver % Values, "Timestep Scale", Found )
+       IF ( .NOT. Found ) DTScal = 1.0_dp
+       Solver % dt = DtScal * dt 
 
-     str = ListGetString( Solver % Values, 'Namespace', Found )
-     IF (Found) CALL ListSetNamespace(TRIM(str))
+       iterV => VariableGet( Solver % Mesh % Variables, 'nonlin iter' )
+       iterV % Values(1) = 1
+
+       str = ListGetString( Solver % Values, 'Namespace', Found )
+       IF (Found) CALL ListSetNamespace(TRIM(str))
+     END IF
 
      IF( IsAssemblySolver ) THEN
        CALL CoupledSolver( Model, Solver, DTScal * dt, TransientSimulation )       
@@ -2780,4 +2876,3 @@ END SUBROUTINE CoupledSolver
 !------------------------------------------------------------------------------
 
 END MODULE MainUtils
-

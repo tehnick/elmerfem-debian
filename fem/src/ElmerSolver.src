@@ -62,7 +62,6 @@
                                steadyIt(:),nonlinIt(:),sPrevSizes(:,:)
 
      TYPE(Element_t),POINTER :: CurrentElement
-     REAL(KIND=dp), POINTER ::  TimeVariable(:)
 
      LOGICAL :: GotIt,Transient,Scanning,LastSaved
 
@@ -93,7 +92,7 @@
      REAL(KIND=dp) :: RealTime,tt
 
      REAL(KIND=dp) :: CumTime, ddt, MaxErr, AdaptiveLimit, &
-           AdaptiveMinTimestep, AdaptiveMaxTimestep
+           AdaptiveMinTimestep, AdaptiveMaxTimestep, StartTime
      INTEGER :: SmallestCount, AdaptiveKeepSmallest, StepControl=-1
      LOGICAL :: AdaptiveTime = .TRUE., FirstLoad = .TRUE., FirstTime=.TRUE.
      REAL(KIND=dp), POINTER :: xx(:,:), xxnrm(:), yynrm(:), PrevXX(:,:,:)
@@ -414,10 +413,8 @@
             IF( ExecThis ) CALL SolverActivate( CurrentModel,Solver,dt,Transient )
          END DO
 
-         IF ( CurrentModel % Meshes % SavesDone == 0 ) THEN
-           CALL SaveToPost( 0 )
-         END IF
-         CALL SaveCurrent( Timestep )
+         CALL SaveToPost(0)
+         CALL SaveCurrent(Timestep)
 
          DO i=1,CurrentModel % NumberOfSolvers
             Solver => CurrentModel % Solvers(i)
@@ -859,8 +856,18 @@
 
          CALL SetCurrentMesh( CurrentModel, Mesh )
          CALL LoadRestartFile( OutputName,k,Mesh )
+
+         StartTime = ListGetConstReal( CurrentModel % Simulation,'Restart Time',GotIt)
+         IF( GotIt ) THEN
+	   Var  => VariableGet( Mesh % Variables, 'Time' )
+           IF ( ASSOCIATED( Var ) )  Var % Values(1)  = StartTime
+         END IF
+
          Mesh => Mesh % Next
+
        END DO
+
+
      END IF
 !------------------------------------------------------------------------------
    END SUBROUTINE Restart
@@ -1120,10 +1127,7 @@
          LastSaved = .FALSE.
          IF( OutputIntervals(Interval) /= 0 ) THEN
 
-           IF ( CurrentModel % Meshes % SavesDone == 0 ) THEN
-             CALL SaveToPost( 0 )
-           END IF
-
+           CALL SaveToPost(0)
            k = MOD( Timestep-1, OutputIntervals(Interval) )
            IF ( k == 0 .OR. SteadyStateReached ) THEN
             
@@ -1136,7 +1140,7 @@
                IF( ExecThis ) CALL SolverActivate( CurrentModel,Solver,dt,Transient )
              END DO 
 
-             CALL SaveCurrent( Timestep )
+             CALL SaveCurrent(Timestep)
              LastSaved = .TRUE.
 
              DO i=1,CurrentModel % NumberOfSolvers
@@ -1299,13 +1303,13 @@
          Mesh => Mesh % Next
       END DO
     END IF
-    CALL SaveToPost( CurrentStep )
+    CALL SaveToPost(CurrentStep)
 !------------------------------------------------------------------------------
   END SUBROUTINE SaveCurrent
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-  SUBROUTINE SaveToPost( CurrentStep ) 
+  SUBROUTINE SaveToPost(CurrentStep)
 !------------------------------------------------------------------------------
 !    Convert results file to post processing file, if requested
 !------------------------------------------------------------------------------
@@ -1339,6 +1343,10 @@
        
        Mesh => CurrentModel % Meshes
        DO WHILE( ASSOCIATED( Mesh ) )
+          IF ( CurrentStep==0 .AND. Mesh % SavesDone>0) THEN
+            Mesh => Mesh % Next; CYCLE
+          END IF
+
           IF ( Mesh % OutputActive ) THEN
              nlen = LEN_TRIM(Mesh % Name)
              IF ( nlen  > 0 )  THEN

@@ -20,7 +20,7 @@ Simulation
   Simulation Type = Steady State
   Steady State Min Iterations = 3
   Steady State Max Iterations = 3
-  Output Intervals = 1
+  Output Intervals = 0
 
 !  Post File   = "data.ep"
 !  Output File = "data.result"
@@ -103,7 +103,8 @@ End
 Solver 3
   Variable = PhaseSurface
   Equation = "Phase Surface"
-  Procedure = "PhaseChangeSolve" "PhaseChangeSolve"
+!  Procedure = "PhaseChangeSolve" "PhaseChangeSolve"
+  Procedure = "SteadyPhaseChange" "SteadyPhaseChange"
 
   Nonlinear System Relaxation Factor = 1.0
   Nonlinear System Newton After Iterations = 10
@@ -123,7 +124,7 @@ End
 Solver 5
   Exec Solver = never
   Equation = String SaveScalars
-  Procedure = File "./SaveData" "SaveScalars"
+  Procedure = File "SaveData" "SaveScalars"
   Filename = File "fs.dat"
 
   Variable 1 = String PhaseSurface
@@ -192,7 +193,7 @@ Boundary Condition 1
   Phase Change = Logical True
 
   Heat Flux = Variable Coordinate 1
-    Real Procedure "./PhaseChangeSolve" "MeltingHeat"
+    Real Procedure "SteadyPhaseChange" "MeltingHeat"
  
   Mesh Update 1 = 0
   Mesh Update 2 = Equals PhaseSurface

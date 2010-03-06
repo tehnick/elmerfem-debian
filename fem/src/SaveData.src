@@ -83,12 +83,14 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
   LOGICAL :: SubroutineVisited=.FALSE.,MovingMesh, GotCoeff, &
       GotIt, GotOper, GotVar, ExactCoordinates, VariablesExist, &
       ComplexEigen, Parallel, LiveGraph, FileAppend, SaveEigenValue, &
-      SaveEigenFreq, CheckNorm
+      SaveEigenFreq, CheckNorm, IsInteger
+  LOGICAL, POINTER :: ValuesInteger(:)
 
   REAL (KIND=DP) :: Minimum, Maximum, AbsMinimum, AbsMaximum, &
       Mean, Variance, Dist, x, y, z, Deviation, Vol, Intmean, intvar, &
       KineticEnergy, PotentialEnergy, FieldEnergy, & 
-      IntSquare, LocalCoords(3), TempCoordinates(3), Value
+      IntSquare, LocalCoords(3), TempCoordinates(3), Value, &
+      Change, Norm = 0.0_dp, PrevNorm
   REAL (KIND=DP), ALLOCATABLE :: Values(:), CoordinateDist(:), &
       CoordinatesBasis(:,:), ElementValues(:), BoundaryFluxes(:),BoundaryAreas(:)
   REAL (KIND=DP), POINTER :: PointCoordinates(:,:), LineCoordinates(:,:)
@@ -100,17 +102,17 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
       VariableName, ResultPrefix, Oper, Name, CoefficientName, ScalarParFile
   INTEGER :: i,j,k,l,q,n,No,NoPoints,NoCoordinates,NoLines,NumberOfVars,&
       NoDims, NoDofs, NoOper, NoElements, NoVar, NoValues, PrevNoValues=0, DIM, &
-      MaxVars, NoEigenValues, Ind, EigenDofs
+      MaxVars, NoEigenValues, Ind, EigenDofs, LineInd, NormInd
   REAL (KIND=DP) :: CPUTime, CPUMemory
 
   SAVE SubroutineVisited, NumberOfVars, &
       NoPoints, PointIndex, CoordinateIndex, CoordinateDist, ResultPrefix, &
-      Values, ValueNames, NoCoordinates, ScalarsFile, ScalarNamesFile, &
+      Values, ValueNames, ValuesInteger, NoCoordinates, ScalarsFile, ScalarNamesFile, &
       ExactCoordinates, CoordinatesElemNo, NoElements, ElementNodes, &
       ElementValues, CoordinatesBasis, PointCoordinates, NoDims, &
       BoundaryFluxes, BoundaryAreas, BoundaryHits, VariablesExist, NoLines, &
       LineCoordinates, ScalarParFile, Parallel, ParSolver, PrevNoValues, &
-      LiveGraph, CheckNorm
+      LiveGraph, CheckNorm, Norm
 
 !------------------------------------------------------------------------------
 
@@ -128,7 +130,7 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
     
     FileAppend = ListGetLogical( Solver % Values,'File Append',GotIt)
 
-    CheckNorm = ListGetLogical( Solver % Values,'Check norm',GotIt )
+    CheckNorm = ListGetLogical( Solver % Values,'Show norm',GotIt )
 
     ScalarsFile = ListGetString(Solver % Values,'Filename',GotIt )
     IF(.NOT. GotIt) ScalarsFile = DefaultScalarsFile
@@ -380,8 +382,13 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
     
     IF(SIZE(Var % Values) == Var % Dofs) THEN
       IF(.NOT. GotVar) CYCLE
+      IsInteger = .FALSE.
+      IF( VariableName == 'nonlin iter' ) IsInteger = .TRUE.
+      IF( VariableName == 'coupled iter' ) IsInteger = .TRUE.
+
       IF( Var % Dofs == 1 ) THEN
-        CALL AddToSaveList('value: '//TRIM(VariableName)//' scalar variable', Var % Values(1))
+        CALL AddToSaveList('value: '//TRIM(VariableName)//' scalar variable', &
+                            Var % Values(1), IsInteger )
       ELSE
         DO j=1,Var % DOfs
           CALL AddToSaveList('value: '//ComponentName(VariableName,j)//' scalar variable', Var % Values(j))          
@@ -415,7 +422,7 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
         Value = Var % Norm
         CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value)
 
-      CASE ('nonlinear change')
+      CASE ('nonlin change')
         Value = Var % NonlinChange
         CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value)
 
@@ -423,7 +430,31 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
         Value = Var % SteadyChange
         CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value)
 
-      CASE ('dofs','sum','max','min','max abs','min abs','mean','variance') 
+      CASE ('nonlin iter')
+        Value = Var % NonlinIter
+        CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value,.TRUE.)
+
+      CASE ('nonlin converged')
+        Value = 1.0_dp * Var % NonlinConverged
+        CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value,.TRUE.)
+
+      CASE ('steady converged')
+        Value = 1.0_dp * Var % SteadyConverged
+        CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value,.TRUE.)
+
+      CASE ('nodes')
+        Value = 1.0_dp * Solver % Mesh % NumberOfNodes
+        CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value,.TRUE.)
+
+      CASE ('elements')
+        Value = 1.0_dp * Solver % Mesh % NumberOfBulkElements
+        CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value,.TRUE.)
+
+      CASE ('dofs')
+        Value = 1.0_dp * SIZE(Var % Values)
+        CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value,.TRUE.)
+
+      CASE ('sum','max','min','max abs','min abs','mean','variance') 
         Value = VectorStatistics(Var,Oper)
         CALL AddToSaveList(TRIM(Oper)//': '//TRIM(VariableName),Value)
         
@@ -644,8 +675,9 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
   !------------------------------------------------------------------------------
   ! Finally save all the scalars into a file 
   !------------------------------------------------------------------------------
+   LineInd = ListGetInteger( Solver % Values,'Line Marker',GotIt)
 
-  IF(NoValues /= PrevNoValues) THEN 
+   IF(NoValues /= PrevNoValues) THEN 
     IF(SubroutineVisited) THEN
       WRITE ( Message,'(A,I2,I2)') 'Number of scalar values differ from previous time:',&
           NoValues,PrevNoValues
@@ -664,8 +696,14 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
     DateStr = FormatDate()
     WRITE( 10,'(A,A)') 'File started at: ',TRIM(DateStr)
     WRITE(10,*) 'Variables in columns of matrix: '//TRIM(ScalarsFile)
+    IF( LineInd /= 0 ) THEN
+      i = 1
+      WRITE(10,'(I4,": ",A)') 1,'Line Marker'
+    ELSE
+      i = 0
+    END IF 	
     DO No=1,NoValues 
-      WRITE(10,'(I4,": ",A)') No,TRIM(ValueNames(No))
+      WRITE(10,'(I4,": ",A)') No+i,TRIM(ValueNames(No))
     END DO
     CLOSE(10)
   END IF
@@ -705,12 +743,38 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
   END IF
 
   IF(NoValues > 0) THEN
+    ! If there are multiple lines it may be a good idea to mark each by an index
+    IF( LineInd /= 0) THEN
+      WRITE (10,'(I6)',advance='no') LineInd
+    END IF
     DO No=1,NoValues-1
-      WRITE (10,'(ES22.12E3)',advance='no') Values(No)
+      IF( ValuesInteger(No) ) THEN
+        WRITE (10,'(I10)',advance='no') NINT(Values(No))
+      ELSE
+        WRITE (10,'(ES22.12E3)',advance='no') Values(No)
+      END IF
     END DO
-    WRITE (10,'(ES22.12E3)') Values(NoValues)
+      IF( ValuesInteger(NoValues) ) THEN
+        WRITE (10,'(I10)') NINT(Values(NoValues))
+      ELSE
+        WRITE (10,'(ES22.12E3)') Values(NoValues)
+      END IF
   END IF
   CLOSE(10)
+
+  !------------------------------------------------------------------------------
+  ! Save comments by line in a metadata file
+  !------------------------------------------------------------------------------
+  IF( .NOT. SubroutineVisited .AND. FileAppend .AND. LineInd /= 0 ) THEN
+    Message = ListGetString(Solver % Values,'Comment',GotIt)
+    Name = TRIM(ScalarsFile) // '.' // TRIM("marker")
+    IF( GotIt ) THEN
+      OPEN (10, FILE=Name,POSITION='APPEND')
+      WRITE(10,'(I6,A,A)') LineInd,': ',TRIM(Message)
+    END IF 
+  END IF
+
+
 
   !------------------------------------------------------------------------------
   ! Save data in livegraph format
@@ -745,9 +809,32 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
   !------------------------------------------------------------------------------
   ! For consistancy checks one may print out a value: here its the 1st value
   !------------------------------------------------------------------------------
+
+
+
+
   IF( CheckNorm ) THEN
-    WRITE( Message, '(a,g15.8)') 'Check NRM= ',Values(1)
-    CALL Info( 'SaveScalars', Message, Level=3 )
+    NormInd = ListGetInteger( Solver % Values,'Show Norm Index',GotIt)
+    IF(NormInd < 1 .OR. NormInd > NoValues ) NormInd = 1
+    PrevNorm = Norm
+    Norm = Values( NormInd )
+    IF( ABS( Norm ) + ABS( PrevNorm ) > 0.0_dp ) THEN
+      Change = 2.0*(ABS(Norm-PrevNorm))/(ABS(Norm)+ABS(PrevNorm))
+    ELSE
+      Change = 0.0_dp
+    END IF
+
+    Name = ListGetString( Solver % Values, 'Equation',GotIt)
+    IF(.NOT. GotIt) Name = Solver % Variable % Name
+
+    ! Here the name is ComputeChange in order to get the change also to ElmerGUI
+    WRITE( Message, '(a,g15.8,g15.8,a)') &
+       'SS (ITER='//TRIM(i2s(n))//') (NRM,RELC): (',Norm, Change,&
+          ' ) :: '//TRIM( Name )
+      CALL Info( 'ComputeChange', Message, Level=3 )
+
+!    WRITE( Message, '(a,g15.8)') 'Check NRM= ',Values(1)
+!    CALL Info( 'SaveScalars', Message, Level=3 )
   END IF
 
 
@@ -761,41 +848,51 @@ SUBROUTINE SaveScalars( Model,Solver,dt,TransientSimulation )
 CONTAINS
 
 
-    SUBROUTINE AddToSaveList(Name, Value)
+    SUBROUTINE AddToSaveList(Name, Value, ValueIsInteger )
 
     INTEGER :: n
     CHARACTER(LEN=*) :: Name
     REAL(KIND=dp) :: Value
+    LOGICAL, OPTIONAL :: ValueIsInteger
     REAL, ALLOCATABLE :: TmpValues(:)
     CHARACTER(LEN=MAX_NAME_LEN), ALLOCATABLE :: TmpValueNames(:)
-     
+    LOGICAL, POINTER :: TmpValuesInteger(:)     
+
     SAVE TmpValues, TmpValueNames
 
 
     ! For the first time allocate some space
     IF(.NOT. ALLOCATED(Values)) THEN
       n = 20
-      ALLOCATE( Values(n), ValueNames(n))
+      ALLOCATE( Values(n), ValueNames(n), ValuesInteger(n) )
     END IF
 
     n = NoValues
 
     ! If vectors are too small make some more room in a rather dummy way
     IF(n >= SIZE(Values) ) THEN
-      ALLOCATE(TmpValues(n), TmpValueNames(n))
+      ALLOCATE(TmpValues(n), TmpValueNames(n), TmpValuesInteger(n))
       TmpValues(1:n) = Values(1:n)
+      TmpValuesInteger(1:n) = ValuesInteger(1:n)
       TmpValueNames(1:n) = ValueNames(1:n)
       DEALLOCATE(Values,ValueNames)
 
       ALLOCATE(Values(n+10), ValueNames(n+10))
       Values(1:n) = TmpValues(1:n)
+      ValuesInteger(1:n) = TmpValuesInteger(1:n)
       ValueNames(1:n) = TmpValueNames(1:n)
-      DEALLOCATE(TmpValues,TmpValueNames)
+
+      DEALLOCATE(TmpValues,TmpValueNames,TmpValuesInteger)
     END IF
 
     n = n + 1
     Values(n) = Value
     ValueNames(n) = TRIM(Name)
+    IF( PRESENT( ValueIsInteger ) ) THEN
+      ValuesInteger(n) = ValueIsInteger
+    ELSE
+      ValuesInteger(n) = .FALSE.
+    END IF
     NoValues = n
 
   END SUBROUTINE AddToSaveList
@@ -872,9 +969,6 @@ CONTAINS
 
     SELECT CASE(OperName)
       
-    CASE ('dofs')
-      operx = 1.0 * sumi
-
     CASE ('sum')
       operx = sumx
       
