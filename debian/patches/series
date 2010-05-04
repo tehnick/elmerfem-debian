@@ -1,3 +1,4 @@
+sh4-little.patch
 include-all-libs.patch
 mpi-includes.patch
 banish-rpath.patch
