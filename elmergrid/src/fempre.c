@@ -159,6 +159,7 @@ static void Instructions()
   printf("-nobound             : disable saving of boundary elements in ElmerPost format\n");
   printf("-nosave              : disable saving part alltogether\n");
   printf("-timer               : show timer information\n");
+  printf("-infofile            : file for saving the timer and size information\n");
 
   printf("\nThe following keywords are related only to the parallel Elmer computations.\n");
   printf("-partition int[4]    : the mesh will be partitioned in main directions\n");
@@ -253,7 +254,7 @@ int main(int argc, char *argv[])
   }
 #endif
 
-  if(eg.timeron) timer_activate();
+  if(eg.timeron) timer_activate(eg.infofile);
 
   /**********************************/
   printf("\nElmergrid loading data:\n");
@@ -339,7 +340,7 @@ int main(int argc, char *argv[])
       boundaries[nofile][i].nosides = 0;
     }
     if(0 && !eg.usenames) data[nofile].boundarynamesexist = data[nofile].bodynamesexist = FALSE;
-    ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],TRUE);
+    ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],FALSE,TRUE);
     RenumberBoundaryTypes(&data[nofile],boundaries[nofile],TRUE,0,info);
   
     nomeshes++;
@@ -387,7 +388,7 @@ int main(int argc, char *argv[])
       if(LoadFemlabMesh(&(data[nofile]),boundaries[nofile],eg.filesin[nofile],info)) 
 	Goodbye();
     }
-    ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],TRUE);
+    ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],FALSE,TRUE);
     nomeshes++;
     break;
 
@@ -400,7 +401,7 @@ int main(int argc, char *argv[])
       boundaries[nofile][i].created = FALSE; 
       boundaries[nofile][i].nosides = 0;
     }
-    ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],TRUE);
+    ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],FALSE,TRUE);
     nomeshes++;
     break;
 
@@ -470,7 +471,7 @@ int main(int argc, char *argv[])
     }
     if (LoadUniversalMesh(&(data[nofile]),eg.filesin[nofile],TRUE))
       Goodbye();
-    if(1) ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],TRUE);
+    if(1) ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],TRUE,TRUE);
     nomeshes++;
     break;
 
@@ -739,12 +740,6 @@ int main(int argc, char *argv[])
       IsoparametricElements(&data[k],boundaries[k],TRUE,info);
   }  
 
-  /* This is mainly here for historical reasons */
-  for(k=0;k<nomeshes;k++) 
-    if(eg.findsides) 
-      SideToBulkElements(&data[k],boundaries[k],eg.sidebulk,FALSE,info);
-
-
   for(k=0;k<nomeshes;k++) {
     if(eg.bulkbounds || eg.boundbounds) {
       int *boundnodes,noboundnodes;
@@ -894,11 +889,17 @@ int main(int argc, char *argv[])
     timer_show();
   }
 
+  if(eg.timeron) {
+    for(k=0;k<nomeshes;k++) 
+      SaveSizeInfo(&data[k],boundaries[k],eg.infofile,info);
+  }
+  
 
   if(eg.nosave) {
     Goodbye();
     return(0);
   }
+
 
   /********************************/
   printf("\nElmergrid saving data:\n");

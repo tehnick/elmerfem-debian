@@ -176,7 +176,7 @@ CONTAINS
     CHARACTER(LEN=*) :: MeshDirPar,MeshNamePar
     LOGICAL :: BoundariesOnly
 
-    INTEGER, OPTIONAL :: numprocs,mype,def_Dofs(:,:)
+    INTEGER, OPTIONAL :: numprocs,mype,Def_Dofs(:)
 
     TYPE(Mesh_t),  POINTER :: Mesh
     TYPE(Model_t) :: Model
@@ -184,7 +184,8 @@ CONTAINS
 
     INTEGER :: eio_info
  
-    REAL(KIND=dp), POINTER :: cCoord(:), coord(:,:)
+    REAL(KIND=dp), POINTER :: cCoord(:), coord(:,:), Wrk(:,:)
+    REAL(KIND=dp) :: CoordScale(3)
 
     INTEGER :: i,j,k,l,m,code,tag,body,TYPE,nodes(MAX_ELEMENT_NODES), &
              left,right,fields,npart,parts(1024)
@@ -342,6 +343,23 @@ CONTAINS
     END DO
 
 !-----------------------------------------------------------------------------
+! Scaling of coorinates 
+
+    Wrk => ListGetConstRealArray( Model % Simulation,'Coordinate Scaling',GotIt )    
+    IF( GotIt ) THEN            
+      CoordScale = 1.0_dp
+      DO i=1,mesh_dim
+        j = MIN( i, SIZE(Wrk,2) )
+        CoordScale(i) = Wrk(1,j)
+      END DO
+      WRITE(Message,'(A,3ES10.3)') 'Scaling coordinates:',CoordScale
+      CALL Info('LoadMesh',Message) 
+      Mesh % Nodes % x = CoordScale(1) * Mesh % Nodes % x
+      IF( mesh_dim > 1) Mesh % Nodes % y = CoordScale(2) * Mesh % Nodes % y
+      IF( mesh_dim > 2) Mesh % Nodes % z = CoordScale(3) * Mesh % Nodes % z
+    END IF
+
+!-----------------------------------------------------------------------------
 !   Mesh elements
 !------------------------------------------------------------------------------
     CALL AllocateVector( ElementTags, Mesh % NumberOfBulkElements+1, 'LoadMesh' )
@@ -364,11 +382,9 @@ CONTAINS
       IF ( eio_info /= 0 ) EXIT
 
       IF ( PRESENT(Def_Dofs) ) THEN
-         IF ( body>0 .AND. body<=SIZE(Def_Dofs,1) ) THEN
-           DO j=1,6
-             IF ( Def_Dofs(body,j) >= 0 ) inDOFs(j)=Def_Dofs(body,j)
-           END DO
-        END IF
+        DO j=1,6
+          IF ( Indofs(j) <= 0 ) inDOFs(j)=Def_Dofs(j)
+        END DO
       END IF
 
       Element => Mesh % Elements(i)
@@ -405,13 +421,11 @@ CONTAINS
           Element % NDOFs = 0
         END IF
 
-        EdgeDOFs(i) = inDOFs(2)
-        FaceDOFs(i) = inDOFs(3)
+        EdgeDOFs(i) = MAX(0,inDOFs(2))
+        FaceDOFs(i) = MAX(0,inDOFs(3))
 
         IF ( PRESENT(Def_Dofs) ) THEN
-          IF ( body>0 .AND. body<=SIZE(Def_Dofs,1) ) THEN
-            IF ( Def_Dofs(body,4) == 0 ) inDOFs(4) = n
-          END IF
+          IF ( Def_Dofs(4) == 0 ) inDOFs(4) = n
         END IF
 
         NULLIFY( Element % DGIndexes )
@@ -424,8 +438,8 @@ CONTAINS
         ELSE
           NULLIFY( Element % DGIndexes )
         END IF
-        Element % DGDOFs = inDOFs(4)
-        NeedEdges = NeedEdges .OR. ANY( inDOFs(2:4) /= 0 )
+        Element % DGDOFs = MAX(0,inDOFs(4))
+        NeedEdges = NeedEdges .OR. ANY( inDOFs(2:4)>0 )
 
         NULLIFY( Element % EdgeIndexes )
         NULLIFY( Element % FaceIndexes )
@@ -456,8 +470,8 @@ CONTAINS
                    Element % TYPE % NodeV, Element % TYPE % NodeW )
         ELSE 
            ! Clear P element definitions and set manual bubbles
-           NULLIFY(Element % PDefs)
-           Element % BDOFs = inDOFs(5)
+           Element % PDefs => Null()
+           Element % BDOFs = MAX(0,inDOFs(5))
            ! WRITE (*,*) Element % BDOFs
         END IF
 
@@ -957,237 +971,6 @@ CONTAINS
 !------------------------------------------------------------------------------
   END SUBROUTINE ReadElementPropertyFile
 !------------------------------------------------------------------------------
-
-
-
-!------------------------------------------------------------------------------
-! Create global numbering of nodes, edge dofs, face dofs and element dofs.needed
-! by the parallel solver.
-!
-SUBROUTINE CreateGlobalNumbering( Mesh, NumberOfDOFs )
-!------------------------------------------------------------------------------
-       TYPE(Mesh_t) :: Mesh
-       INTEGER :: NumberOfDOFs
-!------------------------------------------------------------------------------
-       TYPE(Element_t), POINTER :: Edge, Face, Element
-       INTEGER :: i, j, k, n, l, nstart, nend, doftype, istart, iend, iastart, iaend
-       INTEGER, POINTER :: IntCnts(:), IntArray(:), Reorder(:), IfCounts(:), IfNodeCounts(:)
-       INTEGER :: jedges
-!------------------------------------------------------------------------------
-
-       IF ( ParEnv % PEs <= 1 ) RETURN
-
-       ! IfCounts, how many intefaces of each type (nodes, edges, faces, elements)
-       ! Size of IntArray for each interface type
-       !
-       ALLOCATE(IfCounts(4), IfNodeCounts(4))
-       IfCounts=0
-       IfNodeCounts=0
-
-       ! My theory is, that a new node will be an
-       ! interface node only if all the edge or face
-       ! nodes which contribute to its existence are
-       ! interface nodes (the code immediately below
-       ! will only count sizes):
-       !
-       PRINT*,'Checking if edge is interface, number of edges: ', &
-            Mesh % NumberOfEdges, ' maxedgedofs: ', Mesh % MaxEdgeDOFs
-       PRINT*,'PE: ', ParEnv % MyPE, ' Interface size: ', &
-            SIZE(Mesh % ParallelInfo % INTERFACE), &
-            ' GlobalDOFs size: ', SIZE(Mesh % ParallelInfo % GlobalDOFs)
-       CALL flush(6)
-       CALL spariterbarrier
-
-       DO i = 1,Mesh % NumberOfEdges
-          Edge => Mesh % Edges(i)
-          IF ( ALL(Mesh % ParallelInfo % INTERFACE(Edge % NodeIndexes)) ) THEN
-             DO l=1,Edge % BDOFs
-                Mesh % ParallelInfo % INTERFACE(Mesh % NumberOfNodes + &
-                     Mesh % MaxEdgeDOFs * (i-1) + l ) = .TRUE.
-             END DO
-             IfCounts(2) = IfCounts(2) + 1
-             IfNodeCounts(2) = IfNodeCounts(2) + SIZE( Edge % NodeIndexes )
-          END IF
-       END DO
-
-       PRINT*,'PE ',ParEnv % MyPE,' Found ', IfCounts(2), ' interface edges'
-       CALL flush(6)
-       CALL spariterbarrier
-
-!      For bricks, check also the faces:
-!      ---------------------------------
-        DO i = 1,Mesh % NumberOfFaces
-           Face => Mesh % Faces(i) 
-           IF ( ALL( Mesh % ParallelInfo % INTERFACE( Face % NodeIndexes ) ) ) THEN
-              DO l = 1,Face % BDOFs
-                 Mesh % ParallelInfo % INTERFACE( Mesh % NumberOfNodes &
-                      + (Mesh % MaxEdgeDOFs * Mesh % NumberOfEdges)    &
-                      + (Mesh % MaxFaceDOFs) * (i-1) + l ) = .TRUE.
-              END DO
-              IfCounts(3) = IfCounts(3) + 1
-              IfNodeCounts(3) = IfNodeCounts(3) + SIZE( Face % NodeIndexes )
-           END IF
-        END DO
-
-       PRINT*,'PE ',ParEnv % MyPE,' Found ', IfCounts(3), ' interface faces'
-       CALL flush(6)
-       CALL spariterbarrier
-
-!      For bricks, check also the faces:
-!      ---------------------------------
-       DO i = 1,Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
-          Element => Mesh % Elements(i) 
-          IF ( ALL( Mesh % ParallelInfo % INTERFACE( Element % NodeIndexes ) ) ) THEN
-             DO l = 1,Element % BDOFs
-                Mesh % ParallelInfo % INTERFACE( Mesh % NumberOfNodes &
-                     + (Mesh % MaxEdgeDOFs * Mesh % NumberOfEdges)    &
-                     + (Mesh % MaxFaceDOFs * Mesh % NumberOfFaces)  &
-                     + (Mesh % MaxElementDOFs) * (i-1) + l ) = .TRUE.
-             END DO
-             IfCounts(4) = IfCounts(4) + 1
-             IfNodeCounts(4) = IfNodeCounts(4) + SIZE( Element % NodeIndexes )
-          END IF
-       END DO
-       
-       PRINT*,'PE ',ParEnv % MyPE,' Found ', IfCounts(4), ' interface elements'
-       CALL flush(6)
-       CALL spariterbarrier
-       
-       j = SUM(IfCounts(2:4))
-       k = SUM(IfNodeCounts(2:4))
-
-       IF( j > 0 .AND. k > 0 ) THEN
-          CALL AllocateVector( IntCnts, j )
-          CALL AllocateVector( IntArray, k )
-       END IF
-
-       !
-       ! Initialize non-interface neighbourlists
-       ! 
-       DO i=Mesh % NumberOfNodes+1, NumberOfDOFs
-          IF ( .NOT. Mesh % ParallelInfo % INTERFACE(i) ) THEN
-             CALL AllocateVector( Mesh % ParallelInfo % NeighbourList(i) % Neighbours , 1 )
-             Mesh % ParallelInfo % NeighbourList(i) %  Neighbours(1) = ParEnv % MyPE
-          END IF
-       END DO
-
-       !
-       ! Put interface edge node indices in IntArray so edges, faces
-       ! and elements can be recognized by the parallel numbering algorithm
-       ! 
-       j = 0
-       k = 0
-       DO i = 1,Mesh % NumberOfEdges
-          Edge => Mesh % Edges(i)
-          IF ( ALL(Mesh % ParallelInfo % INTERFACE(Edge % NodeIndexes)) ) THEN
-             j = j + 1
-             IntCnts(j) = SIZE( Edge % NodeIndexes )
-             IntArray( k+1:k+IntCnts(j) ) = Mesh % ParallelInfo % GlobalDOFs( Edge % NodeIndexes )
-             CALL Sort( IntCnts(j), IntArray(k+1:k+IntCnts(j)) )
-             k = k + IntCnts(j)
-          END IF
-       END DO
-
-       ! The same goes for faces
-       DO i = 1,Mesh % NumberOfFaces
-          Face => Mesh % Faces(i)
-          IF ( ALL( Mesh % ParallelInfo % INTERFACE(Face % NodeIndexes) ) ) THEN
-             j = j + 1
-             IntCnts(j) = SIZE( Face % NodeIndexes )
-             IntArray(k+1:k+IntCnts(j)) = Mesh % ParallelInfo % GlobalDOFs(Face % NodeIndexes)
-             CALL Sort( IntCnts(j), IntArray(k+1:k+IntCnts(j)) )
-             k = k + IntCnts(j)
-          END IF
-       END DO
-
-       ! And elements
-       DO i = 1,Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
-          Element => Mesh % Elements(i) 
-          IF ( ALL( Mesh % ParallelInfo % INTERFACE( Element % NodeIndexes ) ) ) THEN
-             IntCnts(j) = SIZE( Element % NodeIndexes )
-             IntArray(k+1:k+IntCnts(j)) = Mesh % ParallelInfo % GlobalDOFs(Element % NodeIndexes)
-             CALL Sort( IntCnts(j), IntArray(k+1:k+IntCnts(j)) )
-             k = k + IntCnts(j)
-          END IF
-       END DO
-
-       ! Finally the beef, do the exchange of new
-       ! interfaces. The parallel global numbering
-       ! subroutine will also do reordering of the
-       ! nodes, hence the reorder array:
-       CALL AllocateVector( Reorder, NumberOfDOFs )
-       Reorder = (/ (i, i=1, NumberOfDOFs) /)
-
-!      CALL FindActivePEs( Mesh % ParallelInfo )
-
-       nstart = Mesh % NumberOfNodes+1
-       nend = Mesh % NumberOfNodes + (Mesh % NumberOfEdges * Mesh % MaxEdgeDOFs)
-       doftype = 2
-
-       istart=1
-       iend=IfCounts(2)
-       iastart=1
-       iaend=IfNodeCounts(2)
-
-       IF( iend-istart >= 0 ) THEN
-          PRINT*,'PE ',ParEnv % MyPE,' number interfaces ', istart, ' - ', iend, ' doftype ', 2
-          CALL FLUSH(6)
-          CALL ParallelNumbering( Mesh, IntCnts(istart:iend), IntArray(iastart:iaend), &
-               Reorder, nstart, nend, doftype )
-       END IF
-       
-       nstart = nend+1
-       nend = Mesh % NumberOfNodes + (Mesh % NumberOfEdges * Mesh % MaxEdgeDOFs) + &
-            (Mesh % NumberOfFaces * Mesh % MaxFaceDOFs)
-       doftype=3
-
-       istart = istart + IfCounts(2)
-       iend = iend + IfCounts(3)
-       iastart = iastart + IfNodeCounts(2)
-       iaend = iaend + IfNodeCounts(3)
-
-       IF( iend-istart >= 0 ) THEN
-          PRINT*,'PE ',ParEnv % MyPE,' number interfaces ', istart, ' - ', iend, ' doftype ', 3
-          CALL FLUSH(6)
-          CALL ParallelNumbering( Mesh, IntCnts(istart:iend), IntArray(iastart:iaend), &
-               Reorder, nstart, nend, doftype )
-       END IF
-       
-       nstart = nend+1
-       nend = NumberOfDOFs
-       doftype=4
-
-       istart= istart + IfCounts(3)
-       iend= iend + IfCounts(4)
-       iastart = iastart + IfNodeCounts(3)
-       iaend = iaend + IfNodeCounts(4)
-
-       IF( iend-istart >= 0 ) THEN
-          PRINT*, 'PE ', ParEnv % MyPE, ' number interfaces ', istart, ' - ', iend, ' doftype ', 4
-          CALL FLUSH(6)
-          CALL ParallelNumbering( Mesh, IntCnts(istart:iend), IntArray(iastart:iaend), &
-               Reorder, nstart, nend, doftype )
-       END IF
-
-       ! Account for the reordering of the nodes
-       ! DO i=1,Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
-       ! Mesh % Elements(i) % EdgeIndexes = Reorder( Mesh % Elements(i) % EdgeIndexes )
-       !  END DO
-       
-       IF ( j > 0 .AND. k > 0 ) THEN
-          DEALLOCATE( IntCnts, IntArray )
-       END IF
-
-       DEALLOCATE( IfCounts, IfNodeCounts )
-
-       DEALLOCATE( Reorder )
-
-       PRINT*, 'PE ', ParEnv % MyPE, ' done ' 
-       CALL flush(6)
-       CALL spariterbarrier
-       
-!------------------------------------------------------------------------------
-END SUBROUTINE CreateGlobalNumbering
 
 
 !------------------------------------------------------------------------------
@@ -2578,7 +2361,6 @@ CONTAINS
         END DO
       END DO
     END SUBROUTINE FixFaceEdges
-
 !------------------------------------------------------------------------------
   END SUBROUTINE FindMeshEdges3D
 !------------------------------------------------------------------------------
@@ -2670,10 +2452,8 @@ CONTAINS
             END IF
           END IF
         END IF
-
       END DO
     END DO
-    
   END DO
 
   ! This loop finds the final neighbour in the end of the chain 
@@ -2688,10 +2468,8 @@ CONTAINS
       END DO
     END DO
   END IF
-
-  DEALLOCATE( ElementNodes % x, &
-      ElementNodes % y, ElementNodes % z, Distances )  
-
+  DEALLOCATE(ElementNodes % x, ElementNodes % y, ElementNodes % z, Distances)
+!------------------------------------------------------------------------------
 END SUBROUTINE FindNeighbourNodes
 !------------------------------------------------------------------------------
 

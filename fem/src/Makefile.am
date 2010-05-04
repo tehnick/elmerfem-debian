@@ -304,6 +304,7 @@ EXTRA_DIST = \
 	MeshSolve.src \
 	MeshUtils.src \
 	Messages.src \
+	MagnetoDynamics.src \
 	MGPrec.src \
 	ModelDescription.src \
 	MovingElstatSolver.src \
