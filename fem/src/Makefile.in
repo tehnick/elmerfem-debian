@@ -328,6 +328,7 @@ BINARIES = AdvectionDiffusion$(SHL_EXT) \
         Isosurface$(SHL_EXT) \
         SteadyPhaseChange$(SHL_EXT) \
         TransientPhaseChange$(SHL_EXT) \
+        MagnetoDynamics$(SHL_EXT) \
         NonphysicalMeshSolve$(SHL_EXT)
 
 SOLVEROBJS = \
@@ -483,6 +484,7 @@ EXTRA_DIST = \
 	MeshSolve.src \
 	MeshUtils.src \
 	Messages.src \
+	MagnetoDynamics.src \
 	MGPrec.src \
 	ModelDescription.src \
 	MovingElstatSolver.src \
@@ -1049,6 +1051,7 @@ SparseMatrix.$(OBJEXT): SparseMatrix.f90 GeneralUtils.$(OBJEXT)
 SSTKomega.$(OBJEXT): SSTKomega.f90 DefUtils.$(OBJEXT) MaterialModels.$(OBJEXT)
 StatCurrentSolve.$(OBJEXT): StatCurrentSolve.f90 DefUtils.$(OBJEXT) Differentials.$(OBJEXT)
 StatElecSolve.$(OBJEXT): StatElecSolve.f90 ElementUtils.$(OBJEXT) DefUtils.$(OBJEXT) Differentials.$(OBJEXT) Integration.$(OBJEXT) Lists.$(OBJEXT) ElementDescription.$(OBJEXT) Adaptive.$(OBJEXT) Types.$(OBJEXT) SolverUtils.$(OBJEXT)
+MagnetoDynamics.$(OBJEXT): MagnetoDynamics.f90 DefUtils.$(OBJEXT)
 StatMagSolve.$(OBJEXT): StatMagSolve.f90 DefUtils.$(OBJEXT) Differentials.$(OBJEXT) Integration.$(OBJEXT) ElementDescription.$(OBJEXT) Types.$(OBJEXT)
 SteadyPhaseChange.$(OBJEXT): SteadyPhaseChange.f90 DefUtils.$(OBJEXT)
 Stokes.$(OBJEXT): Stokes.f90 DefUtils.$(OBJEXT) ElementUtils.$(OBJEXT) LinearAlgebra.$(OBJEXT) SolverUtils.$(OBJEXT)

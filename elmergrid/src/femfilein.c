@@ -3446,7 +3446,7 @@ allocate:
     free_Ivector(revindx,1,maxindx);
   }
 
-  ElementsToBoundaryConditions(data,bound,info);
+  ElementsToBoundaryConditions(data,bound,FALSE,info);
 
   printf("Succesfully read the mesh from the Gmsh input file.\n");
 
@@ -3640,7 +3640,7 @@ omstart:
     free_Ivector(revindx,1,maxindx);
   }
 
-  ElementsToBoundaryConditions(data,bound,info);
+  ElementsToBoundaryConditions(data,bound,FALSE,info);
 
   /* The geometric entities are rather randomly numbered */
   if( usetaggeom ) {
@@ -3708,6 +3708,10 @@ int UnvToElmerType(int unvtype)
     elmertype = 202;
     break;
 
+  case 23:
+    elmertype = 203;
+    break;
+
   case 41:
   case 51:
   case 61:
@@ -3726,6 +3730,14 @@ int UnvToElmerType(int unvtype)
     elmertype = 306;
     break;
 
+  case 43:
+  case 53:
+  case 63:
+  case 73:
+  case 93:
+    elmertype = 310;
+    break;
+
   case 44:
   case 54:
   case 64:
@@ -3733,6 +3745,14 @@ int UnvToElmerType(int unvtype)
   case 84:
   case 94:
     elmertype = 404;
+    break;
+
+  case 46:
+  case 56:
+  case 66:
+  case 76:
+  case 96:
+    elmertype = 408;
     break;
 
   case 111:
@@ -3767,14 +3787,31 @@ int UnvToElmerType(int unvtype)
   return(elmertype);
 }
 
-
+static int CheckRedundantIndexes(int nonodes,int *ind)
+{
+  int i,j,redundant;
+  
+  redundant = FALSE;
+  for(i=0;i<nonodes;i++) {
+    if( ind[i] == 0 ) redundant = TRUE;
+    for(j=i+1;j<nonodes;j++) 
+      if(ind[i] == ind[j]) redundant = TRUE;
+  }
+  if( redundant ) {
+    printf("Redundant element %d: ",nonodes);
+    for(i=0;i<nonodes;i++)
+      printf(" %d ",ind[i]);
+    printf("\n");
+  }
+  return(redundant);
+}
 
 int LoadUniversalMesh(struct FemType *data,char *prefix,int info)
      /* Load the grid in universal file format */
 {
   int noknots,totknots,noelements,elemcode,maxnodes;
   int allocated,maxknot,dim,ind;
-  int reordernodes,reorderelements,nogroups,maxnode,maxelem,elid,unvtype,elmertype;
+  int reordernodes,reorderelements,nogroups,maxnodeind,maxelem,elid,unvtype,elmertype;
   int nonodes,group,grouptype,mode,nopoints,nodeind,matind,physind,colorind;
   int debug,mingroup,maxgroup,nogroup,noentities,dummy;
   int *u2eind,*u2eelem;
@@ -3809,6 +3846,10 @@ int LoadUniversalMesh(struct FemType *data,char *prefix,int info)
     for(i=0;i<=820;i++) elementtypes[i] = FALSE;
   }
 
+  maxnodeind = 0;
+  maxnodes = 0;
+  maxelem = 0;
+
 
 omstart:
 
@@ -3819,17 +3860,14 @@ omstart:
       printf("First round for allocating data\n");
   }
 
-  maxnodes = 0;
-  nogroups = 0;
-  maxnode = 0;
-  maxelem = 0;
   noknots = 0;
   noelements = 0;
+  nogroups = 0;
   nopoints = 0;
   group = 0;
 
 
-  for(;;) {
+  for(;;) { 
 
   nextline:
     if( !strncmp(line,"    -1",6)) mode = 0;
@@ -3841,7 +3879,7 @@ omstart:
     else if( !strncmp(line,"  2412",6)) mode = 2412;
     else if( !strncmp(line,"  2467",6)) mode = 2467;
     else if( !strncmp(line,"  2435",6)) mode = 2435;
-    else if(0 && allocated && strncmp(line,"      ",6)) printf("Unknown mode: %s",line);
+    else if(1 && allocated && strncmp(line,"      ",6)) printf("Unknown mode: %s",line);
 
     if(debug && mode) printf("Current mode is %d\n",mode);
 
@@ -3856,18 +3894,24 @@ omstart:
 	nodeind = next_int(&cp);
 	/* Three other fields omitted: two coordinate systems and color */
 	noknots += 1;
-	if(nodeind != noknots) reordernodes = TRUE;
-	maxnode = MAX(maxnode,nodeind);
 	Getrow(line,in,FALSE);
 	
 	if(allocated) {
 	  if(reordernodes) {
-	    u2eind[nodeind] = noknots;
+	    if(u2eind[nodeind]) 
+	      printf("Reordering node %d already set (%d vs. %d)\n",
+		     nodeind,u2eind[nodeind],noknots);
+	    else
+	      u2eind[nodeind] = noknots;
 	  }
 	  cp = line;
 	  data->x[noknots] = next_real(&cp);
 	  data->y[noknots] = next_real(&cp);
 	  data->z[noknots] = next_real(&cp);
+	}
+	else {
+	  if(nodeind != noknots) reordernodes = TRUE;
+	  maxnodeind = MAX(maxnodeind,nodeind);
 	}
       }
     }
@@ -3900,7 +3944,7 @@ omstart:
 	if(allocated) {
 	  if(reorderelements) u2eelem[elid] = noelements;
 
-	  elmertype = UnvToElmerType(unvtype);
+	  elmertype = UnvToElmerType(unvtype); 
 
 	  if(debug && !elementtypes[elmertype]) {
 	    elementtypes[elmertype] = TRUE;
@@ -3913,6 +3957,8 @@ omstart:
 	  data->elementtypes[noelements] = elmertype;
 	  for(i=0;i<nonodes;i++)
 	    data->topology[noelements][i] = next_int(&cp);
+
+	  CheckRedundantIndexes(nonodes,data->topology[noelements]);
 
 	  /* should this be physical property or material property? */
 	  data->material[noelements] = physind;
@@ -4002,9 +4048,9 @@ end:
   if(!allocated) {
 
     if(reordernodes) {
-      if(info) printf("Reordering %d nodes with indexes up to %d\n",noknots,maxnode);
-      u2eind = Ivector(1,maxnode);
-      for(i=1;i<=maxnodes;i++) u2eind[i] = 0;
+      if(info) printf("Reordering %d nodes with indexes up to %d\n",noknots,maxnodeind);
+      u2eind = Ivector(1,maxnodeind);
+      for(i=1;i<=maxnodeind;i++) u2eind[i] = 0;
     }
     if(reorderelements) {
       if(info) printf("Reordering %d elements with indexes up to %d\n",noelements,maxelem);
@@ -4042,7 +4088,7 @@ end:
     for(j=1;j<=noelements;j++)
       for(i=0;i<data->elementtypes[j]%100;i++)
 	data->topology[j][i] = u2eind[data->topology[j][i]];
-    free_Ivector(u2eind,1,maxnode);
+    free_Ivector(u2eind,1,maxnodeind);
   }
   if(reorderelements) {
     free_Ivector(u2eelem,1,maxelem);

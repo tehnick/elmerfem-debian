@@ -393,6 +393,169 @@ CONTAINS
   END SUBROUTINE GetVectorLocalSolution
 
 
+! Eigenmodes may be used as a basis of sensitivity analysis, model reduction etc.
+! then these subroutines may be used to obtain the local eigenmodes
+!-------------------------------------------------------------------------------
+
+  FUNCTION GetNofEigenModes( name,USolver) RESULT (NofEigenModes)
+
+     CHARACTER(LEN=*), OPTIONAL :: name
+     TYPE(Solver_t)  , OPTIONAL, TARGET :: USolver
+     INTEGER :: NofEigenModes
+
+     REAL(KIND=dp), POINTER :: Values(:)
+     TYPE(Variable_t), POINTER :: Variable
+     TYPE(Solver_t)  , POINTER :: Solver
+
+     NofEigenModes = 0
+
+     Solver => CurrentModel % Solver
+     IF ( PRESENT(USolver) ) Solver => USolver
+
+     Variable => Solver % Variable
+     IF ( PRESENT(name) ) THEN
+        Variable => VariableGet( Solver % Mesh % Variables, name )
+     END IF
+
+     IF ( .NOT. ASSOCIATED( Variable ) ) RETURN
+     IF ( .NOT. ASSOCIATED( Variable % EigenValues ) ) RETURN
+     
+     NofEigenModes = SIZE( Variable % EigenValues, 1)
+  END FUNCTION
+
+
+
+  SUBROUTINE GetScalarLocalEigenmode( x,name,UElement,USolver,NoEigen,ComplexPart )
+     REAL(KIND=dp) :: x(:)
+     CHARACTER(LEN=*), OPTIONAL :: name
+     TYPE(Solver_t)  , OPTIONAL, TARGET :: USolver
+     TYPE(Element_t),  OPTIONAL, TARGET :: UElement
+     INTEGER, OPTIONAL :: NoEigen
+     LOGICAL, OPTIONAL :: ComplexPart
+
+     COMPLEX(KIND=dp), POINTER :: Values(:)
+     TYPE(Variable_t), POINTER :: Variable
+     TYPE(Solver_t)  , POINTER :: Solver
+     TYPE(Element_t),  POINTER :: Element
+     LOGICAL :: IsComplex
+
+     INTEGER :: i, n
+     INTEGER, POINTER :: Indexes(:)
+
+     Solver => CurrentModel % Solver
+     IF ( PRESENT(USolver) ) Solver => USolver
+
+     x = 0.0d0
+
+     Variable => Solver % Variable
+     IF ( PRESENT(name) ) THEN
+        Variable => VariableGet( Solver % Mesh % Variables, name )
+     END IF
+     IF ( .NOT. ASSOCIATED( Variable ) ) RETURN
+     IF ( .NOT. ASSOCIATED( Variable % EigenVectors ) ) RETURN
+
+     IsComplex = .FALSE.
+     IF( PRESENT( ComplexPart) ) IsComplex = ComplexPart
+
+     Element => GetCurrentElement(UElement)
+
+     IF ( ASSOCIATED( Variable ) ) THEN
+        Indexes => GetIndexStore()
+        IF ( ASSOCIATED(Variable % Solver ) ) THEN
+          n = GetElementDOFs( Indexes, Element, Variable % Solver )
+        ELSE
+          n = GetElementDOFs( Indexes, Element, Solver )
+        END IF
+        n = MIN( n, SIZE(x) )
+
+        Values => Variable % EigenVectors( :, NoEigen )
+
+        IF ( ASSOCIATED( Variable % Perm ) ) THEN
+           IF ( ALL( Variable % Perm(Indexes(1:n)) > 0 ) ) THEN
+             IF( IsComplex ) THEN
+               x(1:n) = CMPLX( Values(Variable % Perm(Indexes(1:n))) )
+             ELSE
+               x(1:n) = REAL( Values(Variable % Perm(Indexes(1:n))) )
+             END IF	
+           END IF
+        ELSE
+	  x(1:n) = Values(Indexes(1:n))
+        END IF
+     END IF
+  END SUBROUTINE GetScalarLocalEigenmode
+
+
+
+  SUBROUTINE GetVectorLocalEigenmode( x,name,UElement,USolver,NoEigen,ComplexPart )
+     REAL(KIND=dp) :: x(:,:)
+     CHARACTER(LEN=*), OPTIONAL :: name
+     TYPE(Solver_t),  OPTIONAL, TARGET :: USolver
+     TYPE(Element_t), OPTIONAL, TARGET :: UElement
+     INTEGER, OPTIONAL :: NoEigen
+     LOGICAL, OPTIONAL :: ComplexPart
+
+     TYPE(Variable_t), POINTER :: Variable
+     TYPE(Solver_t)  , POINTER :: Solver
+     TYPE(Element_t),  POINTER :: Element
+     LOGICAL :: IsComplex
+
+     INTEGER :: i, j, n
+     INTEGER, POINTER :: Indexes(:)
+     COMPLEX(KIND=dp), POINTER ::  Values(:)
+
+     Solver => CurrentModel % Solver
+     IF ( PRESENT(USolver) ) Solver => USolver
+
+     x = 0.0d0
+
+     Variable => Solver % Variable
+     IF ( PRESENT(name) ) THEN
+        Variable => VariableGet( Solver % Mesh % Variables, name )
+     END IF
+     IF ( .NOT. ASSOCIATED( Variable ) ) RETURN
+     IF ( .NOT. ASSOCIATED( Variable % EigenVectors ) ) RETURN
+
+     Element => GetCurrentElement(UElement)
+
+     IF ( ASSOCIATED( Variable ) ) THEN
+        Indexes => GetIndexStore()
+        IF ( ASSOCIATED(Variable % Solver ) ) THEN
+          n = GetElementDOFs( Indexes, Element, Variable % Solver )
+        ELSE
+          n = GetElementDOFs( Indexes, Element, Solver )
+        END IF
+        n = MIN( n, SIZE(x) )
+
+        Values => Variable % EigenVectors( :, NoEigen )
+
+        DO i=1,Variable % DOFs
+           IF ( ASSOCIATED( Variable % Perm ) ) THEN
+              IF ( ALL( Variable % Perm(Indexes(1:n)) > 0 ) ) THEN
+                DO j=1,n
+	          IF( IsComplex ) THEN
+                    x(i,j) = AIMAG( Values( Variable % DOFs * &
+                        (Variable % Perm(Indexes(j))-1)+i ) )
+                  ELSE
+                    x(i,j) = REAL( Values( Variable % DOFs * &
+                        (Variable % Perm(Indexes(j))-1)+i ) )
+                  END IF
+                END DO
+              END IF
+           ELSE
+              DO j=1,n
+                IF( IsComplex ) THEN
+                  x(i,j) = AIMAG( Values(Variable % DOFs*(Indexes(j)-1)+i) )
+                ELSE
+                  x(i,j) = REAL( Values(Variable % DOFs*(Indexes(j)-1)+i) )
+ 	        END IF
+              END DO
+           END IF
+         END DO
+     END IF
+  END SUBROUTINE GetVectorLocalEigenmode
+    
+
+
 
   FUNCTION GetString( List, Name, Found ) RESULT(str)
      TYPE(ValueList_t), POINTER :: List
@@ -832,7 +995,9 @@ CONTAINS
         IF ( n > 0 ) RETURN
      END IF
 
-     n = Element % NDOFs
+     IF ( Solver % Def_Dofs(1)>0 ) n = Element % NDOFs
+     IF ( ALL(Solver % Def_Dofs(2:)<0) ) RETURN
+
      IF ( ASSOCIATED( Element % EdgeIndexes ) ) THEN
         DO j=1,Element % TYPE % NumberOFEdges
            n =  n + Solver % Mesh % Edges(Element % EdgeIndexes(j)) % BDOFs
@@ -847,7 +1012,7 @@ CONTAINS
 
      GB = ListGetLogical( Solver % Values, 'Bubbles in Global System', Found )
      IF (.NOT.Found) GB = .TRUE.
-     IF ( GB .OR. ASSOCIATED(Element % BoundaryInfo) ) n = n + Element % BDOFs
+     IF ( GB .OR. ASSOCIATED(Element % BoundaryInfo) ) n=n+MAX(0,Element % BDOFs)
   END FUNCTION GetElementNOFDOFs
 
 
@@ -897,10 +1062,13 @@ CONTAINS
         IF ( NB > 0 ) RETURN
      END IF
 
-     DO i=1,Element % NDOFs
-        NB = NB + 1
-        Indexes(NB) = Element % NodeIndexes(i)
-     END DO
+     IF ( Solver % Def_Dofs(1)>0 ) THEN
+       DO i=1,Element % NDOFs
+          NB = NB + 1
+          Indexes(NB) = Element % NodeIndexes(i)
+       END DO
+     END IF
+     IF ( ALL(Solver % Def_Dofs(2:)<0) ) RETURN
 
      FaceDOFs   = Solver % Mesh % MaxFaceDOFs
      EdgeDOFs   = Solver % Mesh % MaxEdgeDOFs
@@ -1474,6 +1642,93 @@ CONTAINS
   END SUBROUTINE Default1stOrderTimeC
 !------------------------------------------------------------------------------
 
+!------------------------------------------------------------------------------
+  SUBROUTINE Default1stOrderTimeGlobal(USolver)
+!------------------------------------------------------------------------------
+   TYPE(Solver_t), OPTIONAL, TARGET :: USolver
+!------------------------------------------------------------------------------
+   CHARACTER(LEN=MAX_NAME_LEN) :: Method
+   TYPE(Solver_t), POINTER :: Solver
+   INTEGER :: i,j,k,l,n,Order
+   REAL(KIND=dp), POINTER :: SaveValues(:) => NULL()
+   REAL(KIND=dp) :: FORCE(1), Dts(16)
+   LOGICAL :: ConstantDt, Found
+   TYPE(Variable_t), POINTER :: DtVar
+   SAVE STIFF, MASS, X
+   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:),MASS(:,:), X(:,:)
+
+   IF ( PRESENT(USolver) ) THEN
+     Solver => Usolver
+   ELSE
+     Solver => CurrentModel % solver
+   END IF
+
+   IF ( .NOT.ASSOCIATED(Solver % Variable % Values, SaveValues) ) THEN
+      IF ( ALLOCATED(STIFF) ) DEALLOCATE( STIFF,MASS,X )
+      n = 0
+      DO i=1,Solver % Matrix % NumberOfRows
+        n = MAX( n,Solver % Matrix % Rows(i+1)-Solver % Matrix % Rows(i) )
+      END DO
+      k = SIZE(Solver % Variable % PrevValues,2)
+      ALLOCATE( STIFF(1,n),MASS(1,n),X(n,k) )
+
+      SaveValues => Solver % Variable % Values
+   END IF
+
+   Order = MIN( Solver % DoneTime, Solver % Order )
+
+   Method = ListGetString( Solver % Values, 'Timestepping Method', Found )
+   IF ( Method == 'bdf' ) THEN
+     Dts(1) = Solver % Dt
+     ConstantDt = .TRUE.
+     IF(Order > 1) THEN
+       DtVar => VariableGet( Solver % Mesh % Variables, 'Timestep size' )
+       DO i=2,Order
+         Dts(i) = DtVar % PrevValues(1,i-1)
+         IF(ABS(Dts(i)-Dts(1)) > 1.0d-6 * Dts(1)) ConstantDt = .FALSE.
+       END DO
+     END IF
+   END IF
+
+   DO i=1,Solver % Matrix % NumberOFRows
+     n = 0
+     DO j=Solver % Matrix % Rows(i),Solver % Matrix % Rows(i+1)-1
+       n=n+1
+       STIFF(1,n) = Solver % Matrix % Values(j)
+       MASS(1,n)  = Solver % Matrix % MassValues(j)
+       X(n,:) = Solver % Variable % PrevValues(Solver % Matrix % Cols(j),:)
+     END DO
+     FORCE(1) = Solver % Matrix % RHS(i)
+     Solver % Matrix % Force(i,1) = FORCE(1)
+
+     SELECT CASE( Method )
+     CASE( 'fs' )
+       CALL FractionalStep( n, Solver % dt, MASS, STIFF, FORCE, &
+                 X(:,1), Solver % Beta, Solver )
+     CASE('bdf')
+
+       IF(ConstantDt) THEN
+         CALL BDFLocal( n, Solver % dt, MASS, STIFF, FORCE, X, Order )
+       ELSE
+         CALL VBDFLocal(n, Dts, MASS, STIFF, FORCE, X, Order )
+       END IF
+
+     CASE DEFAULT
+       CALL NewmarkBeta( n, Solver % dt, MASS, STIFF, FORCE, &
+                 X(:,1), Solver % Beta )
+     END SELECT
+
+     n = 0
+     DO j=Solver % Matrix % Rows(i),Solver % Matrix % Rows(i+1)-1
+        n=n+1
+       Solver % Matrix % Values(j) = STIFF(1,n)
+     END DO
+     Solver % Matrix % RHS(i) = FORCE(1)
+   END DO
+!----------------------------------------------------------------------------
+  END SUBROUTINE Default1stOrderTimeGlobal
+!----------------------------------------------------------------------------
+
 
 !------------------------------------------------------------------------------
   SUBROUTINE Default2ndOrderTimeR( M, B, A, F, UElement, USolver )
@@ -1730,11 +1985,6 @@ CONTAINS
      END IF
      BUpd = BUpd .OR. GetLogical( GetSolverParams(Solver), &
                 'Calculate Loads', Found )
-
-     IF ( .NOT. Found ) THEN
-       BUpd = BUpd .OR. &
-          GetLogical( GetEquation(Element), 'Calculate Loads', Found )
-     END IF
 
      IF ( BUpd ) THEN
        IF ( .NOT. ASSOCIATED( A % BulkRHS ) ) THEN
@@ -2747,26 +2997,24 @@ CONTAINS
            IF ( ListCheckPresent(BC, TRIM(Name)//' {e}') ) THEN
              IF ( ASSOCIATED( Solver % Mesh % Edges ) ) THEN
                SELECT CASE(GetElementFamily())
-               CASE(2)
+               CASE(1,2)
                  DO j=1,Parent % Type % NumberOfEdges
                    Edge => Solver % Mesh % Edges(Parent % EdgeIndexes(j))
-                   IF (Element % Type % ElementCode==Edge % Type % ElementCode) THEN
-                     n = 0
-                     DO k=1,Element % Type % NumberOfNodes
-                       DO l=1,Edge % Type % NumberOfNodes
-                         IF ( Element % NodeIndexes(k)==Edge % NodeIndexes(l)) n=n+1
-                       END DO
+                   n = 0
+                   DO k=1,Element % Type % NumberOfNodes
+                     DO l=1,Edge % Type % NumberOfNodes
+                       IF ( Element % NodeIndexes(k)==Edge % NodeIndexes(l)) n=n+1
                      END DO
-                     IF ( n==Element % Type % NumberOfNodes ) EXIT
-                   END IF
+                   END DO
+                   IF ( n==Element % Type % NumberOfNodes ) EXIT
                  END DO
 
                  nb = Parent % Type % NumberOfNodes
                  n  =  Edge % Type % NumberOfNodes
-                 CALL LocalBcIntegral(BC,Edge,n,Parent,nb,TRIM(Name)//' {e}',STIFF,Work)
+                 CALL LocalBcIntegral(BC,Edge,n,Parent,nb,TRIM(Name)//' {e}',Work(1))
 
                  n=GetElementDOFs(gInd,Edge)
-                 DO k=Edge % NDOFs+1,n
+                 DO k=Solver % Def_Dofs(1)*Edge % NDOFs+1,n
                    nb = x % Perm(gInd(k))
                    IF ( nb <= 0 ) CYCLE
                    nb = Offset + x % DOFs*(nb-1) + DOF
@@ -2797,10 +3045,10 @@ CONTAINS
                    nb = Edge % Type % NumberOfNodes
                    n  = Parent % Type % NumberOfNodes
                    CALL LocalBcIntegral( BC, Edge, nb, Parent, &
-                          n, TRIM(Name)//' {e}', STIFF, Work )
+                          n, TRIM(Name)//' {e}', Work(1) )
 
                    n=GetElementDOFs(gInd,Edge)
-                   DO k=Edge % NDOFs+1,n
+                   DO k=Solver % Def_Dofs(1)*Edge % NDOFs+1,n
                      nb = x % Perm(gInd(k))
                      IF ( nb <= 0 ) CYCLE
                      nb = Offset + x % DOFs*(nb-1) + DOF
@@ -2995,7 +3243,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-  SUBROUTINE LocalBcIntegral(BC, Element, nd, Parent, np, Name, MASS, Integral)
+  SUBROUTINE LocalBcIntegral(BC, Element, nd, Parent, np, Name, Integral)
 !******************************************************************************
 !
 !  DESCRIPTION:
@@ -3025,13 +3273,14 @@ CONTAINS
     TYPE(Element_t) :: Element, Parent
     INTEGER :: nd,np
     CHARACTER(LEN=*) :: Name
+    REAL(KIND=dp) :: Integral
     TYPE(ValueList_t), POINTER :: BC
-    REAL(KIND=dp) :: Integral(:),MASS(:,:)
 !------------------------------------------------------------------------------
     TYPE(GaussIntegrationPoints_t) :: IP
     INTEGER, POINTER :: Edgemap(:,:)
     INTEGER :: i,j,k,n,p,q,t
     LOGICAL :: Lstat
+    TYPE(ElementType_t), POINTER :: SavedType
     TYPE(Nodes_t), SAVE :: Nodes, Pnodes
     REAL(KIND=dp) :: Basis(np) ,dBasisdx(np,3)
     REAL(KIND=dp) :: WhitB(6,3),RotWhitB(6,3),L,VL(3),G(3)
@@ -3063,6 +3312,9 @@ CONTAINS
     G(3) = PNodes % z(k) - PNodes % z(j)
     G = G/SQRT(SUM(G**2))
 
+    SavedType => Element % Type
+    IF ( GetElementFamily()==1 ) Element % Type=>GetElementType(202)
+      
     Integral = 0._dp
     IP = GaussPoints(Element)
     DO t=1,IP % n
@@ -3072,8 +3324,9 @@ CONTAINS
 
       L  = SUM(Load(1:nd)*Basis(1:nd))
       VL = MATMUL(Vload(:,1:nd),Basis(1:nd))
-      Integral(1)=Integral(1)+s*(L+SUM(VL*G))
+      Integral=Integral+s*(L+SUM(VL*G))
     END DO
+    Element % Type => SavedType
 
     j = Parent % NodeIndexes(j)
     IF ( ParEnv % PEs>1 ) &
