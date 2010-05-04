@@ -3,10 +3,11 @@ elmerfem (5.5.0.svn.4458.dfsg-1) unstable; urgency=low
   * New upstream revision.
   * Added patch removal to debian/rules clean target.
   * Updated BLAS and LAPACK linking.
+  * Had to Build-Conflict with libatlas3gf-base to avoid collisions.
   * Added >= 5.4 versioned Build-Depends for libvtk5-qt4-dev (closes: #580207).
   * Patched fem directory to ignore -little to build on SH4 (closes: #575181).
 
- -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 04 May 2010 18:46:27 -0400
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 04 May 2010 18:57:58 -0400
 
 elmerfem (5.5.0.svn.4388.dfsg-1) unstable; urgency=low
 

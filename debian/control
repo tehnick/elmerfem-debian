@@ -13,6 +13,7 @@ Build-Depends: debhelper (>= 5), po-debconf, autoconf, automake,
  libopencascade-modeling-dev, libqt4-dev, qt4-qmake, libqt4-opengl-dev,
  libqwt5-qt4-dev, libvtk5-qt4-dev (>= 5.4), python-qt4-dev, libscotchmetis-dev,
  r-base-core
+Build-Conflicts: libatlas3gf-base
 Homepage: http://www.csc.fi/elmer/
 
 Package: elmer
