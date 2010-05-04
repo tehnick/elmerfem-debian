@@ -1,8 +1,9 @@
 elmerfem (5.5.0.svn.4458.dfsg-2) unstable; urgency=low
 
   * New upstream revision.
+  * Added patch removal to debian/rules clean target.
 
- -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 04 May 2010 16:39:07 -0400
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 04 May 2010 18:02:45 -0400
 
 elmerfem (5.5.0.svn.4388.dfsg-1) unstable; urgency=low
 

@@ -73,6 +73,10 @@ clean:
 	rm -rf ElmerGUI/PythonQt/lib ElmerGUI/matc/lib ElmerGUI/netgen/ngcore \
 	  ElmerGUIlogger/ElmerGUIlogger.pro
 	rm -f stamp-*
+	if [ -d .pc ]; then \
+	  QUILT_PATCHES=debian/patches quilt pop -a; \
+	  rm -rf .pc; \
+	fi
 	dh_clean
 
 # In a bit of a hack, the "build" target configures, builds and installs, so
