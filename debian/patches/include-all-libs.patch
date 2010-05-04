@@ -13,7 +13,7 @@ Include libs needed to build with binutils-gold.
  	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
 --- elmerfem-5.5.0.svn.4298.dfsg/fem/configure.in~	2009-10-01 20:22:25.000000000 -0400
 +++ elmerfem-5.5.0.svn.4298.dfsg/fem/configure.in	2009-12-16 15:50:06.000000000 -0500
-@@ -270,6 +270,7 @@
+@@ -279,6 +279,7 @@
  AC_SUBST(FC)
  AC_SUBST(MKDIR)
  AC_SUBST(SOLVER_LIBS)
