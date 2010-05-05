@@ -1,3 +1,9 @@
+elmerfem (5.5.0.svn.4458.dfsg-2) unstable; urgency=low
+
+  * Make sure patches apply before building (closes: #580207).
+
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Wed, 05 May 2010 08:44:00 -0400
+
 elmerfem (5.5.0.svn.4458.dfsg-1) unstable; urgency=low
 
   * New upstream revision.

@@ -79,10 +79,15 @@ clean:
 	fi
 	dh_clean
 
+patch:
+	if [ ! -d .pc ]; then \
+	  QUILT_PATCHES=debian/patches quilt push -a; \
+	fi
+
 # In a bit of a hack, the "build" target configures, builds and installs, so
 # modules can depend on each other
 build: stamp-build
-stamp-build:
+stamp-build: patch
 	dh_testdir
 	for backupfile in $(BACKUP_FILES); do \
 	  cp $$backupfile $$backupfile.bak; \
@@ -160,7 +165,7 @@ stamp-build:
 	cp -a debian/*.desktop debian/tmp/usr/share/applications/
 	touch $@
 
-binary-indep:
+binary-indep: patch
 	dh_testdir -i
 	dh_testroot -i
 	dh_movefiles -i
