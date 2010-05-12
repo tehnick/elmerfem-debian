@@ -1,3 +1,9 @@
+elmerfem (5.5.0.svn.4458.dfsg-3) UNRELEASED; urgency=low
+
+  * Changed control file to conform to Debian Science Policy Manual.
+
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 11 May 2010 21:13:51 -0400
+
 elmerfem (5.5.0.svn.4458.dfsg-2) unstable; urgency=low
 
   * Make sure patches apply before building (closes: #580207).
