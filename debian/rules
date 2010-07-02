@@ -118,7 +118,12 @@ stamp-build: patch
 	  make -C $$elmermodule install DESTDIR=$(CURDIR)/debian/tmp; \
 	done
 	echo; echo BUILDING ELMER MODULE ElmerGUI; echo
-	(cd ElmerGUI && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI make)
+	(set -e; cd ElmerGUI; \
+	  export DEB_PY_VERSION=$(shell pyversions -d); \
+	  export ELMER_HOME=/usr; \
+	  export ELMERGUI_HOME=/usr/share/ElmerGUI; \
+	  qmake; \
+	  make)
 	(cd ElmerGUIlogger && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake -project && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI make)
 	echo; echo INSTALLING ELMER MODULE ElmerGUI; echo
 	make -C ElmerGUI install ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI INSTALL_ROOT=$(CURDIR)/debian/tmp
