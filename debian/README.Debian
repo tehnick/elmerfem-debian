@@ -1,6 +1,6 @@
 Elmer Debian Package
 By Adam C. Powell, IV
-Last updated June 25, 2009
+Last updated July 2, 2010
 
 Welcome to the wonderful Elmer finite element analysis package, a very capable
 yet compact and efficient suite for performing a broad array of finite element
@@ -61,5 +61,7 @@ EXTENDING ELMERGUI
 
 To avoid excessive menu crowding, ElmerGUI only enables a subset of its
 available models, i.e. equations it can solve.  There are eight other models
-available, which you can enable by (as root or sudo) copying XML files from the
-directory /usr/share/ElmerGUI/edf-extra to /usr/share/ElmerGUI/edf .
+available, which you can enable (as root or sudo) by using debconf e.g.:
+
+* In Synaptic, select the "elmer" package and do Package -> Configure
+* At the command line, do: dpkg-reconfigure elmer
