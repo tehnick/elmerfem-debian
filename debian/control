@@ -61,7 +61,7 @@ Description: finite element multiphysics suite - architecture-independent files
  .
  This package provides the architecture-independent files for Elmer.
 
-Package: libelmersolver-5.5.0
+Package: libelmersolver-6.0
 Architecture: any
 Section: libs
 Depends: ${shlibs:Depends}, ${misc:Depends}
@@ -86,7 +86,7 @@ Description: finite element multiphysics suite - library
 
 Package: libelmer-dev
 Architecture: any
-Depends: elmer (= ${binary:Version}), libelmersolver-5.5.0 (= ${binary:Version}), libarpack2-dev, ${misc:Depends}
+Depends: elmer (= ${binary:Version}), libelmersolver-6.0 (= ${binary:Version}), libarpack2-dev, ${misc:Depends}
 Section: libdevel
 Description: finite element multiphysics suite - development files
  The Elmer multiphysics simulation package includes physical models of

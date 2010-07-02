@@ -3,7 +3,7 @@
 # Make alternatives links
 if [ "$1" = "configure" ]; then
   update-alternatives --install /usr/lib/elmersolver elmersolver \
-    /usr/lib/elmersolver-5.5.0 5500
+    /usr/lib/elmersolver-6.0 6000
 fi
 
 #DEBHELPER#

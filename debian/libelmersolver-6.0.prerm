@@ -2,7 +2,7 @@
 
 # Remove alternatives links
 if [ "$1" = "remove" ]; then
-  update-alternatives --remove elmersolver /usr/lib/elmersolver-5.5.0
+  update-alternatives --remove elmersolver /usr/lib/elmersolver-6.0
 fi
 
 #DEBHELPER#
