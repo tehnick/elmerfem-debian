@@ -7,8 +7,9 @@ elmerfem (5.5.0.svn.4499.dfsg-1) UNRELEASED; urgency=low
     proper environment variables (closes: #583224).
   * Added source lintian overrides about Adam Powell's name.
   * Bumped Standards-Version.
+  * Moved some usr/share files out of elmer-common to elmer and libelmer-dev.
 
- -- Adam C. Powell, IV <hazelsct@debian.org>  Fri, 02 Jul 2010 13:43:11 -0400
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Fri, 02 Jul 2010 14:02:42 -0400
 
 elmerfem (5.5.0.svn.4458.dfsg-2.1) unstable; urgency=low
 
