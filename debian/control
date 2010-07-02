@@ -22,6 +22,7 @@ Package: elmer
 Architecture: any
 Section: science
 Depends: elmer-common (= ${source:Version}), ${shlibs:Depends}, mpi-default-bin, ${misc:Depends}
+Conflicts: elmer-common (<< 5.5.0.svn.4499.dfsg-1)
 Suggests: elmer-doc
 Description: finite element multiphysics suite - binaries
  The Elmer multiphysics simulation package includes physical models of
@@ -87,6 +88,7 @@ Description: finite element multiphysics suite - library
 Package: libelmer-dev
 Architecture: any
 Depends: elmer (= ${binary:Version}), libelmersolver-6.0 (= ${binary:Version}), libarpack2-dev, ${misc:Depends}
+Conflicts: elmer-common (<< 5.5.0.svn.4499.dfsg-1)
 Section: libdevel
 Description: finite element multiphysics suite - development files
  The Elmer multiphysics simulation package includes physical models of
