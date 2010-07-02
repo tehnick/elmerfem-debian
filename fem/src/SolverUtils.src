@@ -3270,7 +3270,7 @@ END FUNCTION SearchNodeL
     REAL(KIND=dp), POINTER :: b(:), x(:), r(:)
     REAL(KIND=dp), POINTER :: x0(:)
     REAL(KIND=dp) :: Norm, PrevNorm, rNorm, bNorm, Change, Relaxation, tmp(1),dt, &
-        Tolerance
+        Tolerance, MaxNorm
     CHARACTER(LEN=MAX_NAME_LEN) :: ConvergenceType
     INTEGER, TARGET  ::  nn=1, Dnodes(1)
     INTEGER, POINTER :: Indexes(:)
@@ -3372,6 +3372,22 @@ END FUNCTION SearchNodeL
 
     Norm = ComputeNorm(Solver, n, x)
     Solver % Variable % Norm = Norm
+
+
+    !--------------------------------------------------------------------------
+    ! The norm should be bounded in order to reach convergence
+    !--------------------------------------------------------------------------
+
+     MaxNorm = ListGetCReal( Solver % Values, &
+          'Nonlinear System Max Norm', Stat )
+    IF( .NOT. Stat) MaxNorm = HUGE( Norm )
+
+    IF( ISNAN( Norm ) .OR. Norm > MaxNorm ) THEN
+     CALL Fatal('ComputeChange','Norm of solution exceeded given bounds')
+    END IF
+  
+
+
 
     SELECT CASE( ConvergenceType )
 
@@ -4076,13 +4092,25 @@ END FUNCTION SearchNodeL
       ALLOCATE( TempVector(Aaid % NumberOfRows) )
       SaveValues => Aaid % Values
       Aaid % Values => Aaid % BulkValues
-      CALL MatrixVectorMultiply( Aaid, x, TempVector )
+
+      IF ( ParEnv % PEs > 1 ) THEN
+        CALL ParallelInitSolve( Aaid, x, Aaid % BulkRHS, Tempvector )
+        CALL ParallelMatrixVector( Aaid, x, TempVector, .TRUE. )
+      ELSE
+        CALL MatrixVectorMultiply( Aaid, x, TempVector )
+      END IF
+
 
       IF( ListGetLogical(Solver % Values, 'Calculate Energy Norm', gotIt) ) THEN
         Energy = 0._dp
         DO i=1,Aaid % NumberOfRows
+          IF ( ParEnv % Pes>1 ) THEN
+            IF ( Aaid % ParMatrix % ParallelInfo % &
+                  NeighbourList(i) % Neighbours(1) /= Parenv % MyPE ) CYCLE
+          END IF
           Energy = Energy + x(i)*TempVector(i)
         END DO
+        Energy = ParallelReduction(Energy)
         CALL ListAddConstReal( Solver % Values, 'Energy norm', Energy )
 
         WRITE( Message,'(A,A,A)') 'res: ',GetVarname(Solver % Variable),' Energy Norm'
@@ -4094,6 +4122,7 @@ END FUNCTION SearchNodeL
 
       Aaid % Values => SaveValues
       TempVector = TempVector - Aaid % BulkRHS
+      IF ( ParEnv % PEs>1 ) CALL ParallelSumVector( AAid, Tempvector )
       DO i=1,SIZE( NodalLoads % Perm )
         IF ( NodalLoads % Perm(i)>0 .AND. Solver % Variable % Perm(i)>0 ) THEN
            DO j=1,DOFs
@@ -4474,26 +4503,6 @@ SUBROUTINE UpdateExportedVariables( Solver )
     
     CALL VariableNameParser( var_name ) 
 
-!    DO WHILE( var_name(1:1) == '-' )
-!      IF ( var_name(1:10) == '-nooutput ' ) THEN
-!        var_name(1:LEN(var_name)-10) = var_name(11:)
-!      END IF
-!      
-!      IF ( var_name(1:8) == '-global ' ) THEN
-!        var_name(1:LEN(var_name)-8) = var_name(9:)
-!      END IF
-!      
-!      IF ( var_name(1:6) == '-dofs ' ) THEN
-!        j = LEN_TRIM( var_name )
-!        k = 7
-!        DO WHILE( var_name(k:k) /= ' '  )
-!          k = k + 1
-!          IF ( k > j ) EXIT
-!        END DO
-!        var_name(1:LEN(var_name)-(k+2)) = var_name(k+1:)
-!      END IF
-!    END DO
-    
     ExpVariable => VariableGet( Solver % Mesh % Variables, Var_name )
     IF( .NOT. ASSOCIATED(ExpVariable)) CYCLE
     

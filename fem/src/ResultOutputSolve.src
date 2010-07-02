@@ -1,4 +1,4 @@
-!
+!/*****************************************************************************/
 ! *
 ! *  Elmer, A Finite Element Software for Multiphysical Problems
 ! *
@@ -56,15 +56,17 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
   INTEGER, POINTER :: OutputIntervals(:), TimeSteps(:)
 
   CHARACTER(10) :: OutputFormat
-  LOGICAL :: Found
+  LOGICAL :: SubroutineVisited=.FALSE.,Found
     
+  SAVE SubroutineVisited
+
 
   CALL Info( 'ResultOutputSolver', '-------------------------------------')
   t0 = CPUTime()
 
+
   SaveGid = ListGetLogical(Solver % Values,'Gid Format',Found)
   SaveGmsh = ListGetLogical(Solver % Values,'Gmsh Format',Found)
-  SaveGmsh = SaveGmsh .OR. ListGetLogical(Solver % Values,'New Gmsh Format',Found)
   SaveVTK = ListGetLogical(Solver % Values,'VTK Format',Found)
   SaveVTU = ListGetLogical(Solver % Values,'VTU Format',Found)
   SaveOpenDx = ListGetLogical(Solver % Values,'Dx Format',Found)
@@ -93,10 +95,32 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
     END IF
   END IF
 
+  IF( .NOT. SubroutineVisited ) THEN
+    IF ( ListGetLogical(Solver % Values,'Show Variables',Found) ) THEN
+      CALL CreateListForSaving( Model, Solver % Values,.TRUE. )    
+      RETURN
+    END IF
+  END IF
+
   IF(.NOT. (SaveGid .OR. SaveGmsh .OR. SaveVTK .OR. SaveVTU .OR. SaveOpenDx .OR. SaveEP)) THEN
     CALL Warn('ResultOutputSolver','No output format was defined')
     RETURN
   END IF
+
+  IF( .NOT. ListCheckPresent( Solver % Values,'Output File Name' ) ) THEN
+    CALL ListAddString( Solver % Values,'Output File Name','Case')
+  END IF
+  
+
+
+  ! Some formats requite that the list of variables is explicitely given
+  ! This call ensures that this is the case
+  !---------------------------------------------------------------------
+  IF( SaveGid .OR. SaveGmsh .OR. SaveVTU .OR. SaveEP ) THEN
+    CALL CreateListForSaving( Model, Solver % Values,.TRUE. )    
+  END IF
+
+
 
   ! Finally go for it and write desired data
   !-----------------------------------------
@@ -106,13 +130,8 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
     CALL GiDOutputSolver( Model,Solver,dt,TransientSimulation )
   END IF
   IF( SaveGmsh ) THEN
-    IF( ListGetLogical(Solver % Values,'Gmsh New Format',Found) ) THEN
-      CALL Info( 'ResultOutputSolver','Saving results in new gmsh format' )        
-      CALL GmshNewOutputSolver( Model,Solver,dt,TransientSimulation )
-    ELSE
-      CALL Info( 'ResultOutputSolver','Saving results in gmsh format' )        
-      CALL GmshOutputSolver( Model,Solver,dt,TransientSimulation )      
-    END IF
+    CALL Info( 'ResultOutputSolver','Saving results in new gmsh format' )        
+    CALL GmshOutputSolver( Model,Solver,dt,TransientSimulation )
   END IF
   IF( SaveVTK ) THEN
     CALL Info( 'ResultOutputSolver','Saving results in legacy vtk format' )            
@@ -137,9 +156,218 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
   CALL Info( 'ResultOutputSolver', Message )
   CALL Info( 'ResultOutputSolver', '-------------------------------------')
 
+  SubroutineVisited = .TRUE.
+
+CONTAINS
+  
+
+!------------------------------------------------------------------------------
+! Elmer may include scalar and vector variables which may be known by their
+! original name or have an alias. For historical reasons they are introduced
+! by two quite separate ways. This subroutine tries to make the definition of
+! variables for saving more straight-forward.
+!------------------------------------------------------------------------------
+  SUBROUTINE CreateListForSaving( Model, List, ShowVariables )
+!------------------------------------------------------------------------------
+    USE DefUtils
+    IMPLICIT NONE
+!------------------------------------------------------------------------------
+    TYPE(Model_t) :: Model
+    TYPE(ValueList_t),POINTER  :: List
+    LOGICAL :: ShowVariables
+!------------------------------------------------------------------------------
+    INTEGER :: i,j,k,l,LoopDim, VarDim,DOFs,dim
+    TYPE(Variable_t), POINTER :: Var, Var1
+    CHARACTER(LEN=MAX_NAME_LEN) :: VarName, VarStr, VarStrComp, VarStrExt, str
+    LOGICAL :: IsVector, Set, GotIt, ComponentVector, ThisOnly
+    INTEGER :: Nvector, Nscalar
+
+
+    !-------------------------------------------------------------------
+    ! First check that there is a need to create the list i.e. it is not
+    ! already manually defined
+    !-------------------------------------------------------------------
+    IF( ListCheckPresent( List,'Scalar Field 1' ) ) RETURN
+    IF( ListCheckPresent( List,'Vector Field 1' ) ) RETURN
+
+    Nscalar = 0
+    Nvector = 0
+    dim = CoordinateSystemDimension()
+    ThisOnly = .TRUE.
+    
+    Var => Model % Variables
+    DO WHILE( ASSOCIATED( Var ) )
+      
+      IF ( .NOT. Var % Output ) THEN
+        Var => Var % Next
+        CYCLE
+      END IF
+      
+      IF ( SIZE( Var % Values ) == Var % DOFs ) THEN
+        Var => Var % Next
+        CYCLE
+      END IF
+
+      VarDim = Var % Dofs
+      IsVector = (VarDim > 1)
+      Set = .FALSE.
+
+      WRITE(VarName,'(A)') TRIM(Var % Name)
+
+      SELECT CASE(Var % Name)
+
+      CASE( 'coordinate 1','coordinate 2','coordinate 3' )
+        ! These are treated separatetely as coordinates are not typically saved
+
+
+      CASE( 'mesh update' )
+        ! Mesh update is treated separately because its special connection to displacement
+
+        Var1 => Model % Variables
+        DO WHILE( ASSOCIATED( Var1 ) )
+          IF ( TRIM(Var1 % Name) == 'displacement' ) EXIT
+          Var1 => Var1 % Next
+        END DO
+        IF ( .NOT. ASSOCIATED( Var1 ) ) THEN
+          Set = .TRUE.
+        END IF
+        
+      CASE('mesh update 1','mesh update 2', 'mesh update 3' )
+        
+      CASE( 'displacement' )
+        Set = .TRUE.
+        ! mesh update is by default the complement to displacement 
+        Var1 => Model % Variables
+        DO WHILE( ASSOCIATED( Var1 ) )
+          IF ( TRIM(Var1 % Name) == 'mesh update' ) EXIT
+          Var1 => Var1 % Next
+        END DO
+        IF ( ASSOCIATED( Var1 ) ) THEN
+          IF( Nvector < 9 ) THEN
+            WRITE(VarStrComp,'(A,I2,A)') 'Vector Field',Nvector+1,' Complement'
+          ELSE
+            WRITE(VarStrComp,'(A,I3,A)') 'Vector Field',Nvector+1,' Complement'            
+          END IF
+          CALL ListAddString( List ,TRIM(VarStrComp),'mesh update')
+        END IF
+        
+      CASE( 'displacement 1','displacement 2','displacement 3')
+        
+
+      CASE DEFAULT
+  
+        ! All vector variables are assumed to be saved using its components
+        ! rather than vector itself.
+
+        IF ( Var % DOFs == 1 ) THEN
+          Set = .TRUE. 
+          
+	  str =  ' '
+          j = LEN_TRIM(Var % Name)
+          DO i=1,j
+            str(i:i) = Var % Name(i:i)
+          END DO
+          
+          ! Check that there are exactly dim number of components
+          ! If so save the quantity as a vector, otherwise componentwise
+          IF( str(j:j) == '1') THEN
+            IF(dim == 2) THEN
+              Var1 => VariableGet(Model % Variables,TRIM(str(1:j-2))//' 2',ThisOnly)		
+              IF( ASSOCIATED(Var1)) THEN
+                Var1 => VariableGet(Model % Variables,TRIM(str(1:j-2))//' 3',ThisOnly)		
+                IsVector = .NOT. ASSOCIATED(Var1)
+              END IF
+            END IF
+            IF(dim == 3) THEN
+              Var1 => VariableGet(Model % Variables,TRIM(str(1:j-2))//' 3',ThisOnly)		
+              IF( ASSOCIATED(Var1)) THEN
+                Var1 => VariableGet(Model % Variables,TRIM(str(1:j-2))//' 4',ThisOnly)		
+                IsVector = .NOT. ASSOCIATED(Var1)
+              END IF
+            END IF
+	    IF( IsVector ) THEN
+              WRITE(VarName,'(A)') TRIM(str(1:j-2))
+              ! Loop over the 2nd (and 3rd) components as they are already accounted for
+	      DO k=2,dim
+                Var => Var % Next
+              END DO
+            END IF
+          END IF
+        END IF
+      END SELECT
+      
+      !---------------------------------------------------------------------------
+      ! Set the default variable names that have not been set
+      !------------------------------------------------------------------------
+      IF( Set ) THEN
+        IF( IsVector ) THEN
+          Nvector = Nvector + 1
+          IF( Nvector < 10 ) THEN 
+            WRITE(VarStr,'(A,I2)') 'Vector Field',Nvector
+          ELSE 
+            WRITE(VarStr,'(A,I3)') 'Vector Field',Nvector
+          END IF
+        ELSE 
+          Nscalar = Nscalar + 1
+          IF( Nscalar < 10 ) THEN
+            WRITE(VarStr,'(A,I2)') 'Scalar Field',Nscalar
+          ELSE            
+            WRITE(VarStr,'(A,I3)') 'Scalar Field',Nscalar
+          END IF
+        END IF
+        CALL ListAddString( List,TRIM(VarStr),TRIM(VarName) )
+      END IF
+
+      Var => Var % Next
+    END DO
+
+
+    IF( ShowVariables ) THEN
+      CALL Info('CreateListForSaving','Field Variables for Saving')
+      DO i=1,Nscalar
+        IF( i < 10 ) THEN
+          WRITE(VarStr,'(A,I2)') 'Scalar Field',i
+        ELSE
+          WRITE(VarStr,'(A,I3)') 'Scalar Field',i
+        END IF
+        VarName = ListGetString( List, VarStr,GotIt )
+        IF( GotIt ) THEN
+          WRITE( Message,'(A)') TRIM(VarStr)//': '//TRIM(VarName)
+          CALL Info('CreateListForSaving',Message)
+        END IF
+      END DO
+
+      DO i=1,Nvector
+        IF( i < 10 ) THEN
+          WRITE(VarStr,'(A,I2)') 'Vector Field',i
+        ELSE
+          WRITE(VarStr,'(A,I3)') 'Vector Field',i
+        END IF
+        VarName = ListGetString( List, VarStr,GotIt )
+        IF( GotIt ) THEN
+          WRITE( Message,'(A)') TRIM(VarStr)//': '//TRIM(VarName)
+          CALL Info('CreateListForSaving',Message)
+        END IF
+      END DO
+
+      DO i=1,Nvector
+        IF( i < 10 ) THEN
+          WRITE(VarStr,'(A,I2,A)') 'Vector Field',i,' Complement'
+        ELSE
+          WRITE(VarStr,'(A,I3,A)') 'Vector Field',i,' Complement'
+        END IF
+        VarName = ListGetString( List, VarStr, GotIt )
+        IF( GotIt ) THEN
+          WRITE( Message,'(A)') TRIM(VarStr)//': '//TRIM(VarName)
+          CALL Info('CreateListForSaving',Message)
+        END IF
+      END DO
+    END IF
+
+
+  END SUBROUTINE CreateListForSaving
+
 END SUBROUTINE ResultOutputSolver
-
-
 
 !------------------------------------------------------------------------------
   SUBROUTINE ElmerPostOutputSolver( Model, Solver,dt,TransientSimulation )
@@ -158,79 +386,82 @@ END SUBROUTINE ResultOutputSolver
     TYPE(Variable_t), POINTER :: Var,Var1,Displacement,MeshUpdate,MaskVar
 
     CHARACTER(LEN=512) :: Row
-    CHARACTER(MAX_NAME_LEN) :: Str, DateStr
+    CHARACTER(MAX_NAME_LEN) :: Str, DateStr, VarName, Txt
 
     LOGICAL :: gotIt, FreeSurfaceFlag, MoveBoundary, MeshMoved, MaskExists
-    REAL(KIND=dp) :: Time,MeshScale
+    INTEGER :: ScalarFields, VectorFields
+    REAL(KIND=dp) :: Time,MeshScale, NodeCoords(3)
+    REAL(KIND=dp), POINTER :: Values(:), Values2(:), Values3(:)
     INTEGER :: ii,i,j,k,l,n,m,q,Node,DOFs,TimeStep, &
-         NumberOfNodes, NumberOfElements, ind
+         NumberOfNodes, NumberOfElements, ind, Vari, DIM
     INTEGER, POINTER :: MaskPerm(:), MaskOrder(:), TimeSteps(:)
 
     INTEGER, SAVE :: SavedCount = 0
     LOGICAL, SAVE :: Visited = .FALSE.
 !------------------------------------------------------------------------------
     
+    dim = CoordinateSystemDimension()
     SavedCount = SavedCount + 1
     
     Timesteps => ListGetIntegerArray( CurrentModel % Simulation, &
-          'Timestep Intervals', GotIt )
+        'Timestep Intervals', GotIt )
     IF( GotIt ) THEN
       TimeCount = SUM(TimeSteps)
     ELSE 
       TimeCount = ListGetInteger( Model % Simulation,'Steady State Max Iterations')
-    END IF 
-
+    END IF
+    
     FilePrefix = GetString( Solver % Values,'Output File Name',GotIt )
     IF ( .NOT.GotIt ) FilePrefix = "Output"
-
+    
     IF(INDEX(FilePrefix,'.') == 0) THEN
       WRITE( Postfile,'(A,A)') TRIM(FilePrefix),".ep"
     ELSE
-        PostFile = FilePrefix
+      PostFile = FilePrefix
     END IF
-
+    
     IF ( INDEX( PostFile, ':') == 0 .AND. PostFile(1:1) /= '/' .AND. &
-         PostFile(1:1) /= Backslash ) THEN
-       
-       IF ( LEN_TRIM(OutputPath) > 0 ) THEN
-          IF ( Visited )  THEN
-             OPEN( PostFileUnit,File=TRIM(OutputPath) // '/' // &
-                  TRIM(PostFile), POSITION='APPEND' )
-          ELSE
-             OPEN( PostFileUnit,File=TRIM(OutputPath) // '/' // &
-                  TRIM(PostFile),STATUS='UNKNOWN' )
-          END IF
-       ELSE
-          IF ( Visited ) THEN
-             OPEN( PostFileUnit,File=TRIM(PostFile),POSITION='APPEND' )
-          ELSE
-             OPEN( PostFileUnit,File=TRIM(PostFile),STATUS='UNKNOWN' )
-          ENDIF
-       END IF
-    ELSE
-       IF ( Visited  ) THEN
+        PostFile(1:1) /= Backslash ) THEN
+      
+      IF ( LEN_TRIM(OutputPath) > 0 ) THEN
+        IF ( Visited )  THEN
+          OPEN( PostFileUnit,File=TRIM(OutputPath) // '/' // &
+              TRIM(PostFile), POSITION='APPEND' )
+        ELSE
+          OPEN( PostFileUnit,File=TRIM(OutputPath) // '/' // &
+              TRIM(PostFile),STATUS='UNKNOWN' )
+        END IF
+      ELSE
+        IF ( Visited ) THEN
           OPEN( PostFileUnit,File=TRIM(PostFile),POSITION='APPEND' )
-       ELSE
+        ELSE
           OPEN( PostFileUnit,File=TRIM(PostFile),STATUS='UNKNOWN' )
-       END IF
+        ENDIF
+      END IF
+    ELSE
+      IF ( Visited  ) THEN
+        OPEN( PostFileUnit,File=TRIM(PostFile),POSITION='APPEND' )
+      ELSE
+        OPEN( PostFileUnit,File=TRIM(PostFile),STATUS='UNKNOWN' )
+      END IF
     END IF
 
 
     FreeSurfaceFlag = .FALSE.
     MoveBoundary    = .FALSE.
     DO i=1,CurrentModel % NumberOfBCs
-       FreeSurfaceFlag = FreeSurfaceFlag .OR. ListGetLogical( &
-            CurrentModel % BCs(i) % Values,'Free Surface', GotIt )
-       IF ( FreeSurfaceFlag ) THEN
-          MoveBoundary =  ListGetLogical( &
-               CurrentModel % BCs(i) % Values,'Internal Move Boundary', GotIt )
-          
-          IF ( .NOT. GotIt ) MoveBoundary = .TRUE.
-          
-          FreeSurfaceFlag = FreeSurfaceFlag .AND. MoveBoundary
-       END IF
-       
-       IF ( FreeSurfaceFlag ) EXIT
+      FreeSurfaceFlag = FreeSurfaceFlag .OR. ListGetLogical( &
+          CurrentModel % BCs(i) % Values,'Free Surface', GotIt )
+      IF ( FreeSurfaceFlag ) THEN
+        MoveBoundary =  ListGetLogical( &
+            CurrentModel % BCs(i) % Values,'Internal Move Boundary', GotIt )
+        
+        IF ( .NOT. GotIt ) MoveBoundary = .TRUE.
+        
+        FreeSurfaceFlag = FreeSurfaceFlag .AND. MoveBoundary
+      END IF
+      
+      IF ( FreeSurfaceFlag ) EXIT
     END DO
     
 !------------------------------------------------------------------------------
@@ -238,621 +469,367 @@ END SUBROUTINE ResultOutputSolver
 !------------------------------------------------------------------------------
     Str = ListGetString( Solver % Values,'Mask Variable',MaskExists)
     IF( MaskExists ) THEN
-       MaskVar => VariableGet(Model % Variables,TRIM(Str))
-       IF( ASSOCIATED(MaskVar)) MaskPerm => MaskVar % Perm
-       MaskExists = ASSOCIATED(MaskPerm)
+      MaskVar => VariableGet(Model % Variables,TRIM(Str))
+      IF( ASSOCIATED(MaskVar)) MaskPerm => MaskVar % Perm
+      MaskExists = ASSOCIATED(MaskPerm)
     END IF
     IF(MaskExists) THEN
-       CALL Info('ElmerPostOutputSolver','Using '// TRIM(Str) // ' as mask variable')
-       NumberOfNodes = MAXVAL(MaskPerm)
-       ALLOCATE(MaskOrder(NumberOfNodes))
-       DO i=1,SIZE(MaskPerm)
-          j = MaskPerm(i)
-          IF(j > 0) MaskOrder(j) = i
-       END DO
-       NumberOfElements = 0
-       DO i=1,Model % NumberOfBulkElements + Model % NumberOfBoundaryElements
-          CurrentElement => Model % Elements(i)
-          IF( ALL(MaskPerm(CurrentElement % NodeIndexes) /= 0)) THEN
-             NumberOfElements = NumberOfElements + 1
-          END IF
-       END DO
+      CALL Info('ElmerPostOutputSolver','Using '// TRIM(Str) // ' as mask variable')
+      NumberOfNodes = MAXVAL(MaskPerm)
+      ALLOCATE(MaskOrder(NumberOfNodes))
+      DO i=1,SIZE(MaskPerm)
+        j = MaskPerm(i)
+        IF(j > 0) MaskOrder(j) = i
+      END DO
+      NumberOfElements = 0
+      DO i=1,Model % NumberOfBulkElements + Model % NumberOfBoundaryElements
+        CurrentElement => Model % Elements(i)
+        IF( ALL(MaskPerm(CurrentElement % NodeIndexes) /= 0)) THEN
+          NumberOfElements = NumberOfElements + 1
+        END IF
+      END DO
     ELSE
-       NumberOfNodes = Model % NumberOfNodes
-       NumberOfElements =  Model % NumberOfBulkElements + Model % NumberOfBoundaryElements
+      NumberOfNodes = Model % NumberOfNodes
+      NumberOfElements =  Model % NumberOfBulkElements + Model % NumberOfBoundaryElements
     END IF
  
 !------------------------------------------------------------------------------
 !   Count degrees of freedom to be saved
 !------------------------------------------------------------------------------
-    NULLIFY( Displacement, MeshUpdate )
     
-    DOFs = 0
-    Var => Model % Variables
-    DO WHILE( ASSOCIATED( Var ) )
-       IF ( .NOT. Var % Output ) THEN
-          Var => Var % Next
-          CYCLE
-       END IF
-       
-       IF ( SIZE( Var % Values ) == Var % DOFs ) THEN
-          Var => Var % Next
-          CYCLE
-       END IF
- 
-       SELECT CASE(Var % Name)
-          
-       CASE( 'mesh update' )
-          Var1 => Model % Variables
-          DO WHILE( ASSOCIATED( Var1 ) )
-             IF ( TRIM(Var1 % Name) == 'displacement' ) EXIT
-             Var1 => Var1 % Next
-          END DO
-          IF ( .NOT. ASSOCIATED( Var1 ) ) THEN
-             DOFs = DOFs + 3
-          END IF
-          
-       CASE('mesh update 1','mesh update 2', 'mesh update 3' )
-          
-       CASE( 'displacement' )
-          DOFs = DOFs + 3
-          
-       CASE( 'displacement 1','displacement 2','displacement 3')
-          
-       CASE( 'flow solution' )
-          DOFs = DOFs + 4
-          
-       CASE( 'velocity 1','velocity 2','velocity 3','pressure' )
-          
-       CASE( 'magnetic field' )
-          DOFs = DOFs + 3
-          
-       CASE( 'magnetic field 1','magnetic field 2','magnetic field 3')
-          
-       CASE( 'electric current' )
-          DOFs = DOFs + 3
-          
-       CASE( 'electric current 1','electric current 2','electric current 3')
-          
-       CASE( 'magnetic flux density' )
-          DOFs = DOFs + 3
-          
-       CASE( 'magnetic flux density 1','magnetic flux density 2','magnetic flux density 3')
-          
-       CASE DEFAULT
-          IF ( Var % DOFs == 1 ) THEN
-             DOFs = DOFs + 1
-          ELSE
-             j=INDEX(Var % Name, '[')
-             IF ( j > 0 ) THEN
-                str =  ' '
-                DO i=1,LEN_TRIM(Var % Name)
-                   str(i:i) = Var % Name(i:i)
-                END DO
-                DO WHILE( .TRUE. )
-                   i = INDEX( str(j+1:), ':' ) + j
-                   IF ( i<=j ) EXIT
-                   READ( str(i+1:),'(i1)' ) k
-                   DOFs = DOFs+k
-                   IF ( k==2 ) DOFs=DOFs+1
-                   j = i + 1
-                END DO
-                DO k=1,Var % DOFs
-                   Var => Var % Next
-                END DO
-             END IF
-          END IF
-       END SELECT
-       Var => Var % Next
+    DO Vari = 1, 99
+      IF( Vari < 10 ) THEN
+        WRITE(Txt,'(A,I2)') 'Scalar Field',Vari
+      ELSE
+        WRITE(Txt,'(A,I3)') 'Scalar Field',Vari
+      END IF
+      IF( .NOT. ListCheckPresent( Solver % Values, TRIM(Txt)) ) EXIT
     END DO
+    ScalarFields = Vari - 1
     
-    IF ( .NOT.FreeSurfaceFlag ) DOFs = DOFs - 3
+    DO Vari = 1, 99
+      IF( Vari < 10 ) THEN
+        WRITE(Txt,'(A,I2)') 'Vector Field',Vari
+      ELSE
+        WRITE(Txt,'(A,I3)') 'Vector Field',Vari
+      END IF
+      IF( .NOT. ListCheckPresent( Solver % Values, TRIM(Txt)) ) EXIT
+    END DO
+    VectorFields = Vari - 1
+    
+    IF( ScalarFields + VectorFields == 0 ) RETURN
+    
+    Dofs = ScalarFields + 3 * VectorFields
 
 !------------------------------------------------------------------------------
 ! Write header to output
 !------------------------------------------------------------------------------
     IF ( .NOT. Visited ) THEN
-       WRITE(PostFileUnit,'(i10,i10,i7,i7)',ADVANCE='NO' ) NumberOfNodes, &
-            NumberOfElements, DOFs, TimeCount
-       
-       Var => Model % Variables
-       DO WHILE( ASSOCIATED( Var ) )
-          
-          IF ( .NOT. Var % Output ) THEN
-             Var => Var % Next
-             CYCLE
-          END IF
-          
-          IF ( SIZE( Var % Values ) == Var % DOFs ) THEN
-            Var => Var % Next
-            CYCLE
-          END IF
- 
+      WRITE(PostFileUnit,'(i10,i10,i7,i7)',ADVANCE='NO' ) NumberOfNodes, &
+          NumberOfElements, DOFs, TimeCount
+      
+      DO Vari = 1, ScalarFields
+        IF( Vari < 10 ) THEN
+          WRITE(Txt,'(A,I2)') 'Scalar Field',Vari
+        ELSE
+          WRITE(Txt,'(A,I3)') 'Scalar Field',Vari
+        END IF
+        VarName = ListGetString( Solver % Values, TRIM(Txt) )
 
-          SELECT CASE(Var % Name)
-             
-          CASE( 'mesh update' )
-             
-             Var1 => Model % Variables
-             DO WHILE( ASSOCIATED( Var1 ) )
-                IF ( TRIM(Var1 % Name) == 'displacement' ) EXIT
-                Var1 => Var1 % Next
-             END DO
-             
-             IF ( .NOT. ASSOCIATED( Var1 ) ) THEN
-                WRITE(PostFileUnit,'(a)',ADVANCE='NO') ' vector: Mesh.Update'
-                Displacement => Var
-             ELSE
-                MeshUpdate   => Var
-             END IF
-             
-          CASE( 'mesh update 1','mesh update 2', 'mesh update 3' )
-             
-          CASE( 'displacement' )
-             WRITE(PostFileUnit,'(a)',ADVANCE='NO' ) ' vector: Displacement'
-             Displacement => Var
-             
-          CASE( 'displacement 1','displacement 2','displacement 3')
-             
-          CASE( 'flow solution' )
-             WRITE(PostFileUnit,'(a)',ADVANCE='NO') ' vector: Velocity scalar: Pressure'
-             
-          CASE( 'velocity 1','velocity 2','velocity 3','pressure' )
-             
-          CASE( 'magnetic field' )
-             WRITE(PostFileUnit,'(a)',ADVANCE='NO' ) ' vector: MagField'
-             
-          CASE( 'magnetic field 1','magnetic field 2','magnetic field 3')
-             
-          CASE( 'electric current' )
-             WRITE(PostFileUNit,'(a)',ADVANCE='NO' ) ' vector: Current'
-             
-          CASE( 'electric current 1','electric current 2','electric current 3')
-             
-          CASE( 'magnetic flux density' )
-             WRITE(PostFileUnit,'(a)',ADVANCE='NO' ) ' vector: MagneticFlux'
-             
-          CASE( 'magnetic flux density 1','magnetic flux density 2','magnetic flux density 3')
-             
-          CASE( 'coordinate 1','coordinate 2','coordinate 3' )
-             
-          CASE DEFAULT
-             
-             IF ( Var % DOFs == 1 ) THEN
-                DO i=1,Var % NameLen
-                   str(i:i) = Var % Name(i:i)
-                   IF ( str(i:i) == ' ' ) str(i:i) = '.'
-                END DO
-                str(1:1) = CHAR(ICHAR(str(1:1))-ICHAR('a')+ICHAR('A'))
-                WRITE(PostFileUnit,'(a,a)',ADVANCE='NO' ) ' scalar: ',str(1:Var % NameLen)
-             ELSE
-                j=INDEX(Var % Name, '[')
-                IF ( j > 0 ) THEN
-                   str =  ' '
-                   DO i=1,LEN_TRIM(Var % Name)
-                      str(i:i) = Var % Name(i:i)
-                   END DO
-                   DOFs = 0
-                   DO WHILE( .TRUE. )
-                      i = INDEX( str(j+1:), ':' ) + j
-                      IF ( i<=j ) EXIT
-                      READ( str(i+1:),'(i1)' ) k
-                      DOFs = DOFs+k
-                      DO WHILE( str(j+1:j+1) == ' ' )
-                         j = j + 1
-                      END DO
-                      str(j+1:j+1) = CHAR(ICHAR(str(j+1:j+1))-ICHAR('a')+ICHAR('A'))
-                      DO l=j+1,i-1
-                         IF ( str(l:l) == ' ' ) str(l:l) = '.'
-                      END DO
-                      IF ( k==1 ) THEN
-                         WRITE(PostFileUnit,'(a,a)',ADVANCE='NO' ) ' scalar: ',str(j+1:i-1)
-                      ELSE IF ( k<= 3 ) THEN
-                         WRITE(PostFileUnit,'(a,a)',ADVANCE='NO' ) ' vector: ',str(j+1:i-1)
-                      ELSE
-                         DO l=1,k
-                            WRITE(PostFileUnit,'(a,a)',ADVANCE='NO' ) ' scalar: ', &
-                                 str(j+1:i-1) // ' ' // CHAR(l+ICHAR('0'))
-                         END DO
-                      END IF
-                      j = i + 1
-                   END DO
-                   DO k=1,Var % DOFs
-                      Var => Var % Next
-                   END DO
-                END IF
-             END IF
-          END SELECT
-          Var => Var % Next
-       END DO
+        k = LEN_TRIM(VarName)
+        DO j=1,k
+          IF ( VarName(j:j) == ' ' ) VarName(j:j) = '.'
+        END DO
        
-       IF ( FreeSurfaceFlag ) THEN
-          WRITE(PostFileUnit,'(a)',ADVANCE='NO' ) ' vector: Coordinates'
-       END IF
-       
-       WRITE(PostFileUnit,'()')
-       DateStr = FormatDate()
-       WRITE( PostFileUnit, '("#File started at: ",A)' ) TRIM(DateStr)
+        WRITE(PostFileUnit,'(a)',ADVANCE='NO' ) ' scalar: '//TRIM(VarName)
+      END DO
+      
+      DO Vari = 1, VectorFields
+        IF( Vari < 10 ) THEN
+          WRITE(Txt,'(A,I2)') 'Vector Field',Vari
+        ELSE
+          WRITE(Txt,'(A,I3)') 'Vector Field',Vari
+        END IF
+
+        k = LEN_TRIM(VarName)
+        DO j=1,k
+          IF ( VarName(j:j) == ' ' ) VarName(j:j) = '.'
+        END DO
+
+        VarName = ListGetString( Solver % Values, TRIM(Txt),GotIt)
+        WRITE(PostFileUnit,'(a)',ADVANCE='NO' ) ' vector: '//TRIM(VarName)
+      END DO
+      
+      WRITE(PostFileUnit,'()')
+      DateStr = FormatDate()
+      WRITE( PostFileUnit, '("#File started at: ",A)' ) TRIM(DateStr)
 !------------------------------------------------------------------------------
 !   Coordinates
 !------------------------------------------------------------------------------
 !
-       MeshScale = 1.0_dp
-       DO i=1,Model % NumberOfSolvers
-          IF ( Model % Solvers(i) % Variable % NameLen <= 0 ) CYCLE
-          
-          IF (Model % Solvers(i) % Variable % Name &
-               (1:Model % Solvers(i) % Variable % NameLen) == 'displacement') THEN
-             MeshMoved = ListGetLogical( Model % Solvers(i) % Values, &
-                  'Displace Mesh', Gotit )
-             IF ( Gotit .AND. .NOT. MeshMoved ) MeshScale = 0.0_dp
-          END IF
-       END DO
-       
+      MeshScale = 1.0_dp
+      DO i=1,Model % NumberOfSolvers
+        IF ( Model % Solvers(i) % Variable % NameLen <= 0 ) CYCLE
+        
+        IF (Model % Solvers(i) % Variable % Name &
+            (1:Model % Solvers(i) % Variable % NameLen) == 'displacement') THEN
+          MeshMoved = ListGetLogical( Model % Solvers(i) % Values, &
+              'Displace Mesh', Gotit )
+          IF ( Gotit .AND. .NOT. MeshMoved ) MeshScale = 0.0_dp
+        END IF
+      END DO
+      
+      
+      DO ii=1,NumberOfNodes
+        
+        i = ii
+        IF(MaskExists) i = MaskOrder(i)
 
-       DO ii=1,NumberOfNodes
+        NodeCoords(1) = Model % Nodes % x(i)
+        NodeCoords(2) = Model % Nodes % y(i)
+        NodeCoords(3) = Model % Nodes % z(i)
+        
+        IF ( ASSOCIATED(Displacement) ) THEN
+          k = Displacement % Perm(i)
           
-          i = ii
-          IF(MaskExists) i = MaskOrder(i)
-          
-          IF ( ASSOCIATED(Displacement) ) THEN
-             k = Displacement % Perm(i)
-             l = 0
-             IF ( ASSOCIATED( MeshUpdate ) ) l = MeshUpdate % Perm(i)
-             
-             IF ( k > 0 ) THEN
-                k = Displacement % DOFs * (k-1)
-                SELECT CASE( Displacement % DOFs )
-                CASE(1)
-                   WRITE(PostFileUnit,'(3E20.12E3)') &
-                        Model % Nodes % x(i) - MeshScale*Displacement % Values(k+1), &
-                        Model % Nodes % y(i), Model % Nodes % z(i)
-                   
-                CASE(2)
-                   WRITE(PostFileUnit,'(3E20.12E3)') &
-                        Model % Nodes % x(i) - MeshScale*Displacement % Values(k+1), &
-                        Model % Nodes % y(i) - MeshScale*Displacement % Values(k+2), &
-                        Model % Nodes % z(i)
-                   
-                CASE(3)
-                   WRITE(PostFileUnit,'(3E20.12E3)') &
-                        Model % Nodes % x(i) - MeshScale*Displacement % Values(k+1), &
-                        Model % Nodes % y(i) - MeshScale*Displacement % Values(k+2), &
-                        Model % Nodes % z(i) - MeshScale*Displacement % Values(k+3)
-                END SELECT
-                
-             ELSE IF ( l > 0 ) THEN
-                k = MeshUpdate % DOFs * (l-1)
-                SELECT CASE( MeshUpdate % DOFs )
-                CASE(1)
-                   WRITE(PostFileUnit,'(3E20.12E3)') &
-                        Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
-                        Model % Nodes % y(i), Model % Nodes % z(i)
-                   
-                CASE(2)
-                   WRITE(PostFileUnit,'(3E20.12E3)') &
-                        Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
-                        Model % Nodes % y(i) - MeshUpdate % Values(k+2), &
-                        Model % Nodes % z(i)
-                   
-                CASE(3)
-                   WRITE(PostFileUnit,'(3E20.12E3)') &
-                        Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
-                        Model % Nodes % y(i) - MeshUpdate % Values(k+2), &
-                        Model % Nodes % z(i) - MeshUpdate % Values(k+3)
-                END SELECT
-             ELSE
-                WRITE(PostFileUnit,'(3E20.12E3)') Model % Nodes % x(i),Model % Nodes % y(i), &
-                     Model % Nodes % z(i)
-             ENDIF
+          IF ( k > 0 ) THEN
+            k = Displacement % DOFs * (k-1)
+            NodeCoords(1) = NodeCoords(1) - MeshScale*Displacement % Values(k+1)
+            IF( Displacement % DOFs >= 2) THEN
+              NodeCoords(2) = NodeCoords(2) - MeshScale*Displacement % Values(k+2)
+            END IF
+            IF( Displacement % DOFs == 3) THEN
+              NodeCoords(3) = NodeCoords(3) - MeshScale*Displacement % Values(k+3)
+            END IF
           ELSE
-             WRITE(PostFileUnit,'(3E20.12E3)') Model % Nodes % x(i),Model % Nodes % y(i), &
-                  Model % Nodes % z(i)
+            IF ( ASSOCIATED( MeshUpdate ) ) k = MeshUpdate % Perm(i)
+            
+            k = MeshUpdate % DOFs * (k-1)
+            NodeCoords(1) = NodeCoords(1) - MeshUpdate % Values(k+1)
+            IF( MeshUpdate % DOFs >= 2) THEN
+              NodeCoords(2) = NodeCoords(2) - MeshUpdate % Values(k+2)
+            END IF
+            IF( MeshUpdate % DOFs == 3) THEN
+              NodeCoords(3) = NodeCoords(3) - MeshUpdate % Values(k+3)
+            END IF
           END IF
-       END DO
+        END IF
+
+        IF( DIM <= 2 ) THEN           
+          WRITE(PostFileUnit,'(2ES16.7E3 A)') NodeCoords(1:2), ' 0.0'
+        ELSE
+          WRITE(PostFileUnit,'(3ES16.7E3 A)') NodeCoords(1:3)
+        END IF
+
+      END DO
 
 !------------------------------------------------------------------------------
 ! Elements
 !------------------------------------------------------------------------------
-       WRITE(PostFileUnit,'(a)') '#group all'
-       DO i=1,Model % NumberOfBulkElements
-          CurrentElement => Model % Elements(i)
-          
-          IF(MaskExists) THEN
-             IF( .NOT. ALL(MaskPerm(CurrentElement % NodeIndexes) /= 0)) CYCLE
-          END IF
-          
-          k = CurrentElement % BodyId
-          gotIt = .FALSE.
-          IF ( k >= 1 .AND. k <= Model % NumberOfBodies ) THEN
-             Str = ListGetString( Model % Bodies(k) % Values,'Name',gotIt )
-          END IF
-          
-          IF ( gotIt ) THEN
-             k = LEN_TRIM(Str)
-             DO j=1,k
-                IF ( Str(j:j) == ' ' ) Str(j:j) = '.'
-             END DO
-             
-             WRITE( PostFileUnit,'(a)',ADVANCE='NO' )  Str(1:k)
-          ELSE
-             IF ( k > 0 .AND. k < 10 ) THEN
-                WRITE(PostFileUnit,'(a,i1,a)',ADVANCE='NO' ) 'body',k,' '
-             ELSE IF ( k >= 10 .AND. k < 100 ) THEN
-                WRITE(PostFileUnit,'(a,i2,a)',ADVANCE='NO' ) 'body',k,' '
-             ELSE
-                WRITE(PostFileUnit,'(a,i3,a)',ADVANCE='NO' ) 'body',k,' '
-             END IF
-          END IF
-          
-          WRITE(PostFileUnit,'(i5)', ADVANCE='NO') CurrentElement % TYPE % ElementCode
-          n = 0
-          DO j=1,CurrentElement % TYPE % NumberOfNodes,4
-             DO k=1,MIN(4,CurrentElement % TYPE % NumberOfNodes-n)
-                n = n + 1
-                ind = CurrentElement % NodeIndexes(n)
-                IF(MaskExists) ind = MaskPerm(ind)
-                WRITE(PostFileUnit, '(i8)', ADVANCE='NO')  ind - 1
-             END DO
-             WRITE( PostFileUnit,'(a)' ) ''
+      WRITE(PostFileUnit,'(a)') '#group all'
+      DO i=1,Model % NumberOfBulkElements
+        CurrentElement => Model % Elements(i)
+        
+        IF(MaskExists) THEN
+          IF( .NOT. ALL(MaskPerm(CurrentElement % NodeIndexes) /= 0)) CYCLE
+        END IF
+        
+        k = CurrentElement % BodyId
+        gotIt = .FALSE.
+        IF ( k >= 1 .AND. k <= Model % NumberOfBodies ) THEN
+          Str = ListGetString( Model % Bodies(k) % Values,'Name',gotIt )
+        END IF
+        
+        IF ( gotIt ) THEN
+          k = LEN_TRIM(Str)
+          DO j=1,k
+            IF ( Str(j:j) == ' ' ) Str(j:j) = '.'
           END DO
-       END DO
-       
-       DO i=Model % NumberOfBulkElements + 1,Model % NumberOfBulkElements + &
-            Model % NumberOfBoundaryElements
           
-          CurrentElement => Model % Elements(i)
-          
-          IF(MaskExists) THEN
-             IF( .NOT. ALL(MaskPerm(CurrentElement % NodeIndexes) /= 0)) CYCLE
-          END IF
-          
-          k = CurrentElement % BoundaryInfo % Constraint
-          
-          gotIt = .FALSE.
-          IF ( k >= 1 .AND. k <= Model % NumberOfBCs ) THEN
-             Str = ListGetString( Model % BCs(k) % Values,'Name',gotIt )
-          END IF
-          
-          IF ( gotIt ) THEN
-             k = LEN_TRIM(Str)
-             DO j=1,k
-                IF ( Str(j:j) == ' ' ) Str(j:j) = '.'
-             END DO
-             
-             WRITE( PostFileUnit,'(a)',ADVANCE='NO' )  Str(1:k)
+          WRITE( PostFileUnit,'(a)',ADVANCE='NO' )  Str(1:k)
+        ELSE
+          IF ( k > 0 .AND. k < 10 ) THEN
+            WRITE(PostFileUnit,'(a,i1,a)',ADVANCE='NO' ) 'body',k,' '
+          ELSE IF ( k >= 10 .AND. k < 100 ) THEN
+            WRITE(PostFileUnit,'(a,i2,a)',ADVANCE='NO' ) 'body',k,' '
           ELSE
-             IF ( k < 10 ) THEN
-                WRITE( PostFileUnit,'(a,i1,a)',ADVANCE='NO' ) 'Constraint', k, ' '
-             ELSE IF ( k < 100 ) THEN
-                WRITE( PostFileUnit,'(a,i2,a)',ADVANCE='NO' ) 'Constraint', k, ' '
-             ELSE
-                WRITE( PostFileUnit,'(a,i3,a)',ADVANCE='NO' ) 'Constraint', k, ' '
-             END IF
+            WRITE(PostFileUnit,'(a,i3,a)',ADVANCE='NO' ) 'body',k,' '
           END IF
-          
-          WRITE(PostFileUnit,'(i5)', ADVANCE='NO') CurrentElement % TYPE % ElementCode
-          DO k=1,CurrentElement % TYPE % NumberOfNodes
-             ind = CurrentElement % NodeIndexes(k)
-             IF(MaskExists) ind = MaskPerm(ind)
-             WRITE( PostFileUnit, '(i8)', ADVANCE='NO' )  ind-1
+        END IF
+        
+        WRITE(PostFileUnit,'(i5)', ADVANCE='NO') CurrentElement % TYPE % ElementCode
+        n = 0
+        DO j=1,CurrentElement % TYPE % NumberOfNodes,4
+          DO k=1,MIN(4,CurrentElement % TYPE % NumberOfNodes-n)
+            n = n + 1
+            ind = CurrentElement % NodeIndexes(n)
+            IF(MaskExists) ind = MaskPerm(ind)
+            WRITE(PostFileUnit, '(i8)', ADVANCE='NO')  ind - 1
           END DO
           WRITE( PostFileUnit,'(a)' ) ''
-       END DO
-       WRITE(PostFileUnit,'(a)') '#endgroup all'
-    END IF 
+        END DO
+      END DO
+      
+      DO i=Model % NumberOfBulkElements + 1,Model % NumberOfBulkElements + &
+          Model % NumberOfBoundaryElements
+        
+        CurrentElement => Model % Elements(i)
+        
+        IF(MaskExists) THEN
+          IF( .NOT. ALL(MaskPerm(CurrentElement % NodeIndexes) /= 0)) CYCLE
+        END IF
+        
+        k = CurrentElement % BoundaryInfo % Constraint
+        
+        gotIt = .FALSE.
+        IF ( k >= 1 .AND. k <= Model % NumberOfBCs ) THEN
+          Str = ListGetString( Model % BCs(k) % Values,'Name',gotIt )
+        END IF
+        
+        IF ( gotIt ) THEN
+          k = LEN_TRIM(Str)
+          DO j=1,k
+            IF ( Str(j:j) == ' ' ) Str(j:j) = '.'
+          END DO
+          
+          WRITE( PostFileUnit,'(a)',ADVANCE='NO' )  Str(1:k)
+        ELSE
+          IF ( k < 10 ) THEN
+            WRITE( PostFileUnit,'(a,i1,a)',ADVANCE='NO' ) 'Constraint', k, ' '
+          ELSE IF ( k < 100 ) THEN
+            WRITE( PostFileUnit,'(a,i2,a)',ADVANCE='NO' ) 'Constraint', k, ' '
+          ELSE
+            WRITE( PostFileUnit,'(a,i3,a)',ADVANCE='NO' ) 'Constraint', k, ' '
+          END IF
+        END IF
+        
+        WRITE(PostFileUnit,'(i5)', ADVANCE='NO') CurrentElement % TYPE % ElementCode
+        DO k=1,CurrentElement % TYPE % NumberOfNodes
+          ind = CurrentElement % NodeIndexes(k)
+          IF(MaskExists) ind = MaskPerm(ind)
+          WRITE( PostFileUnit, '(i8)', ADVANCE='NO' )  ind-1
+        END DO
+        WRITE( PostFileUnit,'(a)' ) ''
+      END DO
+      WRITE(PostFileUnit,'(a)') '#endgroup all'
+    END IF
    
 !------------------------------------------------------------------------------
 !  Save resulst on a timestep (or steady state iteration step)
 !------------------------------------------------------------------------------
  
-
     TimeStep   = SavedCount
     Var => VariableGet( Model % Variables, 'Time' )        
     Time = 1.0d0
     IF ( ASSOCIATED(Var) ) Time = Var % Values(1)
-      
-    WRITE( PostFileUnit,'(a,i7,i7,E20.12E3)' ) '#time ',SavedCount,Timestep,Time
+
+    
+    WRITE( PostFileUnit,'(a,i7,i7,ES16.7E3)' ) '#time ',SavedCount,Timestep,Time
 
     DO ii=1,NumberOfNodes
-       
-       i = ii
-       IF(MaskExists) i = MaskOrder(i)
-       
-       Var => Model % Variables
-       DO WHILE( ASSOCIATED( Var ) )
-          IF ( .NOT. Var % Output ) THEN
-             Var => Var % Next
-             CYCLE
-          END IF
-          
-          IF ( SIZE( Var % Values ) == Var % DOFs ) THEN
-            Var => Var % Next
-            CYCLE
-          END IF
- 
+      
+      i = ii
+      IF(MaskExists) i = MaskOrder(i)
+      
+      DO Vari = 1, ScalarFields
+        IF( Vari < 10 ) THEN
+          WRITE(Txt,'(A,I2)') 'Scalar Field',Vari
+        ELSE
+          WRITE(Txt,'(A,I3)') 'Scalar Field',Vari
+        END IF
+        VarName = ListGetString( Solver % Values, TRIM(Txt),GotIt)
+        Var => VariableGet( Model % Variables, TRIM(VarName) ) 
+        Values => Var % Values
 
-          SELECT CASE(Var % Name)
-             
-          CASE( 'mesh update' )
-             Var1 => Model % Variables
-             DO WHILE( ASSOCIATED( Var1 ) )
-                IF ( TRIM(Var1 % Name) == 'displacement' ) EXIT
-                Var1 => Var1 % Next
-             END DO
-             IF ( .NOT. ASSOCIATED( Var1 ) ) THEN
-                k = i
-                IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
-                IF ( k > 0 ) THEN
-                   DO j=1,Var % DOFs
-                      WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
-                   END DO
-                   IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
-                ELSE
-                   WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
-                END IF
-             END IF
-             
-          CASE(  'mesh update 1','mesh update 2', 'mesh update 3' )
-             
-          CASE( 'displacement' )
-             k = i
-             IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
-             
-             IF ( k > 0 ) THEN
-                DO j=1,Var % DOFs
-                   WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
-                END DO
-                IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
-             ELSE
-                Var1 => Model % Variables
-                DO WHILE( ASSOCIATED( Var1 ) )
-                   IF ( TRIM(Var1 % Name) == 'mesh update' ) EXIT
-                   Var1 => Var1 % Next
-                END DO
-                IF ( ASSOCIATED( Var1 ) ) THEN
-                   k = i
-                   IF ( ASSOCIATED(Var1 % Perm) ) k = Var1 % Perm(k)
-                   IF ( k > 0 ) THEN
-                      DO j=1,Var1 % DOFs
-                         WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO')  &
-                              Var1 % Values(Var1 % DOFs*(k-1)+j)
-                      END DO
-                      IF ( Var1 % DOFs<3 ) &
-                           WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
-                   ELSE
-                      WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
-                   END IF
-                ELSE
-                   WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
-                END IF
-             END IF
-             
-          CASE( 'displacement 1','displacement 2','displacement 3')
-             
-          CASE( 'flow solution' )
-             k = i
-             IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
-             IF ( k > 0 ) THEN
-                DO j=1,Var % DOFs-1
-                   WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
-                END DO
-                IF ( Var % DOFs < 4 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
-                
-                WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO')  &
-                     Var % Values(Var % DOFs*(k-1)+Var % DOFs)
-             ELSE
-                WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0,0.0D0
-             END IF
-             
-          CASE( 'velocity 1','velocity 2','velocity 3','pressure' )
-             
-          CASE( 'magnetic field' )
-             k = i
-             IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
-             IF ( k > 0 ) THEN
-                DO j=1,Var % DOFs
-                   WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
-                END DO
-                IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
-             ELSE
-                WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
-             END IF
-             
-          CASE( 'magnetic field 1','magnetic field 2','magnetic field 3')
-             
-          CASE( 'electric current' )
-             k = i
-             IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
-             IF ( k > 0 ) THEN
-                DO j=1,Var % DOFs
-                   WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
-                END DO
-                IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
-             ELSE
-                WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
-             END IF
-             
-          CASE( 'electric current 1','electric current 2','electric current 3')
-             
-          CASE( 'coordinate 1','coordinate 2','coordinate 3' )
-             
-          CASE( 'magnetic flux density' )
-             k = i
-             IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
-             IF ( k > 0 ) THEN
-                DO j=1,Var % DOFs
-                   WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
-                END DO
-                IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
-             ELSE
-                WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
-             END IF
-             
-          CASE( 'magnetic flux density 1','magnetic flux density 2','magnetic flux density 3')
-             
-          CASE DEFAULT
-             IF ( Var % DOFs == 1 ) THEN
-                k = i
-                IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
-                IF ( k > 0 ) THEN
-                   WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(k)
-                ELSE
-                   WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
-                END IF
-             ELSE
-                l = INDEX( var % name, '[' )
-                IF ( l > 0 ) THEN
-                   DOFs = 0
-                   DO WHILE( .TRUE. )
-                      m = INDEX( Var % Name(l+1:), ':' ) + l
-                      IF ( m<=l ) EXIT
-                      READ( Var % Name(m+1:),'(i1)' ) q
-                      k = i
-                      IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
-                      IF ( k > 0 ) THEN
-                         DO j=DOFs+1,DOFs+q
-                            WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
-                         END DO
-                         IF ( q==2 .OR. q==3 ) THEN
-                            DO j=q+1,3
-                               WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
-                            END DO
-                         END IF
-                      ELSE
-                         DO j=1,q
-                            WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
-                         END DO
-                         IF ( q==2 .OR. q==3 ) THEN
-                            DO j=q+1,3
-                               WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
-                            END DO
-                         END IF
-                      END IF
-                      l=m+1
-                      DOFs = DOFs+q
-                   END DO
-                   DO j=1,Var % DOFs
-                      Var => Var % Next
-                   END DO
-                END IF
-             END IF
-          END SELECT
-          Var => Var % Next
-       END DO
-       
-       IF ( FreeSurfaceFlag ) THEN
-          Var => VariableGet( Model % Variables,'Coordinate 1' )
-          WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(i)
+        k = i
+        IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
+        IF ( k > 0 ) THEN
+          WRITE(PostFileUnit,'(ES16.7E3)',ADVANCE='NO') Values(k)
+        ELSE
+          WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
+        END IF
+      END DO
+
+      DO Vari = 1, VectorFields
+
+        IF( Vari < 10 ) THEN
+          WRITE(Txt,'(A,I2)') 'Vector Field',Vari
+        ELSE
+          WRITE(Txt,'(A,I3)') 'Vector Field',Vari
+        END IF
+        VarName = ListGetString( Solver % Values, TRIM(Txt),GotIt)
+        Var => VariableGet( Model % Variables, VarName ) 
+
+        IF( ASSOCIATED(Var) ) THEN
+          k = i
+          Dofs = Var% Dofs
+          IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
           
-          Var => VariableGet( Model % Variables,'Coordinate 2' )
-          WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(i)
+          IF( k == 0 ) THEN
+            ! Check for the presence of secondary variable (in practice 'mesh update')
+            IF( Vari < 10 ) THEN
+              WRITE(Txt,'(A,I2,A)') 'Vector Field',Vari,' Complement'
+            ELSE
+              WRITE(Txt,'(A,I3,A)') 'Vector Field',Vari,' Complement'
+            END IF
+            VarName = ListGetString( Solver % Values, TRIM(Txt),GotIt)
+            IF( GotIt ) THEN
+              Var => VariableGet( Model % Variables, VarName ) 
+              k = Var % Perm(i)
+            END IF
+          END IF
           
-          Var => VariableGet( Model % Variables,'Coordinate 3' )
-          WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(i)
-       END IF
-        
-       WRITE(PostFileUnit,'()')
+          IF( k > 0 ) THEN
+            DO j=1,dofs
+              WRITE(PostFileUnit,'(ES16.7E3)',ADVANCE='NO') Var % Values(dofs*(k-1)+j)
+            END DO
+            IF( dofs < 3 ) THEN
+              WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
+            END IF
+          ELSE 
+            WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0 0.0 0.0'
+          END IF
+          
+        ELSE
+          ! Check for the presence of component vectors given by its components i=1,2,3
+          Var => VariableGet( Model % Variables, TRIM(VarName)//' 1' ) 
+          IF( ASSOCIATED(Var)) THEN
+            k = i
+            IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
+
+            IF( k == 0 ) THEN
+              IF( Vari < 10 ) THEN
+                WRITE(Txt,'(A,I2,A)') 'Vector Field',Vari,' Complement'
+              ELSE
+                WRITE(Txt,'(A,I3,A)') 'Vector Field',Vari,' Complement'
+              END IF
+              VarName = ListGetString( Solver % Values, TRIM(Txt),GotIt)
+              IF( GotIt ) THEN
+                Var => VariableGet( Model % Variables, TRIM(VarName)//' 1' ) 
+                k = Var % Perm(i)
+              END IF
+            END IF
+            IF( k > 0 ) THEN
+              Values => Var % Values
+              Var => VariableGet( Model % Variables, TRIM(VarName)//' 2' ) 
+              Values2 => Var % Values
+              IF( dim == 2 ) THEN
+                WRITE(PostFileUnit,'(2ES16.7E3,A)',ADVANCE='NO') Values(k),&
+                    Values2(k),' 0.0'               
+              ELSE
+                Var => VariableGet( Model % Variables, TRIM(VarName)//' 3' ) 
+                Values3 => Var % Values
+                WRITE(PostFileUnit,'(3ES16.7E3)',ADVANCE='NO') Values(k),&
+                    Values2(k), Values3(k)
+              END IF
+            ELSE
+              WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0 0.0 0.0'              
+            END IF
+          END IF
+        END IF
+      END DO
+      
+      WRITE(PostFileUnit,'()')
     END DO
 
 !------------------------------------------------------------------------------
@@ -958,15 +935,16 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
   SteadyStep = SteadyStep + 1
 
   OutputFile = GetString( Solver % Values, 'Output File Name', Found )
-  IF( .NOT.Found ) THEN
-     PRINT *,'Output File Name undefined.'
-     OutputFile = 'Output'
-  END IF
-  PRINT *,'Output File Name = ',TRIM(OutputFile)
+  IF(.NOT. Found) OutputFile = 'Output'
+
   WRITE(ResFile,'(A,A)') TRIM(OutputFile),'.flavia.res'
   WRITE(MshFile,'(A,A)') TRIM(OutputFile),'.flavia.msh'
-  PRINT *,'res-file = ',TRIM(ResFile)
-  PRINT *,'msh-file = ',TRIM(MshFile)
+
+
+  CALL Info('GidOutputSolver','Writing result for GiD postprocessing')
+  CALL Info('GidOutputSolver','res-file = :'//TRIM(ResFile) )
+  CALL Info('GidOutputSolver','msh-file = :'//TRIM(MshFile) )
+
 
   ! Write the GiD msh-file:
   !------------------------
@@ -1025,7 +1003,7 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
      IF( .NOT.CoordinatesWritten ) THEN
         WRITE(10,'(A)') 'Coordinates'
         DO j = 1, Model % Mesh % NumberOfNodes
-           WRITE(10,'(I6,3E16.6E3)') j, &
+           WRITE(10,'(I6,3ES16.7E3)') j, &
                 Model % Mesh % Nodes % x(j), &
                 Model % Mesh % Nodes % y(j), &
                 Model % Mesh % Nodes % z(j)
@@ -1112,8 +1090,8 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
    DO Loop = 1, Nloop
      PRINT *,'------------'
 
-  ! First scalar fields:
-  !----------------------
+     ! First scalar fields:
+     !----------------------
      DO i = 1, 99
        IF( i<10 ) THEN
          WRITE(Txt,'(A,I2)') 'Scalar Field',i
@@ -1140,7 +1118,7 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
          IF( TransientSimulation ) THEN
            TimeVariable => VariableGet( Solver % Mesh % Variables, 'Time' )
            PRINT *,'Current time=',TimeVariable % Values(1)
-           WRITE(10,'(A,A,A,E16.6E3,A)') 'Result "',&
+           WRITE(10,'(A,A,A,ES16.7E3,A)') 'Result "',&
                TRIM(ScalarFieldName),'" "Transient analysis" ', &
                TimeVariable % Values(1) ,' Scalar OnNodes'
          ELSE
@@ -1158,9 +1136,9 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
          DO j = 1, Model % Mesh % NumberOfNodes
            k = Perm(j)
            IF( .NOT.EigenAnalysis ) THEN
-             WRITE(10,'(I6,E16.6E3)') j, Values(k)
+             WRITE(10,'(I6,ES16.7E3)') j, Values(k)
            ELSE
-             WRITE(10,'(I6,E16.6E3)') j, REAL(CValues(k))
+             WRITE(10,'(I6,ES16.7E3)') j, REAL(CValues(k))
            END IF
          END DO
          WRITE(10,'(A)') 'end values'
@@ -1184,7 +1162,7 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
        IF( TransientSimulation ) THEN
          TimeVariable => VariableGet( Solver % Mesh % Variables, 'Time' )
          PRINT *,'Current time=',TimeVariable % Values(1)
-         WRITE(10,'(A,A,A,E16.6E3,A)') 'Result "',&
+         WRITE(10,'(A,A,A,ES16.7E3,A)') 'Result "',&
              TRIM(VectorFieldName),'" "Transient analysis" ', &
              TimeVariable % Values(1) ,' Vector OnNodes'
        ELSE
@@ -1221,7 +1199,7 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
            IF( Found ) THEN
              WRITE(Txt,'(A)') TRIM(CompName)
            ELSE
-             WRITE(Txt,'(A,A,I1)') TRIM(VectorFieldName), ' ', k
+             WRITE(Txt,'(A,I2)') TRIM(VectorFieldName), k
            END IF
            
            IF( j==1 ) PRINT *, TRIM(Txt3),' = "', TRIM(Txt),'"'
@@ -1234,10 +1212,10 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
              
              IF( .NOT.EigenAnalysis ) THEN
                Values => Solution % Values
-               WRITE(Txt2,'(A,E16.6E3)') TRIM(Txt2), Values( Perm(j) )
+               WRITE(Txt2,'(A,ES16.7E3)') TRIM(Txt2), Values( Perm(j) )
              ELSE
                CValues => Solution % Eigenvectors(Loop,:)
-               WRITE(Txt2,'(A,E16.6E3)') TRIM(Txt2), REAL(CValues( Perm(j) ) )
+               WRITE(Txt2,'(A,ES16.7E3)') TRIM(Txt2), REAL(CValues( Perm(j) ) )
              END IF
              
            END IF
@@ -1266,7 +1244,7 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
        IF( TransientSimulation ) THEN
          TimeVariable => VariableGet( Solver % Mesh % Variables, 'Time' )
          PRINT *,'Current time=',TimeVariable % Values(1)
-         WRITE(10,'(A,A,A,E16.6E3,A)') 'Result "',&
+         WRITE(10,'(A,A,A,ES16.7E3,A)') 'Result "',&
              TRIM(TensorFieldName),'" "Transient analysis" ', &
              TimeVariable % Values(1) ,' Matrix OnNodes'
        ELSE
@@ -1330,14 +1308,14 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
            ELSE
              Perm => Solution % Perm
              !Values => Solution % Values
-             !WRITE(Txt2,'(A,E16.6E3)') TRIM(Txt2), Values( Perm(j) )
+             !WRITE(Txt2,'(A,ES16.7E3)') TRIM(Txt2), Values( Perm(j) )
              
              IF( .NOT.EigenAnalysis ) THEN
                Values => Solution % Values
-               WRITE(Txt2,'(A,E16.6E3)') TRIM(Txt2), Values( Perm(j) )
+               WRITE(Txt2,'(A,ES16.7E3)') TRIM(Txt2), Values( Perm(j) )
              ELSE
                CValues => Solution % Eigenvectors(Loop,:)
-               WRITE(Txt2,'(A,E16.6E3)') TRIM(Txt2), REAL(CValues( Perm(j) ) )
+               WRITE(Txt2,'(A,ES16.7E3)') TRIM(Txt2), REAL(CValues( Perm(j) ) )
              END IF
 
            END IF
@@ -1361,6 +1339,7 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
   
 
 
+
 !------------------------------------------------------------------------------
 SUBROUTINE GmshOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
@@ -1375,380 +1354,15 @@ SUBROUTINE GmshOutputSolver( Model,Solver,dt,TransientSimulation )
 ! Local variables
 !------------------------------------------------------------------------------
   TYPE(Element_t),POINTER :: Element
-  TYPE(Variable_t), POINTER :: Solution
   INTEGER, POINTER :: Perm(:)
-  REAL(KIND=dp), POINTER :: Values(:)
-  COMPLEX(KIND=dp), POINTER :: CValues(:)
-  TYPE(Variable_t), POINTER :: TimeVariable
-  TYPE(ValueList_t), POINTER :: SolverParams
-  
-  LOGICAL :: Found, GotField, FileAppend, AlterTopology
-  LOGICAL :: EigenAnalysis = .FALSE., EigenActive
-  
-  INTEGER :: VisitedTimes = 0
-  INTEGER :: i,j,k,l,m,n,dim,dofs,Code, body_id, Nloop, Loop, Vari, Rank
-  INTEGER :: ElemNo, NumberOfAllElements
-  INTEGER, PARAMETER :: MaxElemCode = 827
-  INTEGER, TARGET :: PermIndexes(27)
-  INTEGER :: ListElemTypes(MaxElemCode)
-  INTEGER, ALLOCATABLE :: ElementOrder(:)
-  INTEGER, POINTER :: NodeIndexes(:)
-
-  INTEGER, PARAMETER :: LENGTH = 1024
-  CHARACTER(LEN=LENGTH) :: OutputFile, Txt, FieldName, CompName
-  CHARACTER(LEN=6), PARAMETER :: BodyIdField = 'bodyid'
-  
-  INTEGER :: ElemTypeOrder(15)
-  
-  SAVE VisitedTimes, ListElemTypes, ElementOrder, ElemNo
-  
-!------------------------------------------------------------------------------
-  ElemTypeOrder(:) = (/ 101, 202, 303, 404, 504, 808, 706, 605,  &
-                        203, 306, 408, 510, 820, 715, 613 /)
-  
-  CALL Info('GmshOutputSolver','Saving results in Gmsh format')
-  
-  SolverParams => GetSolverParams()
-  EigenAnalysis = GetLogical( SolverParams, 'Eigen Analysis', Found )
-  FileAppend = GetLogical( SolverParams,'File Append',Found)
-  IF(.NOT. Found) FileAppend = .TRUE.
-  AlterTopology = GetLogical( SolverParams,'Alter Topology',Found)
-  
-  OutputFile = GetString( Solver % Values, 'Output File Name', Found )
-  IF( .NOT.Found ) THEN
-    CALL Warn('GmshOutputSolver','Output File Name undefined')
-    OutputFile = 'Output.gm'
-  END IF
-  IF(INDEX(OutputFile,'.') == 0) WRITE( OutputFile,'(A,A)') TRIM(OutputFile),".gm"
- 
-  dim = CoordinateSystemDimension()
-  IF( VisitedTimes > 0 ) THEN
-    IF ( AlterTopology ) THEN
-      OPEN(UNIT=10, FILE=OutputFile, POSITION='APPEND' )
-      GOTO 5    
-    END IF
-    IF ( FileAppend ) THEN
-      OPEN(UNIT=10, FILE=OutputFile, POSITION='APPEND' )
-      GOTO 10    
-    END IF
-  END IF
-
-  ! Save the one-time information
-  !-------------------------------------------------
-  PRINT *,'Output File Name = ',TRIM(OutputFile)
-  OPEN(UNIT=10, FILE=OutputFile )
-  
-  WRITE(10,'(A)') '$PostFormat'
-  WRITE(10,'(A)') '1.4 0 8'
-  WRITE(10,'(A)') '$EndPostFormat'    
-  
-5 CONTINUE
-
-  IF( VisitedTimes > 0) DEALLOCATE(ElementOrder)
-
-  NumberOfAllElements = Model % NumberOfBulkElements + Model % NumberOfBoundaryElements
-  ALLOCATE(ElementOrder(NumberOfAllElements))
-  ElementOrder = 0
-  ListElemTypes = 0
-
-  DO i = 1, NumberOfAllElements
-    Element => Model % Mesh % Elements(i)
-    Code = Element % TYPE % ElementCode
-    ListElemTypes(Code) = ListElemTypes(Code)+1
-  END DO
-  ! PRINT *,'Total number of elements =',SUM(ListElemTypes)
-
-  ! Order the elements so that they are saved in the order defined by the 
-  ! ElemTypeOrder vector. 
-  !----------------------------------------------------------------------
-  ElemNo = 0
-  DO j = 1,SIZE(ElemTypeOrder)
-    Code = ElemTypeOrder(j)
-    IF( ListElemTypes(code) == 0) CYCLE
-
-    DO i = 1, NumberOfAllElements
-      Element => Model % Mesh % Elements(i)
-      IF(Code /= Element % TYPE % ElementCode) CYCLE
-      ElemNo = ElemNo + 1
-      ElementOrder(ElemNo) = i
-    END DO
-  END DO
-
-  ! Check that there is a field to work with
-  !-------------------------------------------------
-  GotField = .FALSE.
-  DO Rank = 0,2
-    DO Vari = 1, 99
-      IF( Vari < 10 ) THEN
-        IF(Rank==0) WRITE(Txt,'(A,I2)') 'Scalar Field',Vari
-        IF(Rank==1) WRITE(Txt,'(A,I2)') 'Vector Field',Vari
-        IF(Rank==2) WRITE(Txt,'(A,I2)') 'Tensor Field',Vari
-      ELSE
-        IF(Rank==0) WRITE(Txt,'(A,I3)') 'Scalar Field',Vari
-        IF(Rank==1) WRITE(Txt,'(A,I3)') 'Vector Field',Vari
-        IF(Rank==2) WRITE(Txt,'(A,I3)') 'Tensor Field',Vari
-      END IF
-
-      FieldName = GetString( Solver % Values, TRIM(Txt), Found )
-      IF(.NOT. Found) EXIT 
-      IF( Rank == 2) THEN
-        CALL Warn('GmshOutputSolver','Not implemented yet for tensors!')
-        CYCLE
-      END IF
-
-      Solution => VariableGet( Solver % Mesh % Variables, FieldName )
-      IF(ASSOCIATED(Solution)) THEN
-        GotField = .TRUE.
-      ELSE IF (FieldName==BodyIdField .AND. Rank==0) THEN
-        GotField = .TRUE.
-      END IF
-    END DO
-  END DO
-
-  IF(.NOT. GotField) THEN
-    CALL Warn('GmshOutputSolver','No variables defined for saving')
-    GOTO 20
-  END IF
-
-
-10 CONTINUE
-
-
-  DO Rank = 0,2
-    DO Vari = 1, 99
-      IF( Vari < 10 ) THEN
-        IF(Rank==0) WRITE(Txt,'(A,I2)') 'Scalar Field',Vari
-        IF(Rank==1) WRITE(Txt,'(A,I2)') 'Vector Field',Vari
-        IF(Rank==2) WRITE(Txt,'(A,I2)') 'Tensor Field',Vari
-      ELSE
-        IF(Rank==0) WRITE(Txt,'(A,I3)') 'Scalar Field',Vari
-        IF(Rank==1) WRITE(Txt,'(A,I3)') 'Vector Field',Vari
-        IF(Rank==2) WRITE(Txt,'(A,I3)') 'Tensor Field',Vari
-      END IF
-      
-      FieldName = GetString( Solver % Values, TRIM(Txt), Found )
-      IF(.NOT. Found) EXIT
-
-      IF(Rank == 2) THEN
-        CALL Warn('GmshOutputSolver','Do the tensors')
-        EXIT
-      END IF
-      
-      Solution => VariableGet( Solver % Mesh % Variables, FieldName )
-      IF(.NOT. ASSOCIATED(Solution)) THEN
-        IF(FieldName == BodyIdField .AND. Rank==0) THEN
-          ! Gmsh Doesn't seem to be capable of extracting a physical
-          ! volume. One workaround is to create a scalar field with
-          ! nodal values equal to the body id of the element.
-          CALL Warn('GmshOutputSolver', 'Implement Body Id output!')
-        ELSE
-          WRITE(Txt, '(A,A)') 'Nonexistent variable: ',TRIM(FieldName)
-          CALL Warn('GmshOutputSolver', Txt)
-        END IF
-        CYCLE
-      END IF
-        
-
-      ! Eliminate possible blancos that are problematic for gmsh
-      !---------------------------------------------------------
-      CALL BlancoSubst(FieldName)
-
-      Perm => Solution % Perm
-      dofs = Solution % DOFs
-      
-      EigenActive = .FALSE.
-      IF( EigenAnalysis ) EigenActive =  ASSOCIATED(Solution % EigenVectors)
-      
-      IF(EigenActive) THEN
-        PRINT *,'Do the eigen values'
-        Cvalues => Solution % EigenVectors(Loop,:)
-        Nloop = GetInteger( Solver % Values, 'Eigen System Values', Found )
-        IF( .NOT.Found ) Nloop = 1
-      ELSE
-        Values => Solution % Values
-      END IF
-      
-      ! Compute the number of active elements for this particular dof
-      !--------------------------------------------------------------
-      ListElemTypes = 0
-      DO i = 1, ElemNo
-        Element => Model % Mesh % Elements(ElementOrder(i))
-        Code = Element % TYPE % ElementCode
-        NodeIndexes => Element % NodeIndexes
-        IF( ANY(Perm(NodeIndexes) == 0)) CYCLE
-        ListElemTypes(Code) = ListElemTypes(Code) + 1
-      END DO
-      IF( SUM(ListElemTypes) == 0) CYCLE
-      
-      
-      ! Now write the view related to the current dof
-      !--------------------------------------------------------------
-      
-      
-      PRINT *,'Saving View for variable: ',TRIM(FieldName)
-      
-      WRITE(10,'(A)') '$View'
-      WRITE(10,'(A,I8)') TRIM(FieldName),1
-      
-      DO i = 1,SIZE(ElemTypeOrder)
-        Code = ElemTypeOrder(i)
-        n = ListElemTypes(code)
-        IF(Rank == 0) THEN
-          WRITE(10,'(I8,I8,I8)') n,0,0
-        ELSE IF(Rank == 1) THEN
-          WRITE(10,'(I8,I8,I8)') 0,n,0
-        ELSE
-          WRITE(10,'(I8,I8,I8)') 0,0,n
-        END IF
-        ! IF(n > 0) PRINT *,'there are',n,'elements of TYPE',Code
-      END DO
-      
-      ! Saving of names data currently omitted
-      WRITE(10,'(I8,I8,I8,I8)') 0,0,0,0
-      
-      IF( TransientSimulation ) THEN
-        TimeVariable => VariableGet( Solver % Mesh % Variables, 'Time' )
-        PRINT *,'Current time=',TimeVariable % Values(1)
-        WRITE(10,'(E16.6E3)') TimeVariable % Values(1)
-      ELSE IF(.NOT. EigenAnalysis) THEN
-        WRITE(10,'(E16.6E3)') 1.0*VisitedTimes
-      ELSE
-        DO i=1,Nloop
-          WRITE(10,'(E16.6E3)') 1.0*i
-        END DO
-      END IF
-      
-      DO i = 1, ElemNo
-        Element => Model % Mesh % Elements(ElementOrder(i))
-        Code = Element % TYPE % ElementCode
-        NodeIndexes => Element % NodeIndexes
-        IF( ANY(Perm(NodeIndexes) == 0)) CYCLE
-        
-        n = element % TYPE % NumberOfNodes
-        CALL ElmerToGmshIndex(Code,n,NodeIndexes)
-
-        WRITE(10,'(100E18.8)') Model % Mesh % Nodes % x(NodeIndexes(1:n))
-        WRITE(10,'(100E18.8)') Model % Mesh % Nodes % y(NodeIndexes(1:n))
-        WRITE(10,'(100E18.8)') Model % Mesh % Nodes % z(NodeIndexes(1:n))
-        
-        IF(Rank == 0) THEN
-          DO k = 1, MOD(Code,100)
-            ! NOTE: FMT currently allows writing of three digit exponents
-            ! This limitiation is also present below for
-            ! 2 and 3 dimensional fields.
-            WRITE(10,'(E18.8E3)') Values(Perm(NodeIndexes(k)))
-          END DO
-        ELSE
-          DO k = 1, MOD(Code,100)
-            ! Always save three components for vectors!
-            DO l = 1, 2
-              WRITE(10,'(E18.8E3)', ADVANCE='NO') Values(dofs*(Perm(NodeIndexes(k))-1)+l)
-            END DO
-            ! The third component usually only makes sense if it is related to the third coordinate
-            IF(dofs >= 3 .AND. dim >= 3) THEN
-              WRITE(10,'(E18.8E3)') Values(dofs*(Perm(NodeIndexes(k))-1)+3)           
-            ELSE
-              WRITE(10,'(A)') ' 0.0'
-            END IF
-          END DO
-        END IF
-        
-      END DO
-      WRITE(10,'(A)') '$EndView'
-    END DO
-  END DO
-
-
-20 CONTINUE
-
-  CLOSE(10)
-  VisitedTimes = VisitedTimes + 1
-  
-  CALL Info('GmshOutputSolver','Gmsh output complete')
-
-CONTAINS
-
-  SUBROUTINE BlancoSubst(variable_name)
-    ! Subroutine by Kurt Baarman
-
-    IMPLICIT NONE
-    
-    CHARACTER(LEN=LENGTH) :: variable_name
-    CHARACTER(LEN=LENGTH),  PARAMETER :: &
-        NAMESET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_'
-    CHARACTER, PARAMETER :: GOOD = '_', BAD = ' ' 
-    INTEGER :: i, last = LENGTH
-    
-    last = SCAN(variable_name, TRIM(NAMESET), .TRUE.)
-    !WRITE (*,*) 'Original name: ',TRIM(variable_name)
-    
-    i = SCAN(variable_name(1:last), BAD)
-    DO WHILE (i /= 0)! .AND. i < last)
-      variable_name(i:i) = GOOD
-      i = SCAN(variable_name(1:last), BAD)
-    END DO
-    !WRITE (*,*) 'Altered name: ',TRIM(variable_name)
-    
-  END SUBROUTINE BlancoSubst
-
-
-  SUBROUTINE ElmerToGmshIndex(Code,n,NodeIndexes)
-
-    INTEGER :: Code
-    INTEGER, POINTER :: NodeIndexes(:)
-    INTEGER i,n
-
-    SELECT CASE( Code )
-
-    CASE(510)             
-      PermIndexes(1:n) = NodeIndexes(1:n)
-      PermIndexes(10) = NodeIndexes(9)
-      PermIndexes(9) = NodeIndexes(10)
-      NodeIndexes => PermIndexes
-      
-    ! There seems to be conflicting data whether this is needed or not
-    ! CASE(306)
-    !  PermIndexes(1:n) = NodeIndexes(1:n)
-    !  PermIndexes(5) = NodeIndexes(6)
-    !  PermIndexes(6) = NodeIndexes(5)     
-    !  NodeIndexes => PermIndexes
-
-    CASE DEFAULT
-            
-    END SELECT
-    
-  END SUBROUTINE ElmerToGmshIndex
-
-
-!------------------------------------------------------------------------------
-END SUBROUTINE GmshOutputSolver
-!------------------------------------------------------------------------------
-  
-
-
-!------------------------------------------------------------------------------
-SUBROUTINE GmshNewOutputSolver( Model,Solver,dt,TransientSimulation )
-!------------------------------------------------------------------------------
-  USE DefUtils
-  IMPLICIT NONE
-!------------------------------------------------------------------------------
-  TYPE(Solver_t) :: Solver
-  TYPE(Model_t) :: Model
-  REAL(KIND=dp) :: dt
-  LOGICAL :: TransientSimulation
-!------------------------------------------------------------------------------
-! Local variables
-!------------------------------------------------------------------------------
-  TYPE(Element_t),POINTER :: Element
-  INTEGER, POINTER :: Perm(:)
-  REAL(KIND=dp), POINTER :: Values(:)
+  REAL(KIND=dp), POINTER :: Values(:),Values2(:),Values3(:)
   REAL(KIND=dp) :: Vector(3), Time
   COMPLEX(KIND=dp), POINTER :: CValues(:)
   TYPE(Variable_t), POINTER :: Solution, TimeVariable
   TYPE(ValueList_t), POINTER :: SolverParams
   
   LOGICAL :: Found, GotField, FileAppend, AlterTopology, MaskExists
-  LOGICAL :: EigenAnalysis = .FALSE., EigenActive
+  LOGICAL :: EigenAnalysis = .FALSE., EigenActive, ComponentVector
   
   INTEGER :: VisitedTimes = 0
   INTEGER :: i,j,k,l,m,n,nsize,dim,dofs,ElmerCode, GmshCode,body_id, Vari, Rank, truedim
@@ -1789,10 +1403,8 @@ SUBROUTINE GmshNewOutputSolver( Model,Solver,dt,TransientSimulation )
   END IF
 
   OutputFile = GetString( Solver % Values, 'Output File Name', Found )
-  IF( .NOT.Found ) THEN
-    CALL Warn('GmshOutputSolver','Output File Name undefined, using default')
-    OutputFile = 'Output.msh'
-  END IF
+  IF( .NOT.Found ) OutputFile = 'Output.msh'
+
   IF(INDEX(OutputFile,'.') == 0) WRITE( OutputFile,'(A,A)') TRIM(OutputFile),".msh"
 
   dim = CoordinateSystemDimension()
@@ -1842,14 +1454,14 @@ SUBROUTINE GmshNewOutputSolver( Model,Solver,dt,TransientSimulation )
       IF( MaskExists ) THEN
         IF( MaskPerm(i) == 0 ) CYCLE
       END IF      
-      WRITE(10,'(I8,3E20.12E3)') i,Model % Nodes % x(i),Model % Nodes % y(i), Model % Nodes % z(i)
+      WRITE(10,'(I8,3ES16.7E3)') i,Model % Nodes % x(i),Model % Nodes % y(i), Model % Nodes % z(i)
     END DO
   ELSE 
     DO i = 1, Model % NumberOfNodes
       IF( MaskExists ) THEN
         IF( MaskPerm(i) == 0 ) CYCLE
       END IF            
-      WRITE(10,'(I8,2E20.12E3,A)') i,Model % Nodes % x(i),Model % Nodes % y(i),' 0.0' 
+      WRITE(10,'(I8,2ES16.7E3,A)') i,Model % Nodes % x(i),Model % Nodes % y(i),' 0.0' 
     END DO
   END IF
   WRITE(10,'(A)') '$EndNodes'
@@ -1908,8 +1520,6 @@ SUBROUTINE GmshNewOutputSolver( Model,Solver,dt,TransientSimulation )
   END DO
   WRITE(10,'(A)') '$EndElements'
 
-
-
   BCOffSet = Model % NumberOfBodies
 
   ! With a mask the list of physical entities should be checked
@@ -1960,21 +1570,43 @@ SUBROUTINE GmshNewOutputSolver( Model,Solver,dt,TransientSimulation )
         CYCLE
       END IF
 
+      ComponentVector = .FALSE.
       Solution => VariableGet( Solver % Mesh % Variables, FieldName )
-      IF(.NOT. ASSOCIATED(Solution)) THEN
-        CALL Warn('GsmhOutputSolver','Variable not present: '//TRIM(FieldName))
-        CYCLE
+      IF(ASSOCIATED(Solution)) THEN
+        Values => Solution % Values
+        Perm => Solution % Perm
+        dofs = Solution % DOFs
+      ELSE
+        IF( Rank == 1 ) THEN
+          Solution => VariableGet( Solver % Mesh % Variables, FieldName//' 1' )
+          IF( ASSOCIATED( Solution ) ) THEN
+            ComponentVector = .TRUE.
+            Values => Solution % Values
+            Perm => Solution % Perm
+            dofs = 1
+            Solution => VariableGet( Solver % Mesh % Variables, FieldName//' 2' )
+            IF( ASSOCIATED(Solution)) THEN
+              Values2 => Solution % Values
+              dofs = 2
+            END IF            
+            Solution => VariableGet( Solver % Mesh % Variables, FieldName//' 3' )
+            IF( ASSOCIATED(Solution)) THEN
+              Values3 => Solution % Values
+              dofs = 3
+            END IF
+          END IF
+        END IF
+        IF( .NOT. ASSOCIATED(Solution)) THEN
+          CALL Warn('GsmhOutputSolver','Variable not present: '//TRIM(FieldName))
+          CYCLE
+        END IF
       END IF
       IF( ASSOCIATED(Solution % EigenVectors) ) THEN
         CALL Warn('GmshOutputSolver','Eigenvectors related to field: '//TRIM(FieldName))
         CALL Warn('GmshOutputSolver','Eigenvectors saving yet not supported')
       END IF
 
-      Values => Solution % Values
-      Perm => Solution % Perm
-      dofs = Solution % DOFs
       truedim = MIN(dofs, dim)
-
       IF( MaskExists ) THEN
         nsize = 0
         DO i=1,SIZE(Perm)
@@ -1993,7 +1625,7 @@ SUBROUTINE GmshNewOutputSolver( Model,Solver,dt,TransientSimulation )
       WRITE(10,'(A)') '1'
       WRITE(10,'(A)') '"'//TRIM(FieldName)//'"'
       WRITE(10,'(A)') '1'
-      WRITE(10,'(E20.12E3)') Time
+      WRITE(10,'(ES16.7E3)') Time
       WRITE(10,'(A)') '3'
       WRITE(10,'(I8)') VisitedTimes
       IF(Rank == 0) THEN
@@ -2013,14 +1645,24 @@ SUBROUTINE GmshNewOutputSolver( Model,Solver,dt,TransientSimulation )
         END IF
         
         IF( Rank == 0 ) THEN
-          WRITE(10,'(I8,E20.12E3)') i,Values(j)
+          WRITE(10,'(I8,ES16.7E3)') i,Values(j)
         ELSE IF(Rank == 1) THEN
-          IF( truedim == 2 ) THEN
-            WRITE(10,'(I8,2E20.12E3,A)') i,&
-                Values(dofs*(j-1)+1),Values(dofs*(j-1)+2),' 0.0'
+          IF( ComponentVector ) THEN
+            IF( truedim == 2 ) THEN
+              WRITE(10,'(I8,2ES16.7E3,A)') i,&
+                  Values(j),Values2(j),' 0.0'
+            ELSE
+              WRITE(10,'(I8,3ES16.7E3)') i,&
+                  Values(j),Values2(j),Values3(j)
+            END IF
           ELSE
-            WRITE(10,'(I8,3E20.12E3)') i,&
-                Values(dofs*(j-1)+1),Values(dofs*(j-1)+2),Values(dofs*(j-1)+3)
+            IF( truedim == 2 ) THEN
+              WRITE(10,'(I8,2ES16.7E3,A)') i,&
+                  Values(dofs*(j-1)+1),Values(dofs*(j-1)+2),' 0.0'
+            ELSE
+              WRITE(10,'(I8,3ES16.7E3)') i,&
+                  Values(dofs*(j-1)+1),Values(dofs*(j-1)+2),Values(dofs*(j-1)+3)
+            END IF           
           END IF
         END IF
       END DO
@@ -2106,7 +1748,7 @@ CONTAINS
   END SUBROUTINE ElmerToGmshIndex
 
 !------------------------------------------------------------------------------
-END SUBROUTINE GmshNewOutputSolver
+END SUBROUTINE GmshOutputSolver
 !------------------------------------------------------------------------------
   
 
@@ -2190,7 +1832,7 @@ CONTAINS
 
                     IF ( k > 0 ) THEN
                         DO j=1,Var % DOFs
-                            WRITE( VtkUnit,'(E20.11E3)',ADVANCE='NO' ) &
+                            WRITE( VtkUnit,'(ES16.7E3)',ADVANCE='NO' ) &
                                             Var % Values(Var % DOFs*(k-1)+j)
                         END DO
                         IF ( Var % DOFs < 3 ) THEN
@@ -2208,7 +1850,7 @@ CONTAINS
                             IF ( ASSOCIATED(Var1 % Perm ) ) k = Var1 % Perm(k)
                             IF ( k > 0 ) THEN
                                 DO j=1,Var1 % DOFs
-                                    WRITE( VtkUnit,'(E20.11E3)',ADVANCE='NO' ) &
+                                    WRITE( VtkUnit,'(ES16.7E3)',ADVANCE='NO' ) &
                                           Var1 % Values(Var1 % DOFs*(k-1)+j)
                                 END DO
                                 IF ( Var1 % DOFs < 3 ) THEN
@@ -2234,7 +1876,7 @@ CONTAINS
                 DO i = 1, Model % NumberOfNodes
                     k = i
                     IF ( ASSOCIATED( Var % Perm ) ) k = Var % Perm(k)
-                    WRITE( VtkUnit,'(E20.11E3)' ) &
+                    WRITE( VtkUnit,'(ES16.7E3)' ) &
                                        Var % Values(Var % DOFs*(k-1)+Var % DOFs)
                 END DO
 
@@ -2272,7 +1914,7 @@ CONTAINS
                         k = i
                         IF ( ASSOCIATED( Var % Perm ) ) k = Var % Perm(k)
                         IF ( k > 0 ) THEN
-                            WRITE( VtkUnit,'(E20.11E3)' ) Var % Values(k)
+                            WRITE( VtkUnit,'(ES16.7E3)' ) Var % Values(k)
                         ELSE
                             WRITE( VtkUnit,'(" 0.0")' )
                         END IF
@@ -2287,13 +1929,13 @@ CONTAINS
 !
 !            DO i = 1, Model % NumberOfNodes
 !                Var => VariableGet( Model % Variables,'Coordinate 1' )
-!                WRITE( VtkUnit,'(E20.11E3)',ADVANCE='NO' ) Var % Values(i)
+!                WRITE( VtkUnit,'(ES16.7E3)',ADVANCE='NO' ) Var % Values(i)
 !
 !                Var => VariableGet( Model % Variables, 'Coordinate 2' )
-!                WRITE( VtkUnit,'(E20.11E3)',ADVANCE='NO' ) Var % Values(i)
+!                WRITE( VtkUnit,'(ES16.7E3)',ADVANCE='NO' ) Var % Values(i)
 !
 !                Var => VariableGet( Model % Variables, 'Coordinate 3' )
-!                WRITE( VtkUnit,'(E20.11E3)' ) Var % Values(i)
+!                WRITE( VtkUnit,'(ES16.7E3)' ) Var % Values(i)
 !            END DO
 !        END IF
 
@@ -2315,7 +1957,7 @@ CONTAINS
             IF ( ASSOCIATED( Var % Perm ) ) k = Var % Perm(k)
             IF ( k > 0 ) THEN
                 DO j=1, n
-                    WRITE( IOUnit,'(E20.11E3)',ADVANCE='NO' ) &
+                    WRITE( IOUnit,'(ES16.7E3)',ADVANCE='NO' ) &
                                     Var % Values(Var % DOFs*(k-1)+j)
                 END DO
                 IF ( n < 3 ) THEN
@@ -2411,7 +2053,7 @@ CONTAINS
 
         DO i = 1, Model % NumberOfNodes
             IF ( .NOT.ASSOCIATED( Displacement ) ) THEN
-                WRITE( IOUnit,'(3E20.11E3)' ) Model % Nodes % x(i), &
+                WRITE( IOUnit,'(3ES16.7E3)' ) Model % Nodes % x(i), &
                                               Model % Nodes % y(i), &
                                             Model % Nodes % z(i)
                 CYCLE
@@ -2425,17 +2067,17 @@ CONTAINS
                 k = Displacement % DOFs * (k-1)
                 SELECT CASE( Displacement % DOFs )
                 CASE(1)
-                    WRITE( IOUnit,'(3E20.11E3)' ) &
+                    WRITE( IOUnit,'(3ES16.7E3)' ) &
                             Model % Nodes % x(i) - Displacement % Values(k+1), &
                             Model % Nodes % y(i), &
                             Model % Nodes % z(i)
                 CASE( 2 )
-                    WRITE( IOUnit,'(3E20.11E3)' ) &
+                    WRITE( IOUnit,'(3ES16.7E3)' ) &
                             Model % Nodes % x(i) - Displacement % Values(k+1), &
                             Model % Nodes % y(i) - Displacement % Values(k+2), &
                             Model % Nodes % z(i)
                 CASE(3)
-                    WRITE( IOUnit,'(3E20.11E3)' ) &
+                    WRITE( IOUnit,'(3ES16.7E3)' ) &
                             Model % Nodes % x(i) - Displacement % Values(k+1), &
                             Model % Nodes % y(i) - Displacement % Values(k+2), &
                             Model % Nodes % z(i) - Displacement % Values(k+3)
@@ -2444,23 +2086,23 @@ CONTAINS
                 k = MeshUpdate % DOFs * (l-1)
                 SELECT CASE( MeshUpdate % DOFs )
                 CASE(1)
-                    WRITE( IOUnit,'(3E20.11E3)' ) &
+                    WRITE( IOUnit,'(3ES16.7E3)' ) &
                             Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
                             Model % Nodes % y(i), &
                             Model % Nodes % z(i)
                 CASE(2)
-                    WRITE( IOUnit,'(3E20.11E3)' ) &
+                    WRITE( IOUnit,'(3ES16.7E3)' ) &
                             Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
                             Model % Nodes % y(i) - MeshUpdate % Values(k+2), &
                             Model % Nodes % z(i)
                 CASE(3)
-                    WRITE( IOUnit,'(3E20.11E3)' ) &
+                    WRITE( IOUnit,'(3ES16.7E3)' ) &
                             Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
                             Model % Nodes % y(i) - MeshUpdate % Values(k+2), &
                             Model % Nodes % z(i) - MeshUpdate % Values(k+3)
                 END SELECT
             ELSE
-                WRITE( IOUnit,'(3E20.11E3)' ) Model % Nodes % x(i), &
+                WRITE( IOUnit,'(3ES16.7E3)' ) Model % Nodes % x(i), &
                                             Model % Nodes % y(i), &
                                             Model % Nodes % z(i)
             ENDIF
@@ -2638,36 +2280,36 @@ END MODULE VtkLegacyFile
 !------------------------------------------------------------------------------
 SUBROUTINE VtkOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
-
-    USE DefUtils 
-    USE VtkLegacyFile
-
-    IMPLICIT NONE
-    TYPE(Solver_t) :: Solver
-    TYPE(Model_t) :: Model
-    REAL(dp) :: dt
-    LOGICAL :: TransientSimulation
-
-    INTEGER, SAVE :: nTime = 0
-    LOGICAL :: GotIt
-    CHARACTER(MAX_NAME_LEN), SAVE :: FilePrefix
-
-    ! Avoid compiler warings about unused variables
-    IF ( TransientSimulation ) THEN; ENDIF
+  
+  USE DefUtils 
+  USE VtkLegacyFile
+  
+  IMPLICIT NONE
+  TYPE(Solver_t) :: Solver
+  TYPE(Model_t) :: Model
+  REAL(dp) :: dt
+  LOGICAL :: TransientSimulation
+  
+  INTEGER, SAVE :: nTime = 0
+  LOGICAL :: GotIt
+  CHARACTER(MAX_NAME_LEN), SAVE :: FilePrefix
+  
+  ! Avoid compiler warings about unused variables
+  IF ( TransientSimulation ) THEN; ENDIF
     IF ( dt > 0.0 ) THEN; ENDIF
+      
+      IF ( nTime == 0 ) THEN
+        FilePrefix = GetString( Solver % Values,'Output File Name',GotIt )
+        IF ( .NOT.GotIt ) FilePrefix = "Output"
+      END IF
+      nTime = nTime + 1
+      
+      CALL WriteData( TRIM(FilePrefix), Model, nTime )
+      
 
-    IF ( nTime == 0 ) THEN
-      FilePrefix = GetString( Solver % Values,'Output File Name',GotIt )
-      IF ( .NOT.GotIt ) FilePrefix = "Output"
-    END IF
-    nTime = nTime + 1
-
-    CALL WriteData( TRIM(FilePrefix), Model, nTime )
-
-
-CONTAINS
-
-    SUBROUTINE WriteData( Prefix, Model, nTime )
+    CONTAINS
+      
+      SUBROUTINE WriteData( Prefix, Model, nTime )
         CHARACTER(*), INTENT(IN) :: Prefix
         TYPE(Model_t) :: Model
         INTEGER, INTENT(IN) :: nTime
@@ -2679,88 +2321,88 @@ CONTAINS
         REAL(dp), POINTER :: OrigValues(:)
         INTEGER :: OrigDOFs
         CHARACTER(MAX_NAME_LEN) :: Dir
-
+        
         Mesh => Model % Meshes
         DO WHILE( ASSOCIATED(Mesh) )
-            IF ( .NOT.Mesh % OutputActive ) THEN
-                Mesh => Mesh % next
-                CYCLE
-            END IF
-
-            IF (LEN_TRIM(Mesh % Name) > 0 ) THEN
-                Dir = TRIM(Mesh % Name) // "/"
-            ELSE
-                Dir = "./"
-            END IF
-
-            CALL SetCurrentMesh( Model, Mesh )
-
-            EigAnal = .FALSE.
-
-   Solvers: DO i = 1, Model % NumberOfSolvers
-                EigAnal = ListGetLogical( Model % Solvers(i) % Values, &
-                                          "Eigen Analysis", GotIt )
-                Var => Model % Solvers(i) % Variable
-                IF ( EigAnal .AND. ASSOCIATED(Var % EigenValues) ) THEN
-                    DO j = 1, Model % Solvers(i) % NOfEigenValues
-                        OrigValues => Var % Values
-                        OrigDOFs = Var % DOFs
-
-                        IF ( Model % Solvers(i) % Matrix % COMPLEX ) THEN
-                            Var % DOFs = Var % DOFs*2
-                            ALLOCATE( Var % Values(2*SIZE(Var%EigenVectors,2)) )
-                            FORALL ( k = 1:SIZE(Var % Values)/2 )
-                                Var%Values(2*k-1) = REAL(Var%EigenVectors(j,k))
-                                Var%Values(2*k) = AIMAG(Var%EigenVectors(j,k))
-                            END FORALL
-                        ELSE
-                            ALLOCATE( Var % Values(SIZE(Var % EigenVectors,2)) )
-                            Var % Values = Var % EigenVectors(j,:)
-                        END IF
-
-                        WRITE( VtkFile, '(A,A,I4.4,"_",I2.2,".vtk")' ) &
-                                         TRIM(Dir), Prefix, nTime, j
-                        CALL WriteVtkLegacyFile( VtkFile, Model, .FALSE. )
-
-                        DEALLOCATE( Var % Values )
-                        Var % Values => OrigValues
-                        Var % DOFs = OrigDOFs
-                    END DO
-                    EXIT Solvers
-                END IF
-            END DO Solvers
-
-            IF ( .NOT.EigAnal ) THEN
-                WRITE( VtkFile,'(A,A,I4.4,".vtk")' ) TRIM(Dir),Prefix,nTime
-                CALL WriteVtkLegacyFile( VtkFile, Model, .TRUE. )
-            END IF
-
+          IF ( .NOT.Mesh % OutputActive ) THEN
             Mesh => Mesh % next
+            CYCLE
+          END IF
+          
+          IF (LEN_TRIM(Mesh % Name) > 0 ) THEN
+            Dir = TRIM(Mesh % Name) // "/"
+          ELSE
+            Dir = "./"
+          END IF
+          
+          CALL SetCurrentMesh( Model, Mesh )
+          
+          EigAnal = .FALSE.
+          
+          Solvers: DO i = 1, Model % NumberOfSolvers
+            EigAnal = ListGetLogical( Model % Solvers(i) % Values, &
+                "Eigen Analysis", GotIt )
+            Var => Model % Solvers(i) % Variable
+            IF ( EigAnal .AND. ASSOCIATED(Var % EigenValues) ) THEN
+              DO j = 1, Model % Solvers(i) % NOfEigenValues
+                OrigValues => Var % Values
+                OrigDOFs = Var % DOFs
+                
+                IF ( Model % Solvers(i) % Matrix % COMPLEX ) THEN
+                  Var % DOFs = Var % DOFs*2
+                  ALLOCATE( Var % Values(2*SIZE(Var%EigenVectors,2)) )
+                  FORALL ( k = 1:SIZE(Var % Values)/2 )
+                    Var%Values(2*k-1) = REAL(Var%EigenVectors(j,k))
+                    Var%Values(2*k) = AIMAG(Var%EigenVectors(j,k))
+                  END FORALL
+                ELSE
+                  ALLOCATE( Var % Values(SIZE(Var % EigenVectors,2)) )
+                  Var % Values = Var % EigenVectors(j,:)
+                END IF
+                
+                WRITE( VtkFile, '(A,A,I4.4,"_",I2.2,".vtk")' ) &
+                    TRIM(Dir), Prefix, nTime, j
+                CALL WriteVtkLegacyFile( VtkFile, Model, .FALSE. )
+                
+                DEALLOCATE( Var % Values )
+                Var % Values => OrigValues
+                Var % DOFs = OrigDOFs
+              END DO
+              EXIT Solvers
+            END IF
+          END DO Solvers
+          
+          IF ( .NOT.EigAnal ) THEN
+            WRITE( VtkFile,'(A,A,I4.4,".vtk")' ) TRIM(Dir),Prefix,nTime
+            CALL WriteVtkLegacyFile( VtkFile, Model, .TRUE. )
+          END IF
+          
+          Mesh => Mesh % next
         END DO
-    END SUBROUTINE WriteData
-
-END SUBROUTINE VtkOutputSolver
+      END SUBROUTINE WriteData
+      
+    END SUBROUTINE VtkOutputSolver
 
 
 !------------------------------------------------------------------------------
 ! The DX output solver begins here
 !------------------------------------------------------------------------------
-MODULE DXFile
+    MODULE DXFile
 
-    USE MeshUtils
-    USE ElementDescription
- 
-    IMPLICIT NONE
-!    PRIVATE
-    SAVE
-
-    PUBLIC :: WriteDXFiles
-
-    INTEGER, PARAMETER :: MAX_VERTIX = 4, MAX_PART_ELEM = 21
-
-CONTAINS
-
-    SUBROUTINE WriteDXFiles( Prefix, Model, SubtractDisp, nTime )
+      USE MeshUtils
+      USE ElementDescription
+      
+      IMPLICIT NONE
+      !    PRIVATE
+      SAVE
+      
+      PUBLIC :: WriteDXFiles
+      
+      INTEGER, PARAMETER :: MAX_VERTIX = 4, MAX_PART_ELEM = 21
+      
+    CONTAINS
+      
+      SUBROUTINE WriteDXFiles( Prefix, Model, SubtractDisp, nTime )
         CHARACTER(LEN=*), INTENT(IN) :: Prefix
         TYPE(Model_t) :: Model 
         LOGICAL, INTENT(IN) :: SubtractDisp
@@ -2769,93 +2411,93 @@ CONTAINS
         CHARACTER(LEN=512) :: str
         INTEGER :: i
         INTEGER, PARAMETER :: MasterUnit = 58
-
+        
         IF ( nTime == 1) THEN
-            CALL WriteGrid( Prefix, Model, SubtractDisp )
-
-            OPEN( MasterUnit, FILE = Prefix // "Master.dx", STATUS="unknown" )
-            WRITE( MasterUnit, '(A)') 'object "group" class group'
+          CALL WriteGrid( Prefix, Model, SubtractDisp )
+          
+          OPEN( MasterUnit, FILE = Prefix // "Master.dx", STATUS="unknown" )
+          WRITE( MasterUnit, '(A)') 'object "group" class group'
         END IF
-
+        
         Var => Model % Variables
         DO WHILE( ASSOCIATED( Var ) )
-            IF ( .NOT.Var % Output ) THEN
-                Var => Var % Next
-                CYCLE
-            END IF
-
-            IF ( SIZE( Var % Values ) == Var % DOFs ) THEN
-              Var => Var % Next
-              CYCLE
-            END IF
-
-            SELECT CASE( Var % Name )
-
-            CASE( 'mesh update' )
-                Var1 => Model % Variables
-
-                DO WHILE( ASSOCIATED( Var1 ) )
-                    IF ( TRIM( Var1 % Name ) == 'displacement' ) EXIT
-                    Var1 => Var1 % Next
-                END DO
-
-                IF ( .NOT.ASSOCIATED( Var1 ) ) THEN
-                    CALL WriteVariable( "MeshUpdate", Var, &
-                                        Model % NumberOfNodes, Var % DOFs, 0,  &
-                                        nTime, MasterUnit, Prefix )
-                END IF
-
-            CASE( 'mesh update 1','mesh update 2', 'mesh update 3' )
-
-            CASE( 'displacement' )
-                CALL WriteDisplacement( Var, Model, nTime, MasterUnit, Prefix )
-            CASE( 'displacement 1','displacement 2','displacement 3' )
-
-            CASE( 'flow solution' )
-                CALL WriteVariable( "Velocity", Var, Model % NumberOfNodes, &
-                                    Var % DOFs-1, 0, nTime, MasterUnit, Prefix )
-                CALL WriteVariable( "Pressure", Var, Model % NumberOfNodes, 1, &
-                                    Var % DOFs-1, nTime, MasterUnit, Prefix )
-            CASE( 'velocity 1','velocity 2','velocity 3','pressure' )
-
-            CASE( 'magnetic field' )
-                CALL WriteVariable( "MagField", Var, Model % NumberOfNodes, &
-                                    Var % DOFs, 0, nTime, MasterUnit, Prefix )
-            CASE( 'magnetic field 1','magnetic field 2', 'magnetic field 3' )
-
-            CASE( 'electric current' )
-                CALL WriteVariable( "Current", Var, Model % NumberOfNodes, &
-                                    Var % DOFs, 0, nTime, MasterUnit, Prefix )
-            CASE('electric current 1','electric current 2','electric current 3')
-
-            CASE( 'coordinate 1','coordinate 2','coordinate 3' )
-
-            CASE( 'magnetic flux density' )
-                CALL WriteVariable( "MagneticFlux", Var, Model % NumberOfNodes,&
-                                    Var % DOFs, 0, nTime, MasterUnit, Prefix )
-            CASE( 'magnetic flux density 1','magnetic flux density 2', &
-                  'magnetic flux density 3' )
-            CASE DEFAULT
-                DO i=1,Var % NameLen
-                    str(i:i) = Var % Name(i:i)
-                    IF( str(i:i) == ' ' ) str(i:i) = '_'
-                END DO
-                str(1:1) = CHAR(ICHAR(str(1:1))-ICHAR('a')+ICHAR('A'))
-
-                CALL WriteVariable( TRIM(str), Var, Model % NumberOfNodes, &
-                                    Var % DOFs, 0,  nTime, MasterUnit, Prefix )
-            END SELECT
+          IF ( .NOT.Var % Output ) THEN
             Var => Var % Next
+            CYCLE
+          END IF
+          
+          IF ( SIZE( Var % Values ) == Var % DOFs ) THEN
+            Var => Var % Next
+            CYCLE
+          END IF
+          
+          SELECT CASE( Var % Name )
+            
+          CASE( 'mesh update' )
+            Var1 => Model % Variables
+            
+            DO WHILE( ASSOCIATED( Var1 ) )
+              IF ( TRIM( Var1 % Name ) == 'displacement' ) EXIT
+              Var1 => Var1 % Next
+            END DO
+            
+            IF ( .NOT.ASSOCIATED( Var1 ) ) THEN
+              CALL WriteVariable( "MeshUpdate", Var, &
+                  Model % NumberOfNodes, Var % DOFs, 0,  &
+                  nTime, MasterUnit, Prefix )
+            END IF
+            
+          CASE( 'mesh update 1','mesh update 2', 'mesh update 3' )
+            
+          CASE( 'displacement' )
+            CALL WriteDisplacement( Var, Model, nTime, MasterUnit, Prefix )
+          CASE( 'displacement 1','displacement 2','displacement 3' )
+            
+          CASE( 'flow solution' )
+            CALL WriteVariable( "Velocity", Var, Model % NumberOfNodes, &
+                Var % DOFs-1, 0, nTime, MasterUnit, Prefix )
+            CALL WriteVariable( "Pressure", Var, Model % NumberOfNodes, 1, &
+                Var % DOFs-1, nTime, MasterUnit, Prefix )
+          CASE( 'velocity 1','velocity 2','velocity 3','pressure' )
+            
+          CASE( 'magnetic field' )
+            CALL WriteVariable( "MagField", Var, Model % NumberOfNodes, &
+                Var % DOFs, 0, nTime, MasterUnit, Prefix )
+          CASE( 'magnetic field 1','magnetic field 2', 'magnetic field 3' )
+            
+          CASE( 'electric current' )
+            CALL WriteVariable( "Current", Var, Model % NumberOfNodes, &
+                Var % DOFs, 0, nTime, MasterUnit, Prefix )
+          CASE('electric current 1','electric current 2','electric current 3')
+            
+          CASE( 'coordinate 1','coordinate 2','coordinate 3' )
+            
+          CASE( 'magnetic flux density' )
+            CALL WriteVariable( "MagneticFlux", Var, Model % NumberOfNodes,&
+                Var % DOFs, 0, nTime, MasterUnit, Prefix )
+          CASE( 'magnetic flux density 1','magnetic flux density 2', &
+              'magnetic flux density 3' )
+          CASE DEFAULT
+            DO i=1,Var % NameLen
+              str(i:i) = Var % Name(i:i)
+              IF( str(i:i) == ' ' ) str(i:i) = '_'
+            END DO
+            str(1:1) = CHAR(ICHAR(str(1:1))-ICHAR('a')+ICHAR('A'))
+            
+            CALL WriteVariable( TRIM(str), Var, Model % NumberOfNodes, &
+                Var % DOFs, 0,  nTime, MasterUnit, Prefix )
+          END SELECT
+          Var => Var % Next
         END DO
-
+        
         IF( nTime == 1) THEN
-            CLOSE( MasterUnit )
+          CLOSE( MasterUnit )
         END IF
-    END SUBROUTINE WriteDXFiles
+      END SUBROUTINE WriteDXFiles
+      
 
-
-    SUBROUTINE WriteVariable( VarName, Var, nNodes, SelfDOF, Offset, nTime, &
-                              MasterUnit, Prefix )
+      SUBROUTINE WriteVariable( VarName, Var, nNodes, SelfDOF, Offset, nTime, &
+          MasterUnit, Prefix )
         CHARACTER(*), INTENT(IN) :: VarName
         TYPE(Variable_t), INTENT(IN) :: Var
         INTEGER, INTENT(IN) :: nNodes, SelfDOF, Offset, nTime, MasterUnit
@@ -2864,563 +2506,563 @@ CONTAINS
         INTEGER :: FUnit
         CHARACTER(MAX_NAME_LEN) :: FName, RelativeFName, MeshFile
         CHARACTER(7) :: VType
-
+        
         FUnit = MasterUnit + 1
         FName = Prefix // VarName // ".dx"
-
+        
         i = INDEX(FName, '/', BACK=.TRUE.)
         RelativeFName = FName(i+1:)
-
+        
         i = INDEX(Prefix, '/', BACK=.TRUE.)
         MeshFile = Prefix(i+1:) // "Mesh.dx"
-
+        
         IF( nTime == 1 ) THEN
-
+          
             IF ( SelfDOF == 1 ) THEN
-                VType = "-scalar"
+              VType = "-scalar"
             ELSE
-                VType = "-vector"
+              VType = "-vector"
             END IF
             WRITE( MasterUnit, '(A)' ) 'member "' // VarName // VType     &
-                        // '" value file "' // TRIM(RelativeFName) // '","'  &
-                        // VarName // 'series' // '"'
-
+                // '" value file "' // TRIM(RelativeFName) // '","'  &
+                // VarName // 'series' // '"'
+            
             OPEN( FUnit, FILE=FName, STATUS="unknown" )
-        ELSE
+          ELSE
             OPEN( FUnit, FILE=FName, STATUS="old", POSITION="append" )
             DO i = 1, 2+(nTime-1)*7
-                BACKSPACE FUnit   ! Yuck!
+              BACKSPACE FUnit   ! Yuck!
             END DO
-        END IF
-
-        IF( SelfDOF == 1 )THEN
+          END IF
+          
+          IF( SelfDOF == 1 )THEN
             WRITE( FUnit,'("object ",I0," class array type double rank 0 &
-                             &items ",I0," data follows")') nTime, nNodes
-        ELSE
+                &items ",I0," data follows")') nTime, nNodes
+          ELSE
             WRITE( FUnit,'("object ",I0," class array type double rank 1 shape &
-                            &",I0," items ",I0," data follows")') nTime, & 
-                                                                 SelfDOF, nNodes
-        END IF
-
-        DO i = 1, nNodes
+                &",I0," items ",I0," data follows")') nTime, & 
+                SelfDOF, nNodes
+          END IF
+          
+          DO i = 1, nNodes
             k = i
             IF( ASSOCIATED( Var % Perm ) ) k = Var % Perm(k)
             IF( k > 0 )THEN
-                DO j=1, SelfDOF
-                    WRITE( FUnit,'(E20.11E3)',ADVANCE='NO' ) &
-                                    Var % Values(Var % DOFs*(k-1)+j+Offset)
-                END DO
-                WRITE( FUnit, * ) 
+              DO j=1, SelfDOF
+                WRITE( FUnit,'(ES16.7E3)',ADVANCE='NO' ) &
+                    Var % Values(Var % DOFs*(k-1)+j+Offset)
+              END DO
+              WRITE( FUnit, * ) 
             ELSE
-                WRITE( FUnit, '(9F4.1)' ) (/ (0.0, k=1,SelfDOF) /)
+              WRITE( FUnit, '(9F4.1)' ) (/ (0.0, k=1,SelfDOF) /)
             END IF
-        END DO
-
-        WRITE( FUnit, '(A)' ) 'attribute "dep" string "positions"'
-        WRITE( FUnit, * ) 
-
-        DO i = nTime + 1, 2*nTime
+          END DO
+          
+          WRITE( FUnit, '(A)' ) 'attribute "dep" string "positions"'
+          WRITE( FUnit, * ) 
+          
+          DO i = nTime + 1, 2*nTime
             WRITE( FUnit,'("object ",I0," class field")' ) i
             WRITE( FUnit,'(A,I0)' ) 'component "data" value ', i - nTime
             WRITE( FUnit,'(A,A,A)' ) 'component "positions" value file "',&
-                                            TRIM( MeshFile ), '",1'
+                TRIM( MeshFile ), '",1'
             WRITE( FUnit,'(A,A,A)' ) 'component "connections" value file "',&
-                                            TRIM( MeshFile ), '",2'
+                TRIM( MeshFile ), '",2'
             WRITE( FUnit, '(A,A,A)' ) 'attribute "name" string "', VarName,'"'
             WRITE( FUnit, * ) 
-        END DO
-
-        WRITE( FUnit,'(A)' ) 'object "'//VarName//'series'//'" class series'
-        DO i = 1, nTime
+          END DO
+          
+          WRITE( FUnit,'(A)' ) 'object "'//VarName//'series'//'" class series'
+          DO i = 1, nTime
             WRITE( FUnit, '("member ",I0," value ",I0," position ",I0)' ) &
-                          i-1, i+nTime, i
-        END DO
-        WRITE( FUnit, '("end")' ) 
-
-        CLOSE( FUnit )
-
-    END SUBROUTINE WriteVariable
-
+                i-1, i+nTime, i
+          END DO
+          WRITE( FUnit, '("end")' ) 
+          
+          CLOSE( FUnit )
+          
+        END SUBROUTINE WriteVariable
+        
     
-    ! WriteDisplacement is like WriteVariable, but specialized for
-    ! Displacements; displacements need special treatment.
-
-    SUBROUTINE WriteDisplacement( Var, Model, nTime, MasterUnit, Prefix )
-        TYPE(Variable_t), INTENT(IN) :: Var
-        TYPE(Model_t), INTENT(IN) :: Model
-        INTEGER, INTENT(IN) :: nTime, MasterUnit
-        CHARACTER(*), INTENT(IN) :: Prefix
-        INTEGER :: i, j, k
-        INTEGER :: FUnit
-        CHARACTER(MAX_NAME_LEN) :: FName, RelativeFName, MeshFile
-        TYPE(Variable_t), POINTER :: Var1
-
-        FUnit = MasterUnit + 1
-        FName = Prefix // "Displacement.dx"
-
-        i = INDEX(FName, '/', BACK=.TRUE.)
-        RelativeFName = FName(i+1:)
-
-        i = INDEX(Prefix, '/', BACK=.TRUE.)
-        MeshFile = Prefix(i+1:) // "Mesh.dx"
-
-        IF( nTime == 1 ) THEN
+        ! WriteDisplacement is like WriteVariable, but specialized for
+        ! Displacements; displacements need special treatment.
+        
+        SUBROUTINE WriteDisplacement( Var, Model, nTime, MasterUnit, Prefix )
+          TYPE(Variable_t), INTENT(IN) :: Var
+          TYPE(Model_t), INTENT(IN) :: Model
+          INTEGER, INTENT(IN) :: nTime, MasterUnit
+          CHARACTER(*), INTENT(IN) :: Prefix
+          INTEGER :: i, j, k
+          INTEGER :: FUnit
+          CHARACTER(MAX_NAME_LEN) :: FName, RelativeFName, MeshFile
+          TYPE(Variable_t), POINTER :: Var1
+          
+          FUnit = MasterUnit + 1
+          FName = Prefix // "Displacement.dx"
+          
+          i = INDEX(FName, '/', BACK=.TRUE.)
+          RelativeFName = FName(i+1:)
+          
+          i = INDEX(Prefix, '/', BACK=.TRUE.)
+          MeshFile = Prefix(i+1:) // "Mesh.dx"
+          
+          IF( nTime == 1 ) THEN
             WRITE( MasterUnit,'(A)' ) &
-                            'member "Displacement-vector" value file "' &
-                            // TRIM(RelativeFName) // '", "Displacementseries"'
-
+                'member "Displacement-vector" value file "' &
+                // TRIM(RelativeFName) // '", "Displacementseries"'
+            
             OPEN( FUnit, FILE=FName, STATUS="unknown" )
-        ELSE
+          ELSE
             OPEN( FUnit, FILE=FName, STATUS="old", POSITION="append" )
             DO i = 1, 2+(nTime-1)*7
-                BACKSPACE FUnit   ! Yuck!
+              BACKSPACE FUnit   ! Yuck!
             END DO
-        END IF
-
-        WRITE( FUnit,'("object ",I0," class array type double rank 1 shape ",  &
-                        &I0," items ",I0," data follows")') nTime, Var % DOFs, &
-                                                          Model % NumberOfNodes
-        DO i = 1, Model % NumberOfNodes
+          END IF
+          
+          WRITE( FUnit,'("object ",I0," class array type double rank 1 shape ",  &
+              &I0," items ",I0," data follows")') nTime, Var % DOFs, &
+              Model % NumberOfNodes
+          DO i = 1, Model % NumberOfNodes
             k = i
             IF( ASSOCIATED( Var % Perm ) ) k = Var % Perm(k)
             IF( k > 0 )THEN
-                DO j=1, Var % DOFs
-                    WRITE( FUnit,'(E20.11E3)',ADVANCE='NO' ) &
-                                    Var % Values(Var % DOFs*(k-1)+j)
-                END DO
-                WRITE( FUnit, * ) 
+              DO j=1, Var % DOFs
+                WRITE( FUnit,'(ES16.7E3)',ADVANCE='NO' ) &
+                    Var % Values(Var % DOFs*(k-1)+j)
+              END DO
+              WRITE( FUnit, * ) 
             ELSE
-                Var1 => Model % Variables
-                DO WHILE( ASSOCIATED( Var1 ) )
-                    IF ( TRIM( Var1 % Name ) == 'mesh update' ) EXIT
-                    Var1 => Var1 % Next
-                END DO
-                IF( ASSOCIATED( Var1 ) )THEN
-                    k = i
-                    IF( ASSOCIATED(Var1 % Perm ) ) k = Var1 % Perm(k)
-                    IF( k > 0 )THEN
-                        DO j=1,Var1 % DOFs
-                            WRITE( FUnit,'(E20.11E3)',ADVANCE='NO' ) &
-                                  Var1 % Values(Var1 % DOFs*(k-1)+j)
-                        END DO
-                        WRITE( FUnit, * ) 
-                    ELSE
-                        WRITE( FUnit, '(9F4.1)' ) (/ (0.0, k=1,Var % DOFs) /)
-                    END IF
+              Var1 => Model % Variables
+              DO WHILE( ASSOCIATED( Var1 ) )
+                IF ( TRIM( Var1 % Name ) == 'mesh update' ) EXIT
+                Var1 => Var1 % Next
+              END DO
+              IF( ASSOCIATED( Var1 ) )THEN
+                k = i
+                IF( ASSOCIATED(Var1 % Perm ) ) k = Var1 % Perm(k)
+                IF( k > 0 )THEN
+                  DO j=1,Var1 % DOFs
+                    WRITE( FUnit,'(ES16.7E3)',ADVANCE='NO' ) &
+                        Var1 % Values(Var1 % DOFs*(k-1)+j)
+                  END DO
+                  WRITE( FUnit, * ) 
                 ELSE
-                    WRITE( FUnit, '(9F4.1)' ) (/ (0.0, k=1,Var % DOFs) /)
+                  WRITE( FUnit, '(9F4.1)' ) (/ (0.0, k=1,Var % DOFs) /)
                 END IF
+              ELSE
+                WRITE( FUnit, '(9F4.1)' ) (/ (0.0, k=1,Var % DOFs) /)
+              END IF
             END IF
-        END DO
-
-        WRITE( FUnit, '(A)' ) 'attribute "dep" string "positions"'
-        WRITE( FUnit, * ) 
-
-        DO i = nTime + 1, 2*nTime
+          END DO
+          
+          WRITE( FUnit, '(A)' ) 'attribute "dep" string "positions"'
+          WRITE( FUnit, * ) 
+          
+          DO i = nTime + 1, 2*nTime
             WRITE( FUnit,'("object ",I0," class field")' ) i
             WRITE( FUnit,'(A,I0)' ) 'component "data" value ', i - nTime
             WRITE( FUnit,'(A,A,A)' ) 'component "positions" value file "',&
-                                            TRIM( MeshFile ), '",1'
+                TRIM( MeshFile ), '",1'
             WRITE( FUnit,'(A,A,A)' ) 'component "connections" value file "',&
-                                            TRIM( MeshFile ), '",2'
+                TRIM( MeshFile ), '",2'
             WRITE( FUnit,'(A,A,A)' ) 'attribute "name" string "Displacement"'
             WRITE( FUnit,* ) 
-        END DO
-
-        WRITE( FUnit,'(A)' ) 'object "Displacementseries" class series'
-        DO i = 1, nTime
+          END DO
+          
+          WRITE( FUnit,'(A)' ) 'object "Displacementseries" class series'
+          DO i = 1, nTime
             WRITE( FUnit,'("member ",I0," value ",I0," position ",I0)' ) &
-                                                                 i-1, i+nTime, i
-        END DO
-        WRITE( FUnit, '("end")' ) 
-
-        CLOSE( FUnit )
-
-    END SUBROUTINE WriteDisplacement
-
-
-    SUBROUTINE WriteGrid ( PRefix, Model, SubtractDisp )
-        CHARACTER(*), INTENT(IN) :: Prefix
-        TYPE(Model_t), INTENT(IN) :: Model
-        LOGICAL, INTENT(IN) :: SubtractDisp ! Subtract Displacement from Coords.
-        TYPE(Variable_t), POINTER :: Displacement, MeshUpdate, Var1, Var2
-        INTEGER :: i, k, l, nElem, nVertix
-        CHARACTER(MAX_NAME_LEN) :: FName
-        INTEGER, PARAMETER :: FUnit = 58
-        INTEGER :: NodeIndex(MAX_PART_ELEM, MAX_VERTIX)
-
-        FName = Prefix // "Mesh.dx"
-        OPEN( UNIT=FUnit, FILE=FName, STATUS="unknown", ACTION="write" )
-
-        WRITE ( FUnit,'("# ElmerSolver output; started at ",A)' ) &
-                                                            TRIM( FormatDate() )
-        !
-        ! Coordinates: 
-        !
-        WRITE ( FUnit, '("# Node Coordinates")' )
-        WRITE ( FUnit, '("object 1 class array type float rank 1 shape 3 &
-                          &items ",I0," data follows")' ) Model % NumberOfNodes
-
-        ! First, look for displacements
-        Displacement => NULL()
-        MeshUpdate => NULL()
-        IF( SubtractDisp )THEN
+                i-1, i+nTime, i
+          END DO
+          WRITE( FUnit, '("end")' ) 
+          
+          CLOSE( FUnit )
+          
+        END SUBROUTINE WriteDisplacement
+        
+        
+        SUBROUTINE WriteGrid ( PRefix, Model, SubtractDisp )
+          CHARACTER(*), INTENT(IN) :: Prefix
+          TYPE(Model_t), INTENT(IN) :: Model
+          LOGICAL, INTENT(IN) :: SubtractDisp ! Subtract Displacement from Coords.
+          TYPE(Variable_t), POINTER :: Displacement, MeshUpdate, Var1, Var2
+          INTEGER :: i, k, l, nElem, nVertix
+          CHARACTER(MAX_NAME_LEN) :: FName
+          INTEGER, PARAMETER :: FUnit = 58
+          INTEGER :: NodeIndex(MAX_PART_ELEM, MAX_VERTIX)
+          
+          FName = Prefix // "Mesh.dx"
+          OPEN( UNIT=FUnit, FILE=FName, STATUS="unknown", ACTION="write" )
+          
+          WRITE ( FUnit,'("# ElmerSolver output; started at ",A)' ) &
+              TRIM( FormatDate() )
+          !
+          ! Coordinates: 
+          !
+          WRITE ( FUnit, '("# Node Coordinates")' )
+          WRITE ( FUnit, '("object 1 class array type float rank 1 shape 3 &
+              &items ",I0," data follows")' ) Model % NumberOfNodes
+          
+          ! First, look for displacements
+          Displacement => NULL()
+          MeshUpdate => NULL()
+          IF( SubtractDisp )THEN
             Var1 => Model % Variables
             DO WHILE( ASSOCIATED( Var1 ) )
-                IF( .NOT.Var1 % Output )THEN
-                    Var1 => Var1 % Next
-                    CYCLE
-                END IF
-
-                SELECT CASE( Var1 % Name )
-                CASE( 'mesh update' )
-                    Var2 => Model % Variables
-                    DO WHILE( ASSOCIATED( Var2 ) )
-                        IF ( TRIM( Var2 % Name ) == 'displacement' ) EXIT
-                        Var2 => Var2 % Next
-                    END DO
-
-                    IF( .NOT. ASSOCIATED( Var2 ) )THEN
-                        Displacement => Var1
-                    ELSE
-                        MeshUpdate   => Var1
-                    END IF
-
-                CASE( 'displacement' )
-                    Displacement => Var1
-                END SELECT
-
+              IF( .NOT.Var1 % Output )THEN
                 Var1 => Var1 % Next
-            END DO
-        END IF
-
-        DO i = 1, Model % NumberOfNodes
-            IF( .NOT.ASSOCIATED( Displacement ) )THEN
-                WRITE( FUnit,'(3E20.11E3)' ) Model % Nodes % x(i), &
-                                             Model % Nodes % y(i), &
-                                             Model % Nodes % z(i)
                 CYCLE
+              END IF
+              
+              SELECT CASE( Var1 % Name )
+              CASE( 'mesh update' )
+                Var2 => Model % Variables
+                DO WHILE( ASSOCIATED( Var2 ) )
+                  IF ( TRIM( Var2 % Name ) == 'displacement' ) EXIT
+                  Var2 => Var2 % Next
+                END DO
+                
+                IF( .NOT. ASSOCIATED( Var2 ) )THEN
+                  Displacement => Var1
+                ELSE
+                  MeshUpdate   => Var1
+                END IF
+                
+              CASE( 'displacement' )
+                Displacement => Var1
+              END SELECT
+              
+              Var1 => Var1 % Next
+            END DO
+          END IF
+          
+          DO i = 1, Model % NumberOfNodes
+            IF( .NOT.ASSOCIATED( Displacement ) )THEN
+              WRITE( FUnit,'(3ES16.7E3)' ) Model % Nodes % x(i), &
+                  Model % Nodes % y(i), &
+                  Model % Nodes % z(i)
+              CYCLE
             END IF
-
+            
             k = Displacement % Perm(i)
             l = 0
             IF ( ASSOCIATED( MeshUpdate ) ) l = MeshUpdate % Perm(i)
-
+            
             IF( k > 0 )THEN
-                k = Displacement % DOFs * (k-1)
-                SELECT CASE( Displacement % DOFs )
-                CASE(1)
-                    WRITE( FUnit,'(3E20.11E3)' ) &
-                            Model % Nodes % x(i) - Displacement % Values(k+1), &
-                            Model % Nodes % y(i), &
-                            Model % Nodes % z(i)
-                CASE( 2 )
-                    WRITE( FUnit,'(3E20.11E3)' ) &
-                            Model % Nodes % x(i) - Displacement % Values(k+1), &
-                            Model % Nodes % y(i) - Displacement % Values(k+2), &
-                            Model % Nodes % z(i)
-                CASE(3)
-                    WRITE( FUnit,'(3E20.11E3)' ) &
-                            Model % Nodes % x(i) - Displacement % Values(k+1), &
-                            Model % Nodes % y(i) - Displacement % Values(k+2), &
-                            Model % Nodes % z(i) - Displacement % Values(k+3)
-                END SELECT
+              k = Displacement % DOFs * (k-1)
+              SELECT CASE( Displacement % DOFs )
+              CASE(1)
+                WRITE( FUnit,'(3ES16.7E3)' ) &
+                    Model % Nodes % x(i) - Displacement % Values(k+1), &
+                    Model % Nodes % y(i), &
+                    Model % Nodes % z(i)
+              CASE( 2 )
+                WRITE( FUnit,'(3ES16.7E3)' ) &
+                    Model % Nodes % x(i) - Displacement % Values(k+1), &
+                    Model % Nodes % y(i) - Displacement % Values(k+2), &
+                    Model % Nodes % z(i)
+              CASE(3)
+                WRITE( FUnit,'(3ES16.7E3)' ) &
+                    Model % Nodes % x(i) - Displacement % Values(k+1), &
+                    Model % Nodes % y(i) - Displacement % Values(k+2), &
+                    Model % Nodes % z(i) - Displacement % Values(k+3)
+              END SELECT
             ELSE IF ( l > 0 ) THEN
-                k = MeshUpdate % DOFs * (l-1)
-                SELECT CASE( MeshUpdate % DOFs )
-                CASE(1)
-                    WRITE( FUnit,'(3E20.11E3)' ) &
-                            Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
-                            Model % Nodes % y(i), &
-                            Model % Nodes % z(i)
-                CASE(2)
-                    WRITE( FUnit,'(3E20.11E3)' ) &
-                            Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
-                            Model % Nodes % y(i) - MeshUpdate % Values(k+2), &
-                            Model % Nodes % z(i)
-                CASE(3)
-                    WRITE( FUnit,'(3E20.11E3)' ) &
-                            Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
-                            Model % Nodes % y(i) - MeshUpdate % Values(k+2), &
-                            Model % Nodes % z(i) - MeshUpdate % Values(k+3)
-                END SELECT
+              k = MeshUpdate % DOFs * (l-1)
+              SELECT CASE( MeshUpdate % DOFs )
+              CASE(1)
+                WRITE( FUnit,'(3ES16.7E3)' ) &
+                    Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
+                    Model % Nodes % y(i), &
+                    Model % Nodes % z(i)
+              CASE(2)
+                WRITE( FUnit,'(3ES16.7E3)' ) &
+                    Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
+                    Model % Nodes % y(i) - MeshUpdate % Values(k+2), &
+                    Model % Nodes % z(i)
+              CASE(3)
+                WRITE( FUnit,'(3ES16.7E3)' ) &
+                    Model % Nodes % x(i) - MeshUpdate % Values(k+1), &
+                    Model % Nodes % y(i) - MeshUpdate % Values(k+2), &
+                    Model % Nodes % z(i) - MeshUpdate % Values(k+3)
+              END SELECT
             ELSE
-                WRITE( FUnit,'(3E20.11E3)' ) Model % Nodes % x(i), &
-                                            Model % Nodes % y(i), &
-                                            Model % Nodes % z(i)
+              WRITE( FUnit,'(3ES16.7E3)' ) Model % Nodes % x(i), &
+                  Model % Nodes % y(i), &
+                  Model % Nodes % z(i)
             ENDIF
-        END DO
-
-        WRITE ( FUnit, * )
-
-        ! Elements.
-        !
-        ! The only DX elements we use are triangles (for 2D) and tetrahedra
-        ! (3D).  All other element types are translated into compounds of either
-        ! of these.
-        !
-        ! Note that, at the moment, either all elements have to be 2D, or they
-        ! all have to be 3D; therefore, boundary elements are not written.
-
-        WRITE ( FUnit, '("# Element definitions")' )
-
-        CALL GetNElem( Model, nElem, nVertix )
-        WRITE( FUnit,'("object 2 class array type int rank 1 shape ", &
-                        &I0, " items ", I0, " data follows")' ) nVertix, nElem
-
-        DO i = 1, Model % NumberOfBulkElements
+          END DO
+          
+          WRITE ( FUnit, * )
+          
+          ! Elements.
+          !
+          ! The only DX elements we use are triangles (for 2D) and tetrahedra
+          ! (3D).  All other element types are translated into compounds of either
+          ! of these.
+          !
+          ! Note that, at the moment, either all elements have to be 2D, or they
+          ! all have to be 3D; therefore, boundary elements are not written.
+          
+          WRITE ( FUnit, '("# Element definitions")' )
+          
+          CALL GetNElem( Model, nElem, nVertix )
+          WRITE( FUnit,'("object 2 class array type int rank 1 shape ", &
+              &I0, " items ", I0, " data follows")' ) nVertix, nElem
+          
+          DO i = 1, Model % NumberOfBulkElements
             CALL TranslateElem( Model % Elements(i), NodeIndex, nElem  )
             DO k = 1, nElem
-                WRITE( FUnit, '(4(" ",I0))') NodeIndex(k,1:nVertix)
+              WRITE( FUnit, '(4(" ",I0))') NodeIndex(k,1:nVertix)
             END DO
-        END DO
-
-        IF ( nVertix == 3 ) THEN
+          END DO
+          
+          IF ( nVertix == 3 ) THEN
             WRITE( FUnit,'(A)') 'attribute "element type" string "triangles"'
-        ELSE
+          ELSE
             WRITE( FUnit,'(A)') 'attribute "element type" string "tetrahedra"'
-        END IF
-        WRITE( FUnit, '("end")' )
-
-
-    CONTAINS
-
-        ! Here's a bunch of routines to deal with ELMER -> DX element
-        ! translations.
-
-        ! nElem is the number of DX elements, and nVertix is the numbe of
-        ! vertices per element (either 3 for triangle or 4 for tetrahedra).
-
-        SUBROUTINE GetNElem( Model, nElem, nVertix )
+          END IF
+          WRITE( FUnit, '("end")' )
+          
+          
+        CONTAINS
+          
+          ! Here's a bunch of routines to deal with ELMER -> DX element
+          ! translations.
+          
+          ! nElem is the number of DX elements, and nVertix is the numbe of
+          ! vertices per element (either 3 for triangle or 4 for tetrahedra).
+          
+          SUBROUTINE GetNElem( Model, nElem, nVertix )
             TYPE(Model_t), INTENT(IN) :: Model
             INTEGER, INTENT(OUT) :: nElem, nVertix
-
+            
             IF (Model % Elements(1) % TYPE % ElementCode < 500) THEN
-                nVertix = 3
+              nVertix = 3
             ELSE
-                nVertix = 4
+              nVertix = 4
             END IF
-
+            
             nElem = 0
             DO i = 1, Model%NumberOfBulkElements
-                SELECT CASE ( Model % Elements(i) % TYPE % ElementCode )
-                CASE( 303 )
-                    nElem = nElem + 1
-                CASE( 404 )
-                    nElem = nElem + 2
-                CASE( 409 )
-                    nElem = nElem + 8
-                CASE( 504 )
-                    nElem = nElem + 1
-                CASE( 605 )
-                    nElem = nElem + 2
-                CASE( 613 )
-                    nElem = nElem + 14
-                CASE( 706 )
-                    nElem = nElem + 3
-                CASE( 715 )
-                    nElem = nElem + 21
-                CASE( 808 )
-                    nElem = nElem + 4
-                CASE DEFAULT
-                    WRITE (0, *) 'Sorry! Element type ',                    &
-                                  Model % Elements(i) % TYPE % ElementCode, &
-                                  ' not supported! '
-                    STOP
-                END SELECT
+              SELECT CASE ( Model % Elements(i) % TYPE % ElementCode )
+              CASE( 303 )
+                nElem = nElem + 1
+              CASE( 404 )
+                nElem = nElem + 2
+              CASE( 409 )
+                nElem = nElem + 8
+              CASE( 504 )
+                nElem = nElem + 1
+              CASE( 605 )
+                nElem = nElem + 2
+              CASE( 613 )
+                nElem = nElem + 14
+              CASE( 706 )
+                nElem = nElem + 3
+              CASE( 715 )
+                nElem = nElem + 21
+              CASE( 808 )
+                nElem = nElem + 4
+              CASE DEFAULT
+                WRITE (0, *) 'Sorry! Element type ',                    &
+                    Model % Elements(i) % TYPE % ElementCode, &
+                    ' not supported! '
+                STOP
+              END SELECT
             END DO
-        END SUBROUTINE GetNElem
-
-
-        ! Translate an ELMER element to a (compound of) DX element(s).
-
-        SUBROUTINE TranslateElem( Elem, NodeIndex, nElem )
+          END SUBROUTINE GetNElem
+          
+          
+          ! Translate an ELMER element to a (compound of) DX element(s).
+          
+          SUBROUTINE TranslateElem( Elem, NodeIndex, nElem )
             TYPE(Element_t), INTENT(IN) :: Elem
             INTEGER, INTENT(OUT) :: NodeIndex(MAX_PART_ELEM, MAX_VERTIX)
             INTEGER, INTENT(OUT) :: nElem
-
+            
             SELECT CASE ( Elem % TYPE % ElementCode )
             CASE( 303 ) ! Triangle
-                nElem = 1
-                NodeIndex(1,:3) = Elem % NodeIndexes(1:3)
+              nElem = 1
+              NodeIndex(1,:3) = Elem % NodeIndexes(1:3)
             CASE( 404 ) ! Quad; translate into 2 triangles
-                nElem = 2
-                NodeIndex(1,:3) = Elem % NodeIndexes(1:3)
-                NodeIndex(2,:3) = Elem % NodeIndexes((/ 1,3,4 /))
+              nElem = 2
+              NodeIndex(1,:3) = Elem % NodeIndexes(1:3)
+              NodeIndex(2,:3) = Elem % NodeIndexes((/ 1,3,4 /))
             CASE( 409 )
-                nElem = 8
-                NodeIndex(1,:3) = Elem % NodeIndexes((/ 1,5,9 /))
-                NodeIndex(2,:3) = Elem % NodeIndexes((/ 5,2,9 /))
-                NodeIndex(3,:3) = Elem % NodeIndexes((/ 2,6,9 /))
-                NodeIndex(4,:3) = Elem % NodeIndexes((/ 6,3,9 /))
-                NodeIndex(5,:3) = Elem % NodeIndexes((/ 3,7,9 /))
-                NodeIndex(6,:3) = Elem % NodeIndexes((/ 7,4,9 /))
-                NodeIndex(7,:3) = Elem % NodeIndexes((/ 4,8,9 /))
-                NodeIndex(8,:3) = Elem % NodeIndexes((/ 8,1,9 /))
+              nElem = 8
+              NodeIndex(1,:3) = Elem % NodeIndexes((/ 1,5,9 /))
+              NodeIndex(2,:3) = Elem % NodeIndexes((/ 5,2,9 /))
+              NodeIndex(3,:3) = Elem % NodeIndexes((/ 2,6,9 /))
+              NodeIndex(4,:3) = Elem % NodeIndexes((/ 6,3,9 /))
+              NodeIndex(5,:3) = Elem % NodeIndexes((/ 3,7,9 /))
+              NodeIndex(6,:3) = Elem % NodeIndexes((/ 7,4,9 /))
+              NodeIndex(7,:3) = Elem % NodeIndexes((/ 4,8,9 /))
+              NodeIndex(8,:3) = Elem % NodeIndexes((/ 8,1,9 /))
             CASE( 504 ) ! Tetrahedron
-                nElem = 1
-                NodeIndex(1,:) = Elem % NodeIndexes(1:4)
+              nElem = 1
+              NodeIndex(1,:) = Elem % NodeIndexes(1:4)
             CASE( 605 ) ! Pyramid
-                nElem = 2
-                NodeIndex(1,:) = Elem % NodeIndexes((/ 3,5,4,1 /))
-                NodeIndex(2,:) = Elem % NodeIndexes((/ 3,5,2,1 /))
+              nElem = 2
+              NodeIndex(1,:) = Elem % NodeIndexes((/ 3,5,4,1 /))
+              NodeIndex(2,:) = Elem % NodeIndexes((/ 3,5,2,1 /))
             CASE( 613 )
-                nElem = 14
-                NodeIndex(1,:) = Elem % NodeIndexes((/ 7,8,3,12 /))
-                NodeIndex(2,:) = Elem % NodeIndexes((/ 10,11,12,5 /))
-                NodeIndex(3,:) = Elem % NodeIndexes((/ 10,13,12,5 /))
-                NodeIndex(4,:) = Elem % NodeIndexes((/ 9,10,13,11 /))
-                NodeIndex(5,:) = Elem % NodeIndexes((/ 9,13,11,12 /))
-                NodeIndex(6,:) = Elem % NodeIndexes((/ 9,10,11,1 /))
-                NodeIndex(7,:) = Elem % NodeIndexes((/ 9,6,11,1 /))
-                NodeIndex(8,:) = Elem % NodeIndexes((/ 9,6,11,12 /))
-                NodeIndex(9,:) = Elem % NodeIndexes((/ 9,8,12,4 /))
-                NodeIndex(10,:) = Elem % NodeIndexes((/ 9,13,12,4 /))
-                NodeIndex(11,:) = Elem % NodeIndexes((/ 7,9,8,12 /))
-                NodeIndex(12,:) = Elem % NodeIndexes((/ 7,9,6,12 /))
-                NodeIndex(13,:) = Elem % NodeIndexes((/ 7,6,11,12 /))
-                NodeIndex(14,:) = Elem % NodeIndexes((/ 7,6,11,2 /))
+              nElem = 14
+              NodeIndex(1,:) = Elem % NodeIndexes((/ 7,8,3,12 /))
+              NodeIndex(2,:) = Elem % NodeIndexes((/ 10,11,12,5 /))
+              NodeIndex(3,:) = Elem % NodeIndexes((/ 10,13,12,5 /))
+              NodeIndex(4,:) = Elem % NodeIndexes((/ 9,10,13,11 /))
+              NodeIndex(5,:) = Elem % NodeIndexes((/ 9,13,11,12 /))
+              NodeIndex(6,:) = Elem % NodeIndexes((/ 9,10,11,1 /))
+              NodeIndex(7,:) = Elem % NodeIndexes((/ 9,6,11,1 /))
+              NodeIndex(8,:) = Elem % NodeIndexes((/ 9,6,11,12 /))
+              NodeIndex(9,:) = Elem % NodeIndexes((/ 9,8,12,4 /))
+              NodeIndex(10,:) = Elem % NodeIndexes((/ 9,13,12,4 /))
+              NodeIndex(11,:) = Elem % NodeIndexes((/ 7,9,8,12 /))
+              NodeIndex(12,:) = Elem % NodeIndexes((/ 7,9,6,12 /))
+              NodeIndex(13,:) = Elem % NodeIndexes((/ 7,6,11,12 /))
+              NodeIndex(14,:) = Elem % NodeIndexes((/ 7,6,11,2 /))
             CASE( 706 ) ! Wedge
-                nElem = 3
-                NodeIndex(1,:) = Elem % NodeIndexes((/ 5,4,3,1 /))
-                NodeIndex(2,:) = Elem % NodeIndexes((/ 5,3,2,1 /))
-                NodeIndex(3,:) = Elem % NodeIndexes((/ 5,6,4,3 /))
+              nElem = 3
+              NodeIndex(1,:) = Elem % NodeIndexes((/ 5,4,3,1 /))
+              NodeIndex(2,:) = Elem % NodeIndexes((/ 5,3,2,1 /))
+              NodeIndex(3,:) = Elem % NodeIndexes((/ 5,6,4,3 /))
             CASE( 715 )
-                nElem = 21
-                NodeIndex(1,:) = Elem % NodeIndexes((/ 10,11,5,2 /))
-                NodeIndex(2,:) = Elem % NodeIndexes((/ 12,11,6,3 /))
-                NodeIndex(3,:) = Elem % NodeIndexes((/ 12,10,4,1 /))
-                NodeIndex(4,:) = Elem % NodeIndexes((/ 7,8,11,2 /))
-                NodeIndex(5,:) = Elem % NodeIndexes((/ 7,10,11,2 /))
-                NodeIndex(6,:) = Elem % NodeIndexes((/ 13,14,11,5 /))
-                NodeIndex(7,:) = Elem % NodeIndexes((/ 13,10,11,5 /))
-                NodeIndex(8,:) = Elem % NodeIndexes((/ 9,10,8,11 /))
-                NodeIndex(9,:) = Elem % NodeIndexes((/ 9,7,10,8 /))
-                NodeIndex(10,:) = Elem % NodeIndexes((/ 9,12,10,11 /))
-                NodeIndex(11,:) = Elem % NodeIndexes((/ 9,12,10,1 /))
-                NodeIndex(12,:) = Elem % NodeIndexes((/ 9,7,10,1 /))
-                NodeIndex(13,:) = Elem % NodeIndexes((/ 9,8,11,3 /))
-                NodeIndex(14,:) = Elem % NodeIndexes((/ 9,12,11,3 /))
-                NodeIndex(15,:) = Elem % NodeIndexes((/ 15,12,10,11 /))
-                NodeIndex(16,:) = Elem % NodeIndexes((/ 15,12,10,4 /))
-                NodeIndex(17,:) = Elem % NodeIndexes((/ 15,10,14,11 /))
-                NodeIndex(18,:) = Elem % NodeIndexes((/ 15,13,10,14 /))
-                NodeIndex(19,:) = Elem % NodeIndexes((/ 15,13,10,4 /))
-                NodeIndex(20,:) = Elem % NodeIndexes((/ 15,14,11,6 /))
-                NodeIndex(21,:) = Elem % NodeIndexes((/ 15,12,11,6 /))
+              nElem = 21
+              NodeIndex(1,:) = Elem % NodeIndexes((/ 10,11,5,2 /))
+              NodeIndex(2,:) = Elem % NodeIndexes((/ 12,11,6,3 /))
+              NodeIndex(3,:) = Elem % NodeIndexes((/ 12,10,4,1 /))
+              NodeIndex(4,:) = Elem % NodeIndexes((/ 7,8,11,2 /))
+              NodeIndex(5,:) = Elem % NodeIndexes((/ 7,10,11,2 /))
+              NodeIndex(6,:) = Elem % NodeIndexes((/ 13,14,11,5 /))
+              NodeIndex(7,:) = Elem % NodeIndexes((/ 13,10,11,5 /))
+              NodeIndex(8,:) = Elem % NodeIndexes((/ 9,10,8,11 /))
+              NodeIndex(9,:) = Elem % NodeIndexes((/ 9,7,10,8 /))
+              NodeIndex(10,:) = Elem % NodeIndexes((/ 9,12,10,11 /))
+              NodeIndex(11,:) = Elem % NodeIndexes((/ 9,12,10,1 /))
+              NodeIndex(12,:) = Elem % NodeIndexes((/ 9,7,10,1 /))
+              NodeIndex(13,:) = Elem % NodeIndexes((/ 9,8,11,3 /))
+              NodeIndex(14,:) = Elem % NodeIndexes((/ 9,12,11,3 /))
+              NodeIndex(15,:) = Elem % NodeIndexes((/ 15,12,10,11 /))
+              NodeIndex(16,:) = Elem % NodeIndexes((/ 15,12,10,4 /))
+              NodeIndex(17,:) = Elem % NodeIndexes((/ 15,10,14,11 /))
+              NodeIndex(18,:) = Elem % NodeIndexes((/ 15,13,10,14 /))
+              NodeIndex(19,:) = Elem % NodeIndexes((/ 15,13,10,4 /))
+              NodeIndex(20,:) = Elem % NodeIndexes((/ 15,14,11,6 /))
+              NodeIndex(21,:) = Elem % NodeIndexes((/ 15,12,11,6 /))
             CASE( 808 ) ! Hexahedron; translate into 4 tetrahedra
-                nElem = 4
-                NodeIndex(1,:) = Elem % NodeIndexes((/ 1,2,4,5 /))
-                NodeIndex(2,:) = Elem % NodeIndexes((/ 2,3,4,7 /))
-                NodeIndex(3,:) = Elem % NodeIndexes((/ 2,7,5,6 /))
-                NodeIndex(4,:) = Elem % NodeIndexes((/ 4,5,7,8 /))
+              nElem = 4
+              NodeIndex(1,:) = Elem % NodeIndexes((/ 1,2,4,5 /))
+              NodeIndex(2,:) = Elem % NodeIndexes((/ 2,3,4,7 /))
+              NodeIndex(3,:) = Elem % NodeIndexes((/ 2,7,5,6 /))
+              NodeIndex(4,:) = Elem % NodeIndexes((/ 4,5,7,8 /))
             END SELECT
-
+            
             NodeIndex = NodeIndex - 1
-
-        END SUBROUTINE TranslateElem
-
-    END SUBROUTINE WriteGrid
-
-END MODULE DXFile
-
-
+            
+          END SUBROUTINE TranslateElem
+          
+        END SUBROUTINE WriteGrid
+        
+      END MODULE DXFile
+      
+      
 !------------------------------------------------------------------------------
-SUBROUTINE DXOutputSolver( Model,Solver,dt,TransientSimulation )
+      SUBROUTINE DXOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
 
-    USE DefUtils 
-    USE DXFile
-
-    IMPLICIT NONE
-    TYPE(Solver_t) :: Solver
-    TYPE(Model_t) :: Model
-    REAL(dp) :: dt
-    LOGICAL :: TransientSimulation
-
-    INTEGER, SAVE :: nTime = 0
-    LOGICAL :: GotIt
-    CHARACTER(MAX_NAME_LEN), SAVE :: FilePrefix
-
-    ! Avoid compiler warings about unused variables
-    IF ( TransientSimulation ) THEN; ENDIF
-    IF ( dt > 0.0 ) THEN; ENDIF
-
-    IF ( nTime == 0 ) THEN
-        FilePrefix = GetString( Solver % Values,'Output File Name',GotIt )
-        IF ( .NOT.GotIt ) FilePrefix = "Output"
-    END IF
-    nTime = nTime + 1
-
-    CALL WriteData( TRIM(FilePrefix), Model, nTime )
-
+        USE DefUtils 
+        USE DXFile
+        
+        IMPLICIT NONE
+        TYPE(Solver_t) :: Solver
+        TYPE(Model_t) :: Model
+        REAL(dp) :: dt
+        LOGICAL :: TransientSimulation
+        
+        INTEGER, SAVE :: nTime = 0
+        LOGICAL :: GotIt
+        CHARACTER(MAX_NAME_LEN), SAVE :: FilePrefix
+        
+        ! Avoid compiler warings about unused variables
+        IF ( TransientSimulation ) THEN; ENDIF
+          IF ( dt > 0.0 ) THEN; ENDIF
+            
+            IF ( nTime == 0 ) THEN
+              FilePrefix = GetString( Solver % Values,'Output File Name',GotIt )
+              IF ( .NOT.GotIt ) FilePrefix = "Output"
+            END IF
+            nTime = nTime + 1
+            
+            CALL WriteData( TRIM(FilePrefix), Model, nTime )
+            
 
 CONTAINS
 
-    SUBROUTINE WriteData( Prefix, Model, nTime )
-        CHARACTER(*), INTENT(IN) :: Prefix
-        TYPE(Model_t) :: Model
-        INTEGER, INTENT(IN) :: nTime
-        TYPE(Mesh_t), POINTER :: Mesh
-        TYPE(Variable_t), POINTER :: Var
-        INTEGER :: i, j, k
-        LOGICAL :: EigAnal
-        REAL(dp), POINTER :: OldValues(:)
-        CHARACTER(MAX_NAME_LEN) :: Dir
-
-        Mesh => Model % Meshes
-        DO WHILE( ASSOCIATED(Mesh) )
-            IF ( .NOT.Mesh % OutputActive ) THEN
-                Mesh => Mesh % next
-                CYCLE
-            END IF
-
-            IF (LEN_TRIM(Mesh % Name) > 0 ) THEN
-                Dir = TRIM(Mesh % Name) // "/"
+  SUBROUTINE WriteData( Prefix, Model, nTime )
+    CHARACTER(*), INTENT(IN) :: Prefix
+    TYPE(Model_t) :: Model
+    INTEGER, INTENT(IN) :: nTime
+    TYPE(Mesh_t), POINTER :: Mesh
+    TYPE(Variable_t), POINTER :: Var
+    INTEGER :: i, j, k
+    LOGICAL :: EigAnal
+    REAL(dp), POINTER :: OldValues(:)
+    CHARACTER(MAX_NAME_LEN) :: Dir
+    
+    Mesh => Model % Meshes
+    DO WHILE( ASSOCIATED(Mesh) )
+      IF ( .NOT.Mesh % OutputActive ) THEN
+        Mesh => Mesh % next
+        CYCLE
+      END IF
+      
+      IF (LEN_TRIM(Mesh % Name) > 0 ) THEN
+        Dir = TRIM(Mesh % Name) // "/"
+      ELSE
+        Dir = "./"
+      END IF
+      
+      CALL SetCurrentMesh( Model, Mesh )
+      
+      EigAnal = .FALSE.
+      
+      Solvers: DO i = 1, Model % NumberOfSolvers
+        EigAnal = ListGetLogical( Model % Solvers(i) % Values, &
+            "Eigen Analysis", GotIt )
+        Var => Model % Solvers(i) % Variable
+        IF ( EigAnal .AND. ASSOCIATED(Var % EigenValues) ) THEN
+          DO j = 1, Model % Solvers(i) % NOfEigenValues
+            OldValues => Var % Values
+            
+            IF ( Model % Solvers(i) % Matrix % COMPLEX ) THEN
+              ALLOCATE( Var % Values(2*SIZE(Var%EigenVectors,2)) )
+              FORALL ( k = 1:SIZE(Var % Values)/2 )
+                Var%Values(2*k-1) = REAL(Var%EigenVectors(j,k))
+                Var%Values(2*k) = AIMAG(Var%EigenVectors(j,k))
+              END FORALL
             ELSE
-                Dir = "./"
+              ALLOCATE( Var % Values(SIZE(Var % EigenVectors,2)) )
+              Var % Values = Var % EigenVectors(j,:)
             END IF
-
-            CALL SetCurrentMesh( Model, Mesh )
-
-            EigAnal = .FALSE.
-
-   Solvers: DO i = 1, Model % NumberOfSolvers
-                EigAnal = ListGetLogical( Model % Solvers(i) % Values, &
-                                          "Eigen Analysis", GotIt )
-                Var => Model % Solvers(i) % Variable
-                IF ( EigAnal .AND. ASSOCIATED(Var % EigenValues) ) THEN
-                    DO j = 1, Model % Solvers(i) % NOfEigenValues
-                        OldValues => Var % Values
-
-                        IF ( Model % Solvers(i) % Matrix % COMPLEX ) THEN
-                            ALLOCATE( Var % Values(2*SIZE(Var%EigenVectors,2)) )
-                            FORALL ( k = 1:SIZE(Var % Values)/2 )
-                                Var%Values(2*k-1) = REAL(Var%EigenVectors(j,k))
-                                Var%Values(2*k) = AIMAG(Var%EigenVectors(j,k))
-                            END FORALL
-                        ELSE
-                            ALLOCATE( Var % Values(SIZE(Var % EigenVectors,2)) )
-                            Var % Values = Var % EigenVectors(j,:)
-                        END IF
-
-                        CALL WriteDXFiles( TRIM(Dir)//Prefix,Model,.FALSE.,j )
-
-                        DEALLOCATE( Var % Values )
-                        Var % Values => OldValues
-                    END DO
-                    EXIT Solvers
-                END IF
-            END DO Solvers
-
-            IF ( .NOT.EigAnal ) THEN
-                CALL WriteDXFiles( TRIM(Dir)//Prefix, Model, .TRUE., nTime )
-            END IF
-
-            Mesh => Mesh % next
-        END DO
-    END SUBROUTINE WriteData
-
+            
+            CALL WriteDXFiles( TRIM(Dir)//Prefix,Model,.FALSE.,j )
+            
+            DEALLOCATE( Var % Values )
+            Var % Values => OldValues
+          END DO
+          EXIT Solvers
+        END IF
+      END DO Solvers
+      
+      IF ( .NOT.EigAnal ) THEN
+        CALL WriteDXFiles( TRIM(Dir)//Prefix, Model, .TRUE., nTime )
+      END IF
+      
+      Mesh => Mesh % next
+    END DO
+  END SUBROUTINE WriteData
+  
 END SUBROUTINE DXOutputSolver
 
 
@@ -3452,13 +3094,15 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
   TYPE(Variable_t), POINTER :: Var
   INTEGER :: i, j, k, Partitions, Part
   CHARACTER(MAX_NAME_LEN) :: Dir
+!  TYPE( ValueList_t ), POINTER :: SaveList
  
+
 
   IF ( nTime == 0 ) THEN
     CALL Info('VtuOutputSolver','Saving results in VTK XML format')
     FilePrefix = GetString( Solver % Values,'Output File Name',GotIt )
     IF ( .NOT.GotIt ) FilePrefix = "Output"
-
+    
     nTime = ListGetInteger(Solver % Values,'Time Series Offset',GotIt)
   END IF
   nTime = nTime + 1
@@ -3475,7 +3119,10 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
       Mesh => Mesh % next
       CYCLE
     END IF
-    
+     
+ !    NULLIFY( SaveList )
+ !    CALL CreateListForSaving( Model, SaveList, .TRUE. )	
+
     IF (LEN_TRIM(Mesh % Name) > 0 ) THEN
       Dir = TRIM(Mesh % Name) // "/"
     ELSE
@@ -3483,7 +3130,7 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
     END IF
     
     CALL SetCurrentMesh( Model, Mesh )
-
+    
     IF(Parallel .AND. Part == 0) THEN
       WRITE( PvtuFile,'(A,A,I4.4,".pvtu")' ) TRIM(Dir),TRIM(FilePrefix),nTime
       CALL WritePvtuFile( PvtuFile, Model )
@@ -3509,13 +3156,12 @@ CONTAINS
     INTEGER, PARAMETER :: VtuUnit = 58
     TYPE(Variable_t), POINTER :: Var,Var1
     CHARACTER(LEN=512) :: str
-    !LOGICAL :: FreeSurfaceFlag
     INTEGER :: i,j,k,dofs,Rank,cumn,n,dim,vari,sdofs,dispdofs, disp2dofs
-    CHARACTER(LEN=1024) :: Txt, ScalarFieldName, VectorFieldName, TensorFieldName, FieldName
-    LOGICAL :: ScalarsExist, VectorsExist, Found, VeloFlag
+    CHARACTER(LEN=1024) :: Txt, ScalarFieldName, VectorFieldName, TensorFieldName, FieldName, FieldName2
+    LOGICAL :: ScalarsExist, VectorsExist, Found, ComponentVector, ComplementExists, Use2, ThisOnly
     TYPE(Variable_t), POINTER :: Solution
-    INTEGER, POINTER :: Perm(:), DispPerm(:), Disp2Perm(:)
-    REAL(KIND=dp), POINTER :: Values(:), DispValues(:), Disp2Values(:)
+    INTEGER, POINTER :: Perm(:), Perm2(:), DispPerm(:), Disp2Perm(:)
+    REAL(KIND=dp), POINTER :: Values(:), DispValues(:), Disp2Values(:), Values2(:), Values3(:)
     REAL(KIND=dp) :: x,y,z
     TYPE(Solver_t), POINTER :: Solver
     TYPE(Element_t), POINTER :: CurrentElement
@@ -3524,6 +3170,7 @@ CONTAINS
     OPEN( UNIT=VtuUnit, FILE=VtuFile, STATUS='UNKNOWN' )
     Solver => Model % Solver
     dim = CoordinateSystemDimension()
+    ThisOnly = .TRUE.
 
     !FreeSurfaceFlag = FreeSurface( Model )
     
@@ -3550,21 +3197,21 @@ CONTAINS
     DispDofs = 0
     Disp2Dofs = 0
     IF(RemoveDisp) THEN
-      Solution => VariableGet( Model % Mesh % Variables, 'Displacement' )     
+      Solution => VariableGet( Model % Mesh % Variables, 'Displacement', ThisOnly )     
       IF( ASSOCIATED( Solution ) ) THEN
         DispPerm => Solution % Perm
         DispValues => Solution % Values
         DispDofs = Solution % Dofs
       END IF
- 
-      Solution => VariableGet( Model % Mesh % Variables, 'Mesh Update' )     
+      
+      Solution => VariableGet( Model % Mesh % Variables, 'Mesh Update', ThisOnly )     
       IF( ASSOCIATED( Solution ) ) THEN
         Disp2Perm => Solution % Perm
         Disp2Values => Solution % Values
         Disp2Dofs = Solution % Dofs
       END IF
     END IF
-
+    
     
     DO Rank = 0,2
       DO Vari = 1, 99
@@ -3586,38 +3233,87 @@ CONTAINS
           EXIT
         END IF
         
-        Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName) )
 
+        !---------------------------------------------------------------------
+        ! Find the variable with the given name in the normal manner 
+        !---------------------------------------------------------------------
+        Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName), ThisOnly )
+        ComponentVector = .FALSE.
         IF(.NOT. ASSOCIATED(Solution)) THEN
-          IF(FieldName == 'velocity') THEN
-            FieldName = 'flow solution'
-            Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName) )
-            IF(.NOT. ASSOCIATED(Solution)) THEN
-              CALL Warn('WriteVtuXMLFile', 'Velocity and flow solution do not exist')
-            END IF
+          Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName)//' 1', ThisOnly )
+          IF( ASSOCIATED(Solution)) THEN 
+            ComponentVector = .TRUE.
           ELSE
             WRITE(Txt, '(A,A)') 'Nonexistent variable: ',TRIM(FieldName)
             CALL Warn('WriteVtuXMLFile', Txt)
+            CYCLE
           END IF
         END IF
-
+        
         IF( ASSOCIATED(Solution % EigenVectors)) THEN
           CALL Warn('WriteVtuXMLFile','Do the eigen values')
         END IF
-
-        VeloFlag = (FieldName == 'flow solution')
-
+        
         Perm => Solution % Perm
         dofs = Solution % DOFs
         Values => Solution % Values
-        
+
+        !---------------------------------------------------------------------
+        ! Some vectors are defined by a set of components (either 2 or 3)
+        !---------------------------------------------------------------------
+        IF( ComponentVector ) THEN
+          Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName)//' 2',ThisOnly )
+          IF( ASSOCIATED(Solution)) THEN
+            Values2 => Solution % Values
+            dofs = 2
+          END IF
+          Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName)//' 3',ThisOnly )
+          IF( ASSOCIATED(Solution)) THEN
+            Values3 => Solution % Values
+            dofs = 3
+          END IF
+        END IF
+
+        !---------------------------------------------------------------------
+        ! There may be special complementary variables such as 
+        ! displacement & mesh update 
+        !---------------------------------------------------------------------
+        ComplementExists = .FALSE.
+        IF( Vari < 10 ) THEN
+          IF(Rank==0) WRITE(Txt,'(A,I2,A)') 'Scalar Field',Vari,' Complement'
+          IF(Rank==1) WRITE(Txt,'(A,I2,A)') 'Vector Field',Vari,' Complement'
+          IF(Rank==2) WRITE(Txt,'(A,I2,A)') 'Tensor Field',Vari,' Complement'
+        ELSE
+          IF(Rank==0) WRITE(Txt,'(A,I3,A)') 'Scalar Field',Vari,' Complement'
+          IF(Rank==1) WRITE(Txt,'(A,I3,A)') 'Vector Field',Vari,' Complement'
+          IF(Rank==2) WRITE(Txt,'(A,I3,A)') 'Tensor Field',Vari,' Complement'
+        END IF
+        FieldName2 = GetString( Solver % Values, TRIM(Txt), Found )
+        IF( Found ) THEN
+          Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName2), ThisOnly )
+          IF( ASSOCIATED(Solution)) THEN 
+            Values2 => Solution % Values
+            Perm2 => Solution % Perm 
+            ComplementExists = .TRUE.
+          ELSE
+            CALL Warn('WriteVTUFile','Complement does not exist:'//TRIM(FieldName2))
+          END IF
+        END IF
+
+        !---------------------------------------------------------------------
+        ! Finally save the field values 
+        !---------------------------------------------------------------------
         IF( Rank == 0) THEN
-          WRITE( VtuUnit,'(A)') '        <DataArray type="Float32" Name="'//TRIM(FieldName)&
+          WRITE( VtuUnit,'(A)') '        <DataArray type="Float64" Name="'//TRIM(FieldName)&
               //'" NumberOfComponents="1" format="ascii">'    
           DO i = 1, Model % Mesh % NumberOfNodes
             j = Perm(i)
-            IF(j > 0) THEN
-              WRITE( VtuUnit,'(E16.6E3)', ADVANCE='no') Values(j)              
+            Use2 = (j == 0) .AND. ComplementExists 
+            IF( Use2 ) j = Perm2(i)
+            IF( Use2 .AND. j > 0) THEN
+              WRITE( VtuUnit,'(ES16.7E3)', ADVANCE='no') Values2(j)              
+            ELSE IF(j > 0) THEN
+              WRITE( VtuUnit,'(ES16.7E3)', ADVANCE='no') Values(j)              
             ELSE
               WRITE( VtuUnit,'(A)', ADVANCE='no') ' 0.0'  
             END IF
@@ -3625,43 +3321,38 @@ CONTAINS
           WRITE( VtuUnit,'(A)') ' '
           WRITE( VtuUnit,'(A)') '        </DataArray>'
         ELSE
-          IF(VeloFlag) THEN
-            sdofs = MAX(dofs - 1,3)            
-            WRITE( VtuUnit,'(A,I1,A)') '        <DataArray type="Float32" Name="velocity"'&
-                //' NumberOfComponents="',sdofs,'" format="ascii">'    
-          ELSE
-            sdofs = MAX(dofs,3)
-            WRITE( VtuUnit,'(A,I1,A)') '        <DataArray type="Float32" Name="'//TRIM(FieldName)&
-                //'" NumberOfComponents="',sdofs,'" format="ascii">'    
-          END IF
-
+          sdofs = MAX(dofs,3)
+          WRITE( VtuUnit,'(A,I1,A)') '        <DataArray type="Float64" Name="'//TRIM(FieldName)&
+              //'" NumberOfComponents="',sdofs,'" format="ascii">'    
+          
           DO i = 1, Model % Mesh % NumberOfNodes
             j = Perm(i)
-            IF(VeloFlag) THEN
-              DO k=1,sdofs
-                IF( j == 0 .OR. k > dofs - 1) THEN
-                  WRITE( VtuUnit,'(A)', ADVANCE='no') ' 0.0'  
-                ELSE
-                  WRITE( VtuUnit,'(E16.6E3)', ADVANCE='no') Values(dofs*(j-1)+k)              
-                END IF
-              END DO
-            ELSE
-              DO k=1,sdofs
-                IF(j==0 .OR. k > dofs) THEN
-                  WRITE( VtuUnit,'(A)', ADVANCE='no') ' 0.0'  
-                ELSE                  
-                  WRITE( VtuUnit,'(E16.6E3)', ADVANCE='no') Values(dofs*(j-1)+k)              
-                END IF
-              END DO
-            END IF
+            Use2 = (j == 0) .AND. ComplementExists 
+            IF( Use2 ) j = Perm2(i)
+            
+            DO k=1,sdofs
+              IF(j==0 .OR. k > dofs) THEN
+                WRITE( VtuUnit,'(A)', ADVANCE='no') ' 0.0'  
+              ELSE IF( ComponentVector ) THEN
+                IF( k == 1 ) WRITE( VtuUnit,'(ES16.7E3)', ADVANCE='no') Values(j)
+                IF( k == 2 ) WRITE( VtuUnit,'(ES16.7E3)', ADVANCE='no') Values2(j)
+                IF( k == 3 ) WRITE( VtuUnit,'(ES16.7E3)', ADVANCE='no') Values3(j)
+              ELSE IF( Use2 ) THEN
+                WRITE( VtuUnit,'(ES16.7E3)', ADVANCE='no') Values2(dofs*(j-1)+k)              
+              ELSE
+                WRITE( VtuUnit,'(ES16.7E3)', ADVANCE='no') Values(dofs*(j-1)+k)              
+              END IF
+            END DO
           END DO
           WRITE( VtuUnit,'(A)') ' '
           WRITE( VtuUnit,'(A)') '        </DataArray>'
         END IF
       END DO
     END DO
-    WRITE( VtuUnit,'(A)') '      </PointData>'
-
+    
+    IF( ScalarsExist .OR. VectorsExist) THEN
+      WRITE( VtuUnit,'(A)') '      </PointData>'
+    END IF
     
     ! Elementwise information
     !-------------------------------------
@@ -3684,16 +3375,16 @@ CONTAINS
     ! Coordinates of each point
     !-------------------------------------
     WRITE( VtuUnit,'(A)') '      <Points>'
-    WRITE( VtuUnit,'(A)') '        <DataArray type="Float32" NumberOfComponents="3" format="ascii">'    
+    WRITE( VtuUnit,'(A)') '        <DataArray type="Float64" NumberOfComponents="3" format="ascii">'    
 
 
-    ! If displacement field is active remove the displacement from the coordinates
-    IF( dispdofs > 0 .OR. disp2dofs > 0) THEN
-      DO i = 1, Model % Mesh % NumberOfNodes
-        x = Model % Mesh % Nodes % x(i)
-        y = Model % Mesh % Nodes % y(i)
-        z = Model % Mesh % Nodes % z(i)
+    DO i = 1, Model % Mesh % NumberOfNodes
+      x = Model % Mesh % Nodes % x(i)
+      y = Model % Mesh % Nodes % y(i)
+      z = Model % Mesh % Nodes % z(i)
         
+      ! If displacement field is active remove the displacement from the coordinates
+      IF( dispdofs > 0 .OR. disp2dofs > 0) THEN
         j = 0
         IF(dispdofs > 0) THEN
           j = DispPerm(i)
@@ -3711,27 +3402,14 @@ CONTAINS
             IF(disp2dofs == 3) z = z - Disp2Values(disp2dofs*(j-1)+3)
           END IF
         END IF
+      END IF
 
-        IF(dim == 3) THEN
-          WRITE(VtuUnit,'(3E16.6E3)') x, y, z
-        ELSE
-          WRITE(VtuUnit,'(2E16.6E3," 0.0")') x, y
-        END IF
-      END DO
-    ELSE
-      DO i = 1, Model % Mesh % NumberOfNodes
-        x = Model % Mesh % Nodes % x(i)
-        y = Model % Mesh % Nodes % y(i)
-        z = Model % Mesh % Nodes % z(i)
-        
-        IF(dim == 3) THEN
-          WRITE(VtuUnit,'(3E16.6E3)') x, y, z
-        ELSE
-          WRITE(VtuUnit,'(2E16.6E3," 0.0")') x, y
-        END IF
-      END DO
-    END IF
-
+      IF(dim == 3) THEN
+        WRITE(VtuUnit,'(3ES16.7E3)') x, y, z
+      ELSE
+        WRITE(VtuUnit,'(2ES16.7E3," 0.0")') x, y
+      END IF
+    END DO
 
     WRITE( VtuUnit,'(A)') '        </DataArray>'
     WRITE( VtuUnit,'(A)') '      </Points>'
@@ -3788,7 +3466,7 @@ CONTAINS
     !LOGICAL :: FreeSurfaceFlag
     INTEGER :: i,j,k,dofs,Rank,cumn,n,dim,vari,sdofs
     CHARACTER(LEN=1024) :: Txt, ScalarFieldName, VectorFieldName, TensorFieldName, FieldName
-    LOGICAL :: ScalarsExist, VectorsExist, Found, VeloFlag
+    LOGICAL :: ScalarsExist, VectorsExist, Found, VeloFlag, ComponentVector, ThisOnly
     TYPE(Variable_t), POINTER :: Solution
     INTEGER, POINTER :: Perm(:)
     REAL(KIND=dp), POINTER :: Values(:)
@@ -3799,6 +3477,7 @@ CONTAINS
     OPEN( UNIT=VtuUnit, FILE=VtuFile, STATUS='UNKNOWN' )
     Solver => Model % Solver
     dim = CoordinateSystemDimension()
+    ThisOnly = .TRUE.
 
     !FreeSurfaceFlag = FreeSurface( Model )
     
@@ -3843,18 +3522,17 @@ CONTAINS
           EXIT
         END IF
         
-        Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName) )
+        Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName), ThisOnly )
+        ComponentVector = .FALSE.
 
         IF(.NOT. ASSOCIATED(Solution)) THEN
-          IF(FieldName == 'velocity') THEN
-            FieldName = 'flow solution'
-            Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName) )
-            IF(.NOT. ASSOCIATED(Solution)) THEN
-              CALL Warn('WriteVtuXMLFile', 'Velocity and flow solution do not exist')
-            END IF
+          Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName)//' 1',ThisOnly )
+          IF( ASSOCIATED(Solution)) THEN 
+            ComponentVector = .TRUE.
           ELSE
             WRITE(Txt, '(A,A)') 'Nonexistent variable: ',TRIM(FieldName)
-            CALL Warn('WritePvtuFile', Txt)
+            CALL Warn('WriteVtuXMLFile', Txt)
+            CYCLE
           END IF
         END IF
 
@@ -3862,25 +3540,21 @@ CONTAINS
           CALL Warn('WritePvtuFile','Do the eigen values')
         END IF
 
-        VeloFlag = (FieldName == 'flow solution')
-
-        Perm => Solution % Perm
         dofs = Solution % DOFs
-        Values => Solution % Values
+        IF( ComponentVector ) THEN
+          Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName)//' 2',ThisOnly )
+          IF( ASSOCIATED(Solution)) dofs = 2
+          Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName)//' 3',ThisOnly )
+          IF( ASSOCIATED(Solution)) dofs = 3
+        END IF
         
         IF( Rank == 0) THEN
-          WRITE( VtuUnit,'(A)') '      <PDataArray type="Float32" Name="'//TRIM(FieldName)&
+          WRITE( VtuUnit,'(A)') '      <PDataArray type="Float64" Name="'//TRIM(FieldName)&
               //'" NumberOfComponents="1" format="ascii"/>'    
         ELSE
-          IF(VeloFlag) THEN
-            sdofs = MAX(dofs - 1,3)            
-            WRITE( VtuUnit,'(A,I1,A)') '      <PDataArray type="Float32" Name="velocity"'&
-                //' NumberOfComponents="',sdofs,'" format="ascii"/>'    
-          ELSE
-            sdofs = MAX(dofs,3)
-            WRITE( VtuUnit,'(A,I1,A)') '      <PDataArray type="Float32" Name="'//TRIM(FieldName)&
-                //'" NumberOfComponents="',sdofs,'" format="ascii"/>'    
-          END IF
+          sdofs = MAX(dofs,3)
+          WRITE( VtuUnit,'(A,I1,A)') '      <PDataArray type="Float64" Name="'//TRIM(FieldName)&
+              //'" NumberOfComponents="',sdofs,'" format="ascii"/>'    
         END IF
       END DO
     END DO
@@ -3898,7 +3572,7 @@ CONTAINS
     ! Coordinates of each point
     !-------------------------------------
     WRITE( VtuUnit,'(A)') '      <PPoints>'
-    WRITE( VtuUnit,'(A)') '        <DataArray type="Float32" NumberOfComponents="3" format="ascii"/>'    
+    WRITE( VtuUnit,'(A)') '        <DataArray type="Float64" NumberOfComponents="3" format="ascii"/>'    
     WRITE( VtuUnit,'(A)') '      </PPoints>' 
 
     DO i=1,Partitions
