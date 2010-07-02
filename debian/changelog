@@ -4,8 +4,9 @@ elmerfem (5.5.0.svn.4499.dfsg-1) UNRELEASED; urgency=low
   * Changed control file to conform to Debian Science Policy Manual.
   * Moved ElmerGUI to ElmerGUI.real and added ElmerGUI script to call it with
     proper environment variables (closes: #583224).
+  * Added source lintian overrides about Adam Powell's name.
 
- -- Adam C. Powell, IV <hazelsct@debian.org>  Fri, 02 Jul 2010 12:34:41 -0400
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Fri, 02 Jul 2010 13:13:27 -0400
 
 elmerfem (5.5.0.svn.4458.dfsg-2.1) unstable; urgency=low
 
