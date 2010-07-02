@@ -1,8 +1,8 @@
-Have ElmerGUI use PythonQt, update VTK version, and specify OCC includes and
-libs correctly.
+Have ElmerGUI use PythonQt, build against Debian's default Python version, and
+update VTK version.
 
---- elmerfem-5.5.0.svn.4041.dfsg/ElmerGUI/ElmerGUI.pri~	2009-03-17 15:12:17.000000000 -0400
-+++ elmerfem-5.5.0.svn.4041.dfsg/ElmerGUI/ElmerGUI.pri	2009-03-17 15:22:37.000000000 -0400
+--- a/ElmerGUI/ElmerGUI.pri
++++ b/ElmerGUI/ElmerGUI.pri
 @@ -11,7 +11,7 @@
  DEFINES += EG_VTK      # Use VTK for postprocessing?
  DEFINES += EG_MATC     # Use MATC for internal operations in postprocessing?
@@ -12,6 +12,18 @@ libs correctly.
  
  #------------------------------------------------------------------------------
  # 64 bit system?
+@@ -36,9 +36,9 @@
+ # Python library:
+ #------------------------------------------------------------------------------
+ unix {
+-   PY_INCLUDEPATH = /usr/include/python2.5
++   PY_INCLUDEPATH = /usr/include/$$(DEB_PY_VERSION)
+    PY_LIBPATH = /usr/lib
+-   PY_LIBS = -lpython2.5
++   PY_LIBS = -l$$(DEB_PY_VERSION)
+ }
+ 
+ win32 {
 @@ -75,7 +75,7 @@
  # VTK library:
  #------------------------------------------------------------------------------

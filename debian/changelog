@@ -4,6 +4,14 @@ elmerfem (5.5.0.svn.4458.dfsg-3) UNRELEASED; urgency=low
 
  -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 11 May 2010 21:13:51 -0400
 
+elmerfem (5.5.0.svn.4458.dfsg-2.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Build ElmerGUI against the current default Python version
+    (Closes: #539096)
+
+ -- Stefano Rivera <stefano@rivera.za.net>  Fri, 18 Jun 2010 17:25:04 +0200
+
 elmerfem (5.5.0.svn.4458.dfsg-2) unstable; urgency=low
 
   * Make sure patches apply before building (closes: #580207).
