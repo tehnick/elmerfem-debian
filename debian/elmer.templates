@@ -9,7 +9,7 @@
 
 Template: elmer/models
 Type: multiselect
-Choices: helmholtz, navier-stokes, resultoutput, heatequation, linearelasticity, k-epsilon, meshdeform, elasticplate, electrostatics, freesurface, poissonboltzmann, reynolds, saveline, savescalars, statcurrent
+Choices: helmholtz, navier-stokes, resultoutput, heatequation, linearelasticity, k-epsilon, meshdeform, advection-diffusion, elasticplate, electrostatics, freesurface, poissonboltzmann, reynolds, saveline, savescalars, statcurrent
 Default: helmholtz, navier-stokes, resultoutput, heatequation, linearelasticity, k-epsilon, meshdeform
 _Description: Elmer models to include in ElmerGUI:
  Elmer can solve equations from many models. In order to

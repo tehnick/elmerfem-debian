@@ -1,3 +1,9 @@
+elmerfem (5.5.0.svn.4499.dfsg-2) unstable; urgency=low
+
+  * Added advection-diffusion to available modules in debconf template.
+
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 13 Jul 2010 09:00:09 -0400
+
 elmerfem (5.5.0.svn.4499.dfsg-1) unstable; urgency=low
 
   * New upstream revision.
