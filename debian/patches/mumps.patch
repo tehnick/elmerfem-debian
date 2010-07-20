@@ -2,8 +2,8 @@ Add MUMPS linkage support in configure script and build system.
 
 Index: elmerfem/fem/acx_elmer.m4
 ===================================================================
---- elmerfem.orig/fem/acx_elmer.m4	2010-07-20 15:03:29.000000000 -0400
-+++ elmerfem/fem/acx_elmer.m4	2010-07-20 16:17:47.000000000 -0400
+--- elmerfem.orig/fem/acx_elmer.m4	2010-07-20 16:36:31.000000000 -0400
++++ elmerfem/fem/acx_elmer.m4	2010-07-20 16:58:05.000000000 -0400
 @@ -706,6 +706,94 @@
  fi
  ])dnl ACX_HYPRE
@@ -88,7 +88,7 @@ Index: elmerfem/fem/acx_elmer.m4
 +if test x"$acx_mumps_ok" = xyes; then
 +        ifelse([$1],,AC_DEFINE(HAVE_MUMPS,1,[Define if you have a MUMPS library.]),[$1])
 +	FCPPFLAGS="$FCPPFLAGS -DHAVE_MUMPS"
-+	FCFLAGS="$FCFLAGS -I/usr/include/mumps"
++	FCFLAGS="$FCFLAGS -I/usr/include"
 +        :
 +else
 +        acx_mumps_ok=no
@@ -101,8 +101,8 @@ Index: elmerfem/fem/acx_elmer.m4
  dnl
 Index: elmerfem/fem/configure.in
 ===================================================================
---- elmerfem.orig/fem/configure.in	2010-07-20 16:14:17.000000000 -0400
-+++ elmerfem/fem/configure.in	2010-07-20 16:22:00.000000000 -0400
+--- elmerfem.orig/fem/configure.in	2010-07-20 16:36:31.000000000 -0400
++++ elmerfem/fem/configure.in	2010-07-20 16:36:31.000000000 -0400
 @@ -104,6 +104,7 @@
  ACX_ARPACK([], [AC_MSG_ERROR([We need arpack!])])
  ACX_PARPACK([], [AC_MSG_WARN([No parallel arpack found.])])
