@@ -111,7 +111,8 @@ stamp-build: patch
 	     FCFLAGS="$(FCFLAGS) -I$(CURDIR)/debian/tmp/usr/include -fPIC" \
 	     ./configure --prefix=/usr --with-metis=/usr \
 	       --with-mpi-dir=/usr --with-mpi-inc-dir=/usr/include/mpi \
-	       --with-blas=-lblas --with-lapack=-llapack); \
+	       --with-blas=-lblas --with-lapack=-llapack \
+	       --with-mumps=dmumps_scotch); \
 	  echo; echo BUILDING ELMER MODULE $$elmermodule; echo; \
 	  make -C $$elmermodule; \
 	  echo; echo INSTALLING ELMER MODULE $$elmermodule; echo; \
