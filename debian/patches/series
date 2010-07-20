@@ -8,3 +8,4 @@ edf-extra.patch
 node-partition.patch
 destdir.patch
 fix-clean.patch
+mumps.patch

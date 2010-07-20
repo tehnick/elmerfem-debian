@@ -1,8 +1,9 @@
 elmerfem (5.5.0.svn.4499.dfsg-2) unstable; urgency=low
 
+  * Added MUMPS linkage (closes: #586340).
   * Added advection-diffusion to available modules in debconf template.
 
- -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 13 Jul 2010 09:00:09 -0400
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 20 Jul 2010 16:36:06 -0400
 
 elmerfem (5.5.0.svn.4499.dfsg-1) unstable; urgency=low
 

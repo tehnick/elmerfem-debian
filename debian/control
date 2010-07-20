@@ -7,8 +7,9 @@ Standards-Version: 3.9.0
 Build-Depends: debhelper (>= 5), quilt, po-debconf, autoconf, automake,
  gfortran, libblas-dev | libblas-3gf.so, liblapack-dev | liblapack-3gf.so,
  mpi-default-dev, mpi-default-bin,
- libhypre-dev, libsuitesparse-dev, libarpack2-dev, libreadline-dev,
- libncurses5-dev, libx11-dev, tk8.4-dev, tcl8.4-dev, libfreetype6-dev,
+ libhypre-dev, libsuitesparse-dev, libarpack2-dev, libmumps-dev,
+ libreadline-dev, libncurses5-dev,
+ libx11-dev, tk8.4-dev, tcl8.4-dev, libfreetype6-dev,
  libftgl-dev, libgl1-mesa-dev | libgl-dev, libglu1-mesa-dev | libglu-dev,
  libopencascade-modeling-dev, libqt4-dev, qt4-qmake, libqt4-opengl-dev,
  libqwt5-qt4-dev, libvtk5-qt4-dev (>= 5.4), python-qt4-dev, libscotchmetis-dev,
@@ -87,7 +88,7 @@ Description: finite element multiphysics suite - library
 
 Package: libelmer-dev
 Architecture: any
-Depends: elmer (= ${binary:Version}), libelmersolver-6.0 (= ${binary:Version}), libarpack2-dev, ${misc:Depends}
+Depends: elmer (= ${binary:Version}), libelmersolver-6.0 (= ${binary:Version}), libhypre-dev, libsuitesparse-dev, libarpack2-dev, libmumps-dev, ${misc:Depends}
 Conflicts: elmer-common (<< 5.5.0.svn.4499.dfsg-1)
 Section: libdevel
 Description: finite element multiphysics suite - development files
