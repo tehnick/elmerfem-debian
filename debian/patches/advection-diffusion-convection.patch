@@ -1,0 +1,35 @@
+Change advection-diffusion "Convection" keyword to "[solute-name] Convection"
+in GUI with corresponding priority change in solver's .sif file parser.
+
+Index: elmerfem/ElmerGUI/Application/edf-extra/advection-diffusion.xml
+===================================================================
+--- elmerfem.orig/ElmerGUI/Application/edf-extra/advection-diffusion.xml	2010-07-21 17:17:33.000000000 -0400
++++ elmerfem/ElmerGUI/Application/edf-extra/advection-diffusion.xml	2010-07-21 17:17:36.000000000 -0400
+@@ -23,7 +23,7 @@
+         </Parameter>
+         <Parameter Widget="Combo" >
+             <Type> String </Type>
+-            <Name> Convection </Name>
++            <Name> Concentration Convection </Name>
+             <Item Type="Active" > <Name> None </Name> </Item> <Item>
+                <Name> Constant </Name>
+                <Activate> /Advection Diffusion Equation/Equation/Convection Velocity 1 </Activate>
+Index: elmerfem/fem/src/AdvectionDiffusion.src
+===================================================================
+--- elmerfem.orig/fem/src/AdvectionDiffusion.src	2010-07-21 17:15:33.000000000 -0400
++++ elmerfem/fem/src/AdvectionDiffusion.src	2010-07-21 17:16:03.000000000 -0400
+@@ -341,11 +341,11 @@
+            eq_id = ListGetInteger( Model % Bodies(body_id) % Values,'Equation', &
+                       minv=1,maxv=Model % NumberOfEquations )
+            ConvectionFlag = ListGetString( Model % Equations(eq_id) % Values, &
+-                         'Convection', GotIt )
++                         TRIM(ComponentName(Solver % Variable)) // &
++                         ' Convection', GotIt )
+            IF ( .NOT. GotIt ) &
+              ConvectionFlag = ListGetString( Model % Equations(eq_id) % Values, &
+-                           TRIM(ComponentName(Solver % Variable)) // &
+-                           ' Convection', GotIt )
++                           'Convection', GotIt )
+ 
+            ScaledToSolubility = .FALSE.
+            ConcentrationUnits = ListGetString( Model % Equations(eq_id) % &
