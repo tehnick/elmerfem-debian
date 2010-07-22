@@ -1,6 +1,6 @@
 #! /bin/sh -e 
 
-PROVIDED_MODELS="helmholtz navier-stokes resultoutput heatequation linearelasticity k-epsilon meshdeform elasticplate electrostatics freesurface poissonboltzmann reynolds saveline savescalars statcurrent"
+PROVIDED_MODELS="helmholtz navier-stokes resultoutput heatequation linearelasticity k-epsilon meshdeform advection-diffusion elasticplate electrostatics freesurface poissonboltzmann reynolds saveline savescalars statcurrent"
 
 # Load debconf
 . /usr/share/debconf/confmodule

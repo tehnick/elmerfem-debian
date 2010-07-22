@@ -5,7 +5,7 @@ elmerfem (5.5.0.svn.4499.dfsg-2) unstable; urgency=low
   * Patched advection-diffusion model to use its own convection keyword by
     default, and include that keyword in the GUI.
 
- -- Adam C. Powell, IV <hazelsct@debian.org>  Wed, 21 Jul 2010 18:14:27 -0400
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Thu, 22 Jul 2010 09:07:57 -0400
 
 elmerfem (5.5.0.svn.4499.dfsg-1) unstable; urgency=low
 
