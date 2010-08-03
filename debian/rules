@@ -99,7 +99,7 @@ stamp-build: patch
 	  echo Running aclocal/automake in module $$aclocaldir; \
 	  (cd $$aclocaldir && aclocal && automake); \
 	done
-	for elmermodule in $(ELMER_MODULES); do \
+	set -e; for elmermodule in $(ELMER_MODULES); do \
 	  echo; echo CONFIGURING ELMER MODULE $$elmermodule; echo; \
 	  (cd $$elmermodule && \
 	   autoconf && \

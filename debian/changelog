@@ -4,8 +4,9 @@ elmerfem (5.5.0.svn.4499.dfsg-2) unstable; urgency=low
   * Added advection-diffusion to available modules in debconf template.
   * Patched advection-diffusion model to use its own convection keyword by
     default, and include that keyword in the GUI.
+  * Fail on errors while compiling/installing any modules.
 
- -- Adam C. Powell, IV <hazelsct@debian.org>  Thu, 22 Jul 2010 09:50:40 -0400
+ -- Adam C. Powell, IV <hazelsct@debian.org>  Tue, 03 Aug 2010 10:39:05 -0400
 
 elmerfem (5.5.0.svn.4499.dfsg-1) unstable; urgency=low
 
