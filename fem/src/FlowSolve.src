@@ -81,18 +81,18 @@
 
      INTEGER :: i,j,k,n,nb,nd,t,iter,LocalNodes,istat
 
-     TYPE(ValueList_t),POINTER :: Material, BC
+     TYPE(ValueList_t),POINTER :: Material, BC, BodyForce, Equation
      TYPE(Nodes_t) :: ElementNodes
      TYPE(Element_t),POINTER :: Element
 
-     REAL(KIND=dp) :: RelativeChange,UNorm,Gravity(3), &
+     REAL(KIND=dp) :: RelativeChange,UNorm,Gravity(3),AngularVelocity(3), &
        Tdiff,s,Relaxation,NewtonTol,NonlinearTol, &
        ReferencePressure=0.0, SpecificHeatRatio, &
        PseudoCompressibilityScale=1.0, NonlinearRelax,FreeSTol
 
      INTEGER :: NSDOFs,NewtonIter,NonlinearIter,FreeSIter
 
-     TYPE(Variable_t), POINTER :: DensitySol
+     TYPE(Variable_t), POINTER :: DensitySol, TimeVar
      TYPE(Variable_t), POINTER :: FlowSol, TempSol, MeshSol
 
      INTEGER, POINTER :: FlowPerm(:),TempPerm(:), MeshPerm(:)
@@ -106,7 +106,7 @@
      LOGICAL :: Stabilize,NewtonLinearization = .FALSE., GotForceBC, GotIt, &
                   MBFlag, Convect  = .TRUE., NormalTangential, RelaxBefore, &
                   divDiscretization, GradPDiscretization, ComputeFree=.FALSE., &
-                  Transient
+                  Transient, Rotating
 
 ! Which compressibility model is used
      CHARACTER(LEN=MAX_NAME_LEN) :: CompressibilityFlag, StabilizeFlag, VarName
@@ -114,6 +114,10 @@
      INTEGER :: CompressibilityModel, ModelCoords, ModelDim
      INTEGER :: body_id,bf_id,eq_id,DIM
      INTEGER, POINTER :: NodeIndexes(:), Indexes(:)
+
+
+     INTEGER, SAVE :: Timestep, SaveTimestep=-1
+     REAL(KIND=dp), ALLOCATABLE, SAVE :: pDensity0(:), pDensity1(:)
 !
      LOGICAL :: AllocationsDone = .FALSE., FreeSurfaceFlag, &
          PseudoPressureExists, PseudoCompressible, Bubbles, &
@@ -186,23 +190,23 @@
 
      IF ( UseLocalCoords ) THEN
         ModelCoords = Coordinates
-        ModelDim = Model % Dimension
+        ModelDim = Model % DIMENSION
         SELECT CASE ( LocalCoords )
            CASE( 'cartesian 2d' )
               Coordinates = 1
-              Model % Dimension = 2
+              Model % DIMENSION = 2
               CALL Info( 'FlowSolve', 'Solver Coordinate System is cartesian 2d', LEVEL=31 )
            CASE( 'cartesian 3d' )
               Coordinates = 1
-              Model % Dimension = 3
+              Model % DIMENSION = 3
               CALL Info( 'FlowSolve', 'Solver Coordinate System is cartesian 3d', LEVEL=31 )
            CASE( 'axi symmetric' )
               Coordinates = 4
-              Model % Dimension = 2
+              Model % DIMENSION = 2
               CALL Info( 'FlowSolve', 'Solver Coordinate System is axi symmetric', LEVEL=31 )
            CASE( 'cylindric symmetric' )
               Coordinates = 3
-              Model % Dimension = 3
+              Model % DIMENSION = 3
               CALL Info( 'FlowSolve', 'Solver Coordinate System is cylindric symmetric', LEVEL=31 )
            CASE DEFAULT
               CALL Warn( 'FlowSolve', 'Solver coordinate system not recognised, using original' )
@@ -350,6 +354,14 @@
      END IF
 !------------------------------------------------------------------------------
 
+
+     TimeVar => VariableGet( Solver % Mesh % Variables, 'Timestep')
+     Timestep = NINT(Timevar % Values(1))
+     IF ( SaveTimestep /= Timestep ) THEN
+       IF ( ALLOCATED(pDensity0) ) pDensity0 = pDensity1
+       SaveTimestep=Timestep
+     END IF
+
 !------------------------------------------------------------------------------
 !    Do some additional initialization, and go for it
 !------------------------------------------------------------------------------
@@ -422,7 +434,7 @@
             'Nonlinear System Relaxation Factor', 1.0d0 )
 
      IF ( NonlinearRelax /= 1._dp ) &
-       CALL ListAddLogical( Solver % Values, 'Skip Compute Change', .TRUE. )
+       CALL ListAddLogical( Solver % Values, 'Skip Compute Nonlinear Change', .TRUE. )
 !------------------------------------------------------------------------------
 !    Check if free surfaces present
 !------------------------------------------------------------------------------
@@ -500,13 +512,16 @@
 
            eq_id = ListGetInteger( Model % Bodies(body_id) % Values,'Equation', &
                    minv=1, maxv=Model % NumberOfEquations )
+           Equation => Model % Equations(eq_id) % Values
 
            bf_id = ListGetInteger( Model % Bodies(body_id) % Values, &
               'Body Force', gotIt, 1, Model % NumberOfBodyForces )
+           IF( bf_id > 0 ) THEN
+             BodyForce => Model % BodyForces(bf_id) % Values
+           END IF
 
            IF ( FlowModel == 'full' ) THEN
-             Convect = ListGetLogical( Model % Equations(eq_id) % Values, &
-                       'NS Convect', GotIt )
+             Convect = ListGetLogical( Equation,'NS Convect', GotIt )
              IF ( .NOT. GotIt ) Convect = .TRUE.
            ENDIF
 
@@ -546,16 +561,30 @@
 
            Gotit = .FALSE.
            IF ( bf_id > 0 ) THEN
-             MagneticForce = ListGetLogical( Model % BodyForces(bf_id) % Values, &
-                        'Lorentz Force', gotIt )
-
-             Hydrostatic = ListGetLogical( Model % BodyForces(bf_id) % Values, &
-                        'Hydrostatic Pressure',gotIt )
+             MagneticForce = ListGetLogical( BodyForce,'Lorentz Force', gotIt )
+             Hydrostatic = ListGetLogical( BodyForce,'Hydrostatic Pressure',gotIt )
            END IF
            IF ( .NOT. GotIt ) THEN
-             Hydrostatic = ListGetLogical( Model % Equations(eq_id) % Values, &
-                      'Hydrostatic Pressure',gotIt )
+             Hydrostatic = ListGetLogical( Equation,'Hydrostatic Pressure',gotIt )
            END IF
+!------------------------------------------------------------------------------
+           
+           Rotating = .FALSE.
+           IF( bf_id > 0 ) THEN
+             gWork => ListGetConstRealArray( BodyForce,'Angular Velocity',GotIt)
+             IF ( GotIt ) THEN
+               IF( Coordinates == Cartesian ) THEN
+                 AngularVelocity = gWork(1:3,1)
+                 Rotating = .TRUE.
+               ELSE
+                 CALL Fatal('FlowSolve','Rotating coordinate implemented only for cartesian coodinates')
+               END IF
+             ELSE
+               AngularVelocity = 0.0_dp
+             END IF
+           END IF
+
+
          END IF
 
 !------------------------------------------------------------------------------
@@ -688,7 +717,17 @@
                 END IF
              ELSE
                Density(1:n) = GetReal( Material,'Density' )
-               PrevDensity(1:n) = Density(1:n)
+               IF ( Transient ) THEN
+                 IF (.NOT.ALLOCATED(pDensity0))  THEN
+                   ALLOCATE(pDensity0(LocalNodes), &
+                            pDensity1(LocalNodes))
+                 END IF
+
+                 IF ( Timestep==1 ) &
+                     pDensity0(Indexes(1:n)) = Density(1:n)
+                 pDensity1(Indexes(1:n)) = Density(1:n)
+                 PrevDensity(1:n) = pDensity0(Indexes(1:n))
+               END IF
              END IF
 
            CASE( Thermal )
@@ -701,12 +740,13 @@
                'Reference Temperature' )
 
              Density(1:n) = GetReal( Material,'Density' )
+
+             IF( Transient ) THEN
+               PrevDensity(1:n) = Density(1:n) * ( 1 - HeatExpansionCoeff(1:n)  * &
+                  ( LocalTempPrev(1:n) - ReferenceTemperature(1:n) ) )
+             END IF
              Density(1:n) = Density(1:n) * ( 1 - HeatExpansionCoeff(1:n)  * &
                   ( LocalTemperature(1:n) - ReferenceTemperature(1:n) ) )
-             IF ( Transient ) THEN
-                PrevDensity(1:n) = Density(1:n) * ( 1 - HeatExpansionCoeff(1:n) * &
-                   ( LocalTempPrev(1:n) - ReferenceTemperature(1:n) )  )
-             END IF
 !------------------------------------------------------------------------------
          END SELECT
 !------------------------------------------------------------------------------
@@ -741,21 +781,20 @@
 !------------------------------------------------------------------------------
          LoadVector = 0.0D0
 
-         IF ( bf_id>0 ) THEN
+         IF ( bf_id > 0 ) THEN
            HeatExpansionCoeff   = 0.0D0
            ReferenceTemperature = 0.0D0
 
 !------------------------------------------------------------------------------
 !          Boussinesq body force & gravity
 !------------------------------------------------------------------------------
-           IF ( ListGetLogical( Model % BodyForces(bf_id) % Values, &
-                        'Boussinesq',gotIt) ) THEN
+           IF ( ListGetLogical( BodyForce,'Boussinesq',gotIt) ) THEN
 
              HeatExpansionCoeff(1:n) = GetReal( Material, &
-               'Heat Expansion Coefficient' )
-
+                 'Heat Expansion Coefficient' )
+             
              ReferenceTemperature(1:n) = GetReal( Material, &
-                  'Reference Temperature' )
+                 'Reference Temperature' )
 
              DO i=1,n
                k = TempPerm(NodeIndexes(i))
@@ -785,30 +824,28 @@
              IF ( NSDOFs > 3 ) LoadVector(3,1:n) = Gravity(3)
            END IF
 !------------------------------------------------------------------------------
-           LoadVector(1,1:n) = LoadVector(1,1:n) + ListGetReal( &
-               Model % BodyForces(bf_id) % Values, &
+           LoadVector(1,1:n) = LoadVector(1,1:n) + ListGetReal( BodyForce, &
                'Flow Bodyforce 1',n,NodeIndexes,gotIt )
            
-           LoadVector(2,1:n) = LoadVector(2,1:n) + ListGetReal( &
-               Model % BodyForces(bf_id) % Values, &
+           LoadVector(2,1:n) = LoadVector(2,1:n) + ListGetReal( BodyForce, &
                'Flow Bodyforce 2',n,NodeIndexes,gotIt )
-
+           
            IF ( NSDOFs > 3 ) THEN
-             LoadVector(3,1:n) = LoadVector(3,1:n) + ListGetReal( &
-                 Model % BodyForces(bf_id) % Values, &
+             LoadVector(3,1:n) = LoadVector(3,1:n) + ListGetReal( BodyForce, &
                  'Flow Bodyforce 3',n,NodeIndexes,gotIt )
            END IF
 
 !------------------------------------------------------------------------------
            
-           PotentialForce = ListGetLogical( Model % BodyForces(bf_id) % Values, &
-               'Potential Force',gotIt) 
+           PotentialForce = ListGetLogical( BodyForce,'Potential Force',gotIt) 
            IF(PotentialForce) THEN
-             PotentialField(1:n) = ListGetReal( Model % BodyForces(bf_id) % Values, &
+             PotentialField(1:n) = ListGetReal( BodyForce, &
                  'Potential Field',n,NodeIndexes)             
-             PotentialCoefficient(1:n) = ListGetReal( Model % BodyForces(bf_id) % Values, &
+             PotentialCoefficient(1:n) = ListGetReal( BodyForce, &
                  'Potential Coefficient',n,NodeIndexes)
            END IF
+
+
         
 !------------------------------------------------------------------------------
          END IF ! of body forces
@@ -859,7 +896,7 @@
                    CompressibilityModel == UserDefined1, &
                    PseudoCompressible, PseudoCompressibility, GasConstant, Porous, Drag, & 
                    PotentialForce, PotentialField, PotentialCoefficient, &
-                   MagneticForce, &
+                   MagneticForce, Rotating, AngularVelocity, &
                    DivDiscretization, GradPDiscretization, NewtonLinearization, &
                    Element,n,ElementNodes)
 !------------------------------------------------------------------------------
@@ -906,7 +943,7 @@
             Bubbles = .TRUE.
             StabilizeFlag = 'bubbles'
          END IF
-         IF ( Element % Type % BasisFunctionDegree <= 1 .AND. &
+         IF ( Element % TYPE % BasisFunctionDegree <= 1 .AND. &
               StabilizeFlag == 'p2/p1' ) THEN
             Bubbles = .TRUE.
             StabilizeFlag = 'bubbles'
@@ -1187,8 +1224,10 @@
 
         RelaxBefore = GetLogical( Solver % Values, &
               'Nonlinear system Relaxation Before', gotIt )
-        IF ( .NOT.gotIt .OR. RelaxBefore ) &
+        IF ( .NOT.gotIt .OR. RelaxBefore ) THEN
+          CALL ListAddLogical( Solver % Values, 'Skip Compute Nonlinear Change', .FALSE. )
           CALL ComputeChange( Solver, .FALSE., n, FlowSolution, PSolution )
+        END IF
       END IF
       RelativeChange = Solver % Variable % NonlinChange
 
@@ -1238,7 +1277,7 @@
 
     IF ( UseLocalCoords ) THEN
        Coordinates = ModelCoords
-       Model % Dimension = ModelDim
+       Model % DIMENSION = ModelDim
     END IF
 
 CONTAINS

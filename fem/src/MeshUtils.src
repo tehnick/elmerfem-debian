@@ -668,7 +668,7 @@ CONTAINS
          Element => Mesh % Elements(i)
          
          ! Iterate each edge of element
-         DO j = 1,Element % Type % NumberOfEdges
+         DO j = 1,Element % TYPE % NumberOfEdges
             Edge => Mesh % Edges( Element % EdgeIndexes(j) ) 
             
             ! Set attributes of p element edges
@@ -2215,7 +2215,7 @@ CONTAINS
              END IF
 
              IF ( ASSOCIATED(Mesh % Faces) ) THEN
-               DO ii=1,Element % Type % NumberOfFaces
+               DO ii=1,Element % TYPE % NumberOfFaces
                  Face => Mesh % Faces(Element % FaceIndexes(ii))
                  IF ( .NOT. ASSOCIATED(Face % EdgeIndexes) ) THEN
                    ALLOCATE(Face % EdgeIndexes(Face % TYPE % NumberOfEdges))
@@ -2335,7 +2335,7 @@ CONTAINS
 
       DO i=1,Mesh % NumberOfFaces
         Face => Mesh % Faces(i)
-        n = Face % Type % NumberOfEdges
+        n = Face % TYPE % NumberOfEdges
         Edgeind(1:n) = Face % EdgeIndexes(1:n)
         DO j=1,n
           i1 = Mesh % Edges(Edgeind(j)) % NodeIndexes(1:2)
@@ -4929,7 +4929,7 @@ CONTAINS
 !------------------------------------------------------------------------------
     INTEGER, POINTER :: InvPerm(:)
     TYPE(ListMatrix_t), POINTER :: ListMatrix(:)
-    INTEGER :: t,i,j,k,l,m,k1,k2,n,p,q,e1,e2,f1,f2,This    
+    INTEGER :: t,i,j,k,l,m,k1,k2,n,p,q,e1,e2,f1,f2,This,bf_id   
     LOGICAL :: Flag, Found, FirstRound
     INTEGER :: Indexes(30), ElemStart, ElemFin, Width
     TYPE(ListMatrixEntry_t), POINTER :: CList, Lptr
@@ -4940,8 +4940,8 @@ CONTAINS
     ! First check if there are active elements for this mask
     ElemStart = HUGE(ElemStart) 
     ElemFin = 0     
-    DO l = 1, Model % NumberOfBodies
-       IF(ListCheckPresent( Model % Bodies(l) % Values,MaskName) ) THEN
+    DO l = 1, Model % NumberOfBodyForces
+       IF(ListCheckPresent( Model % BodyForces(l) % Values,MaskName) ) THEN
           ElemStart = 1
           ElemFin = Mesh % NumberOfBulkElements
           EXIT
@@ -4976,7 +4976,10 @@ CONTAINS
        Found = .FALSE.
        IF(t <= Mesh % NumberOfBulkElements) THEN
           l = CurrentElement % BodyId
-          IF(ListCheckPresent( Model % Bodies(l) % Values, MaskName )) Found = .TRUE.
+	  bf_id = ListGetInteger( Model % Bodies(l) % Values, 'Body Force',Found)
+	  IF( bf_id>0 ) THEN
+            IF(ListCheckPresent( Model % BodyForces(bf_id) % Values, MaskName )) Found = .TRUE.
+	  END IF 
        ELSE
           DO l=1, Model % NumberOfBCs
              IF ( Model % BCs(l) % Tag /= CurrentElement % BoundaryInfo % Constraint ) CYCLE
@@ -5069,6 +5072,1520 @@ CONTAINS
 !------------------------------------------------------------------------------
   END SUBROUTINE MakePermUsingMask
 !------------------------------------------------------------------------------
+
+
+
+
+!------------------------------------------------------------------------
+! Find a point in the mesh structure
+! There are two strategies:
+! 1) Recursive where the same routine is repeated with sloppier criteria
+! 2) One-sweep strategy where the best hit is registered and used if of 
+!    acceptable accuracy. 
+! There are two different epsilons that control the search. One for the 
+! rough test in absolute coordinates and another one for the more accurate
+! test in local coordinates.   
+!-------------------------------------------------------------------------
+  FUNCTION PointInMesh(Solver, GlobalCoords, LocalCoords, HitElement, &
+      CandElement, ExtInitialize ) RESULT ( Hit )
+        
+    TYPE(Solver_t) :: Solver
+    REAL(KIND=dp) :: GlobalCoords(3), LocalCoords(3)
+    TYPE(Element_t), POINTER :: HitElement 
+    TYPE(Element_t), POINTER, OPTIONAL :: CandElement
+    LOGICAL, OPTIONAL :: ExtInitialize
+    LOGICAL :: Hit
+!-------------------------------------------------------------------------
+    LOGICAL :: Initialize, Allocated = .FALSE., Stat, DummySearch, &
+        MaskExists, Found, IsRecursive
+    INTEGER :: i,j,k,n,bf_id,dim,mini
+    REAL(KIND=dp) :: u,v,w,dist,mindist,MinLocalCoords(3)
+    TYPE(Nodes_t) :: ElementNodes
+    TYPE(Mesh_t), POINTER :: Mesh
+    INTEGER, POINTER :: NodeIndexes(:)
+    TYPE(Element_t), POINTER :: CurrentElement
+    TYPE(Quadrant_t), POINTER, SAVE :: RootQuadrant =>Null(), LeafQuadrant
+    REAL(kind=dp) :: BoundingBox(6), eps2, eps1 = 1e-3, GlobalEps, LocalEps
+    CHARACTER(LEN=MAX_NAME_LEN) :: MaskName
+
+
+    SAVE :: Allocated, ElementNodes, DummySearch, Mesh, MaskName, MaskExists, &
+        GlobalEps, LocalEps, IsRecursive
+
+
+    IF( PRESENT( ExtInitialize ) ) THEN
+      Initialize = ExtInitialize
+    ELSE
+      Initialize = .NOT. Allocated 
+    END IF
+
+    IF( Initialize ) THEN
+      Mesh => Solver % Mesh
+      n = Mesh % MaxElementNodes
+      IF( Allocated ) THEN
+        DEALLOCATE( ElementNodes % x, ElementNodes % y, ElementNodes % z )
+      END IF
+      ALLOCATE( ElementNodes % x(n), ElementNodes % y(n), ElementNodes % z(n))
+      Allocated = .TRUE.
+
+      IsRecursive = ListGetLogical( CurrentModel % Simulation,&
+          'Interpolation Search Recursive',Stat )
+!      IF(.NOT. Stat ) IsRecursive = .TRUE.
+
+      LocalEps = ListGetConstReal( CurrentModel % Simulation,  &
+          'Interpolation Local Epsilon', Stat )
+      IF(.NOT. stat) LocalEps = 1.0e-10
+
+      GlobalEps = ListGetConstReal( CurrentModel % Simulation,  &
+          'Interpolation Global Epsilon', Stat ) 
+      IF(.NOT. stat) THEN
+        IF( IsRecursive ) THEN
+          GlobalEps = 2.0e-10
+        ELSE
+          GlobalEps = 1.0e-4
+        END IF
+      END IF
+
+      DummySearch = ListGetLogical( CurrentModel % Simulation,&
+          'Interpolation Search Dummy',Stat )
+
+      MaskName = ListGetString( CurrentModel % Simulation,&
+          'Interpolation Search Mask',MaskExists )
+
+      IF( ASSOCIATED( Mesh % RootQuadrant ) ) THEN
+        CALL FreeQuadrantTree( Mesh % RootQuadrant )
+        Mesh % RootQuadrant => Null()
+      END IF
+    END IF
+      
+
+    !-----------------------------------------------
+    ! Create the octree search structure, if needed 
+    !-----------------------------------------------
+    IF ( .NOT. ( DummySearch .OR.  ASSOCIATED( Mesh % RootQuadrant ) ) ) THEN
+      BoundingBox(1) = MINVAL( Mesh % Nodes % x )
+      BoundingBox(2) = MINVAL( Mesh % Nodes % y )
+      BoundingBox(3) = MINVAL( Mesh % Nodes % z )
+      BoundingBox(4) = MAXVAL( Mesh % Nodes % x )
+      BoundingBox(5) = MAXVAL( Mesh % Nodes % y )
+      BoundingBox(6) = MAXVAL( Mesh % Nodes % z )
+      
+      eps2 = eps1 * MAXVAL( BoundingBox(4:6) - BoundingBox(1:3) )
+      BoundingBox(1:3) = BoundingBox(1:3) - eps2
+      BoundingBox(4:6) = BoundingBox(4:6) + eps2
+      
+      CALL BuildQuadrantTree( Mesh,BoundingBox,Mesh % RootQuadrant)
+      RootQuadrant => Mesh % RootQuadrant
+      IF (.NOT. ASSOCIATED(RootQuadrant) ) THEN
+        CALL Warn('PointInMesh','No RootQuadrant associated')
+        RETURN
+      END IF
+    END IF
+
+
+    Hit = .FALSE.
+
+    ! Check that the previous hit is not hit even now
+    !-------------------------------------------------
+    IF( PRESENT( CandElement ) ) THEN
+
+      IF( ASSOCIATED(CandElement)) THEN
+
+        CurrentElement => CandElement
+        n = CurrentElement % TYPE % NumberOfNodes
+        NodeIndexes => CurrentElement % NodeIndexes
+        
+        ElementNodes % x(1:n) = Mesh % Nodes % x(NodeIndexes)
+        ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes)
+        ElementNodes % z(1:n) = Mesh % Nodes % z(NodeIndexes)
+        
+        IF ( PointInElement( CurrentElement, ElementNodes, &
+            GlobalCoords, LocalCoords ) ) THEN
+          Hit = .TRUE.
+          HitElement => CurrentElement
+          RETURN
+        END IF
+      END IF
+    END IF
+
+
+    Eps1 = GlobalEps
+    Eps2 = LocalEps
+
+
+100 IF( DummySearch ) THEN
+
+      mindist = HUGE( mindist ) 
+      
+      !----------------------------------------------------------
+      ! Go through all bulk elements in a dummy search.
+      ! This algorithm is mainly here for debugging purposes, or
+      ! if just a few nodes need to be searched.
+      !----------------------------------------------------------
+      DO k=1,Mesh % NumberOfBulkElements
+        CurrentElement => Mesh % Elements(k)
+        n = CurrentElement % TYPE % NumberOfNodes
+        NodeIndexes => CurrentElement % NodeIndexes
+        
+        IF( MaskExists ) THEN
+          bf_id = ListGetInteger( CurrentModel % Bodies(CurrentElement % BodyId) % Values, &
+              'Body Force', Found )
+          IF( .NOT. Found ) CYCLE
+          IF(.NOT. ListCheckPresent( CurrentModel % BodyForces(bf_id) % Values,MaskName) ) CYCLE
+        END IF
+
+        ElementNodes % x(1:n) = Mesh % Nodes % x(NodeIndexes)
+        ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes)
+        ElementNodes % z(1:n) = Mesh % Nodes % z(NodeIndexes)
+        
+        Hit = PointInElement( CurrentElement, ElementNodes, &
+            GlobalCoords, LocalCoords, Eps1, Eps2, LocalDistance = dist )
+        IF( dist < mindist ) THEN
+          mini = k
+          mindist = dist
+        END IF
+        IF( Hit ) EXIT
+      END DO      
+    ELSE
+      !-----------------------------------------------
+      ! Find the right element using an octree search
+      ! This is the preferred algorithms of the two.
+      !-----------------------------------------------
+      NULLIFY(CurrentElement)
+      CALL FindLeafElements(GlobalCoords, Mesh % MeshDim, RootQuadrant, LeafQuadrant)
+      IF ( ASSOCIATED(LeafQuadrant) ) THEN
+        DO j=1, LeafQuadrant % NElemsInQuadrant
+          k = LeafQuadrant % Elements(j)
+          CurrentElement => Mesh % Elements(k)
+          
+          IF( MaskExists ) THEN
+            bf_id = ListGetInteger( CurrentModel % Bodies(CurrentElement % BodyId) % Values, &
+                'Body Force', Found )
+            IF( .NOT. Found ) CYCLE
+            IF(.NOT. ListCheckPresent( CurrentModel % BodyForces(bf_id) % Values,MaskName) ) CYCLE
+          END IF
+          
+          n = CurrentElement % TYPE % NumberOfNodes
+          NodeIndexes => CurrentElement % NodeIndexes
+                    
+          ElementNodes % x(1:n) = Mesh % Nodes % x(NodeIndexes)
+          ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes)
+          ElementNodes % z(1:n) = Mesh % Nodes % z(NodeIndexes)
+          
+          Hit = PointInElement( CurrentElement, ElementNodes, &
+              GlobalCoords, LocalCoords, Eps1, Eps2, LocalDistance = dist ) 
+          IF( dist < mindist ) THEN
+            mini = k
+            mindist = dist
+            MinLocalCoords = LocalCoords
+          END IF
+          IF( Hit ) EXIT
+        END DO
+      END IF      
+    END IF
+
+    IF( .NOT. Hit ) THEN
+      IF( IsRecursive ) THEN
+        Eps1 = 10.0 * Eps1
+        Eps2 = 10.0 * Eps2
+        IF( Eps1 <= 1.0_dp ) GOTO 100
+      ELSE
+        IF( mindist < Eps1 ) THEN
+          CurrentElement => Mesh % Elements(k)
+          LocalCoords = MinLocalCoords
+          Hit = .TRUE.
+        END IF
+      END IF
+    END IF
+
+    IF( Hit ) HitElement => CurrentElement
+    
+  END FUNCTION PointInMesh
+
+
+
+!--------------------------------------------------------------------------
+!  This subroutine finds the structure of an extruded mesh even though it is 
+! given in an unstructured formar. The routine may be used by some special
+! solvers that employ the special character of the mesh.
+! The extrusion is found for a given direction and for each node the corresponding 
+! up and down, and thereafter top and bottom node is computed.
+!-----------------------------------------------------------------------------
+  SUBROUTINE DetectExtrudedStructure( Mesh, Direction, Tolerance, MaskPerm, &
+      TopNodePointer, BotNodePointer, UpNodePointer, DownNodePointer )
+    
+    USE CoordinateSystems
+
+    TYPE(Mesh_t), POINTER :: Mesh
+    REAL(KIND=dp) :: Direction(3)
+    REAL(KIND=dp), OPTIONAL :: Tolerance
+    INTEGER, POINTER, OPTIONAL :: MaskPerm(:)
+    INTEGER, POINTER, OPTIONAL :: TopNodePointer(:), BotNodePointer(:), &
+        UpNodePointer(:), DownNodePointer(:)
+!-----------------------------------------------------------------------------
+    TYPE(Element_t), POINTER :: Element
+    TYPE(Nodes_t) :: Nodes
+    INTEGER :: i,j,k,n,ii,jj,dim, nsize, elem, TopNodes, BotNodes, Rounds
+    INTEGER, POINTER :: NodeIndexes(:)
+    LOGICAL :: MaskExists, UpActive, DownActive, GotIt, Found
+    REAL(KIND=dp) :: at0, at1, Length, UnitVector(3), ElemVector(3), DotPro, Eps, CPUTime
+    INTEGER, POINTER :: TopPointer(:), BotPointer(:), UpPointer(:), DownPointer(:)
+
+   
+    CALL Info('DetectExtrudedStructure','Determining extruded structure')
+    at0 = CPUTime()
+
+    ! Choose active direction coordinate and set corresponding unit vector
+    !---------------------------------------------------------------------
+    
+    Length = SQRT( SUM( Direction ** 2 ) )
+    IF( Length < EPSILON(Length) ) THEN
+      CALL Warn('DetectExtrudedStructure','Invalid direction vector, exiting...')
+      RETURN
+    END IF
+    UnitVector = Direction / Length
+    
+    WRITE(Message,'(A,3F8.3)') 'Unit vector of direction:',UnitVector
+    CALL Info('DetectExtrudedStructure',Message)
+
+    ! Check which direction is active
+    !---------------------------------------------------------------------
+    UpActive = PRESENT( UpNodePointer) .OR. PRESENT ( TopNodePointer )
+    DownActive = PRESENT( DownNodePointer) .OR. PRESENT ( BotNodePointer )
+    IF(.NOT. (UpActive .OR. DownActive ) ) THEN
+      CALL Warn('DetectExtrudedStructure','Either up or down direction should be active')
+    END IF
+
+    ! Allocate pointers to top and bottom, and temporary pointers up and down
+    !------------------------------------------------------------------------
+    n = Mesh % MaxElementNodes
+    ALLOCATE( Nodes % x(n), Nodes % y(n),Nodes % z(n) )
+
+    DIM = Mesh % MeshDim
+    MaskExists = PRESENT( MaskPerm )
+    IF( MaskExists ) THEN
+      nsize = MAXVAL( MaskPerm ) 
+      WRITE(Message,'(A,I8)') 'Applying mask of size:',nsize
+      CALL Info('DetectExtrudedStructure',Message)
+    ELSE
+      nsize = Mesh % NumberOfNodes
+    END IF
+    
+    IF( UpActive ) THEN
+      ALLOCATE(TopPointer(nsize),UpPointer(nsize))
+      DO i=1,nsize
+        TopPointer(i) = i
+        UpPointer(i) = i
+      END DO
+    END IF
+    IF( DownActive ) THEN
+      ALLOCATE(BotPointer(nsize),DownPointer(nsize))
+      DO i=1,nsize
+        BotPointer(i) = i
+        DownPointer(i) = i
+      END DO
+    END IF
+
+    ! Set the dot product tolerance
+    !-----------------------------------------------------------------
+    IF( PRESENT( Tolerance ) ) THEN
+      Eps = Tolerance 
+    ELSE
+      Eps = ListGetConstReal(CurrentModel % Solver % Values,'Dot Product Tolerance',GotIt)
+      IF(.NOT. GotIt) Eps = 0.01_dp
+    END IF
+
+    CALL Info('DetectExtrudedStructure','determine up and down pointers')
+
+    ! Determine the up and down pointers using dot product as criterion
+    !-----------------------------------------------------------------
+    DO elem = 1,Mesh % NumberOfBulkElements      
+      Element => Mesh % Elements(elem)
+      NodeIndexes => Element % NodeIndexes
+      CurrentModel % CurrentElement => Element
+
+      n = Element % TYPE % NumberOfNodes
+      Nodes % x(1:n) = Mesh % Nodes % x(NodeIndexes)
+      Nodes % y(1:n) = Mesh % Nodes % y(NodeIndexes)
+      Nodes % z(1:n) = Mesh % Nodes % z(NodeIndexes)
+
+      IF (.NOT. (Element % PartIndex == Parenv % Mype) ) CYCLE
+
+      IF( MaskExists ) THEN
+        IF( ANY(MaskPerm(NodeIndexes) == 0) ) CYCLE
+      END IF
+
+      DO i=1,n
+        ii = NodeIndexes(i)
+        DO j=i+1,n
+          jj = NodeIndexes(j)
+
+          ElemVector(1) = Nodes % x(j) - Nodes % x(i)
+          ElemVector(2) = Nodes % y(j) - Nodes % y(i)
+          ElemVector(3) = Nodes % z(j) - Nodes % z(i)
+          Length = SQRT(SUM(ElemVector*ElemVector))
+          DotPro = SUM(ElemVector * UnitVector) / Length
+
+          IF(DotPro > 1.0_dp - Eps) THEN 
+            IF( UpActive ) UpPointer(ii) = jj
+            IF( DownActive ) DownPointer(jj) = ii
+          ELSE IF(DotPro < Eps - 1.0_dp) THEN
+            IF( DownActive ) DownPointer(ii) = jj
+            IF( UpActive ) UpPointer(jj) = ii
+          END IF
+        END DO
+      END DO
+    END DO
+    
+    ! Pointer to top and bottom are found recursively using up and down
+    !------------------------------------------------------------------
+    CALL Info('DetectExtrudedStructure','determine top and bottom pointers')
+
+    Found = .TRUE.
+    Rounds = 0
+    DO WHILE(Found) 
+      Found = .FALSE.
+      DO i=1,nsize
+        IF( MaskExists ) THEN
+          IF( MaskPerm(i) == 0) CYCLE
+        END IF
+        IF( UpActive ) THEN
+          j = UpPointer(i)
+          IF( TopPointer(i) /= TopPointer( j ) ) THEN
+            Found = .TRUE.
+            TopPointer(i) = TopPointer( j )
+          END IF
+        END IF
+        IF( DownActive ) THEN
+          j = DownPointer(i)
+          IF( BotPointer(i) /= BotPointer( j ) ) THEN
+            Found = .TRUE.
+            BotPointer(i) = BotPointer( j )
+          END IF
+        END IF
+      END DO
+      IF( Found ) Rounds = Rounds + 1
+    END DO
+
+    ! Count the number of nodes, for information only
+    !---------------------------------------------------------------
+    IF( UpActive ) THEN
+      TopNodes = 0
+      DO i=1,nsize
+        IF(TopPointer(i) == i) THEN
+          TopNodes = TopNodes + 1
+        END IF
+      END DO
+    END IF
+
+    IF( DownActive ) THEN
+      BotNodes = 0
+      DO i=1,nsize
+        IF(BotPointer(i) == i) THEN
+          BotNodes = BotNodes + 1
+        END IF
+      END DO
+    END IF
+
+    ! Return the requested pointer structures, otherwise deallocate
+    !---------------------------------------------------------------
+    DEALLOCATE( Nodes % x, Nodes % y,Nodes % z )
+
+    IF( UpActive ) THEN
+      IF( PRESENT( TopNodePointer ) ) THEN
+        TopNodePointer => TopPointer 
+        NULLIFY( TopPointer )
+      ELSE
+        DEALLOCATE( TopPointer )
+      END IF
+      IF( PRESENT( UpNodePointer ) ) THEN
+        UpNodePointer => UpPointer 
+        NULLIFY( UpPointer )
+      ELSE
+        DEALLOCATE( UpPointer )
+      END IF
+    END IF
+    IF( DownActive ) THEN
+      IF( PRESENT( BotNodePointer ) ) THEN
+        BotNodePointer => BotPointer 
+        NULLIFY( BotPointer ) 
+      ELSE
+        DEALLOCATE( BotPointer )
+      END IF
+      IF( PRESENT( DownNodePointer ) ) THEN
+        DownNodePointer => DownPointer 
+        NULLIFY( DownPointer ) 
+      ELSE
+        DEALLOCATE( DownPointer )
+      END IF
+    END IF
+
+    !---------------------------------------------------------------
+    at1 = CPUTime()  
+    WRITE(Message,* ) 'Top and bottom pointer init time: ',at1-at0
+    CALL Info('DetectExtrudedStructure',Message)
+    WRITE(Message,* ) 'Top and bottom pointer init rounds: ',Rounds
+    CALL Info('DetectExtrudedStructure',Message)
+    IF( UpActive ) THEN
+      WRITE(Message,* ) 'Number of nodes at the top: ',TopNodes
+      CALL Info('DetectExtrudedStructure',Message)
+    END IF
+    IF( DownActive ) THEN
+      WRITE(Message,* ) 'Number of nodes at the bottom: ',BotNodes
+      CALL Info('DetectExtrudedStructure',Message)
+    END IF
+
+  END SUBROUTINE DetectExtrudedStructure
+ !---------------------------------------------------------------
+
+
+
+
+!---------------------------------------------------------------
+! This partitions the mesh into a given number of partitions in each 
+! direction. It may be used in clustering multigrid or similar. 
+! It is not easily applicable to parallel computation as this 
+! partitioning should be done outside ElmerSolver in advance.
+!---------------------------------------------------------------
+  SUBROUTINE ClusterNodesByDirection(Solver,Mesh,Clustering,MaskPerm)
+ 
+    USE GeneralUtils
+
+    TYPE(Solver_t), POINTER :: Solver
+    TYPE(Mesh_t), POINTER :: Mesh
+    INTEGER, POINTER :: Clustering(:)
+    INTEGER, POINTER, OPTIONAL :: MaskPerm(:)
+!---------------------------------------------------------------
+
+    LOGICAL :: MaskExists,GotIt,Hit
+    REAL(KIND=dp), ALLOCATABLE :: Measure(:)
+    INTEGER :: i,j,k,k0,l,ind,n,dim,dir,divs,nsize,elemsinpart,clusters
+    INTEGER, POINTER :: Iarray(:),Order(:),NodePart(:),NoPart(:)
+    INTEGER :: Divisions(3),minpart,maxpart,clustersize
+    REAL(KIND=dp), POINTER :: PArray(:,:), Arrange(:)
+    REAL(KIND=dp) :: Normal(3), Tangent1(3), Tangent2(3), Coord(3), Weights(3), &
+        avepart,devpart
+!---------------------------------------------------------------
+
+    ! CALL Info('ClusterNodesByDirection','')
+
+    MaskExists = PRESENT(MaskPerm)
+    IF( MaskExists ) THEN
+      nsize = MAXVAL( MaskPerm ) 
+    ELSE
+      nsize = Mesh % NumberOfNodes
+    END IF
+    
+    dim = Mesh % MeshDim
+    Parray => ListGetConstRealArray( Solver % Values,'Clustering Normal Vector',GotIt )
+    IF( GotIt ) THEN
+      Normal = Parray(1:3,1)
+    ELSE
+      Normal(1) = 1.0
+      Normal(2) = 1.0e-2
+      IF( dim == 3) Normal(3) = 1.0e-4
+    END IF
+    Normal = Normal / SQRT( SUM( Normal ** 2) )
+
+    CALL TangentDirections( Normal,Tangent1,Tangent2 )
+    
+
+    IF( .FALSE. ) THEN
+      PRINT *,'Normal:',Normal
+      PRINT *,'Tangent1:',Tangent1
+      PRINT *,'Tangent2:',Tangent2
+    END IF
+
+
+    Iarray => ListGetIntegerArray( Solver % Values,'Clustering Divisions',GotIt )
+    IF( GotIt ) THEN
+      Divisions = Iarray(1:3)
+    ELSE
+      clustersize = ListGetInteger( Solver % Values,'MG Cluster Size',GotIt)
+      IF( GotIt ) THEN
+        IF( dim == 2 ) THEN
+          Divisions(1) = ( nsize / clustersize ) ** 0.5
+          Divisions(2) = ( nsize / ( clustersize * Divisions(1) ) )
+          Divisions(3) = 1
+        ELSE
+          Divisions(1:2) = ( nsize / clustersize ) ** (1.0_dp / 3 )
+          Divisions(3) = ( nsize / ( clustersize * Divisions(1) * Divisions(2) ) )
+        END IF
+      ELSE
+        CALL Fatal('ClusterNodesByDirection','Clustering Divisions not given!')
+      END IF
+    END IF
+
+    Clusters = Divisions(1) * Divisions(2) * Divisions(3)
+
+    IF( .FALSE. ) THEN
+      PRINT *,'clusters:',clusters
+      PRINT *,'nsize:',nsize
+    END IF
+
+    ALLOCATE(Order(nsize),Arrange(nsize),NodePart(nsize),NoPart(Clusters))
+    
+
+    ! These are needed as an initial value for the loop over dimension
+    elemsinpart = nsize
+    nodepart = 1
+    
+
+    ! Go through each direction and cumulatively add to the clusters
+    !-----------------------------------------------------------
+
+    DO dir = 1,dim      
+      divs = Divisions(dir)
+      IF( divs <= 1 ) CYCLE
+      
+      ! Use the three principal directions as the weight
+      !-------------------------------------------------
+      IF( dir == 1 ) THEN
+        Weights = Normal
+      ELSE IF( dir == 2 ) THEN
+        Weights = Tangent1
+      ELSE 
+        Weights = Tangent2
+      END IF
+
+      ! Initialize ordering for the current direction
+      !----------------------------------------------
+      DO i=1,nsize
+        Order(i) = i
+      END DO
+      
+
+      ! Now compute the weights for each node
+      !----------------------------------------
+      DO i=1,Mesh % NumberOfNodes
+        j = i
+        IF( MaskExists ) j = MaskPerm(j)
+        IF( j == 0 ) CYCLE
+        
+        Coord(1) = Mesh % Nodes % x(i)
+        Coord(2) = Mesh % Nodes % y(i)
+        Coord(3) = Mesh % Nodes % z(i)
+
+        Arrange(j) = SUM( Weights * Coord )
+      END DO
+
+      ! Order the nodes for given direction
+      !----------------------------------------------
+      CALL SortR(nsize,Order,Arrange)
+
+      ! For each direction the number of elements in cluster becomes smaller
+      elemsinpart = elemsinpart / divs
+
+      ! initialize the counter partition
+      nopart = 0
+
+
+      ! Go through each node and locate it to a cluster taking into consideration
+      ! the previous clustering (for 1st direction all one)
+      !------------------------------------------------------------------------
+      j = 1
+      DO i = 1,nsize
+        ind = Order(i)
+        
+        ! the initial partition offset depends on previous partitioning
+        k0 = (nodepart(ind)-1) * divs
+
+        ! Find the correct new partitioning, this loop is just long enough
+        DO l=1,divs
+          Hit = .FALSE.
+          
+          ! test for increase of local partition
+          IF( j < divs ) THEN
+            IF( nopart(k0+j) >= elemsinpart ) THEN
+              j = j + 1
+              Hit = .TRUE.
+            END IF
+          END IF
+          
+          ! test for decrease of local partition
+          IF( j > 1 )  THEN            
+            IF( nopart(k0+j-1) < elemsinpart ) THEN
+              j = j - 1
+              Hit = .TRUE.
+            END IF
+          END IF
+          
+          ! If either increase or decrease is needed, this must be ok 
+          IF(.NOT. Hit) EXIT
+        END DO
+          
+        k = k0 + j
+        nopart(k) = nopart(k) + 1
+        nodepart(ind) = k
+      END DO
+
+    END DO
+
+
+    minpart = HUGE(minpart)
+    maxpart = 0
+    avepart = 1.0_dp * nsize / clusters
+    devpart = 0.0_dp
+    DO i=1,clusters
+      minpart = MIN( minpart, nopart(i))
+      maxpart = MAX( maxpart, nopart(i))
+      devpart = devpart + ABS ( nopart(i) - avepart )
+    END DO
+    devpart = devpart / clusters
+
+    WRITE(Message,'(A,T25,I10)') 'Min nodes in cluster:',minpart
+    CALL Info('ClusterNodesByDirection',Message)
+    WRITE(Message,'(A,T25,I10)') 'Max nodes in cluster:',maxpart
+    CALL Info('ClusterNodesByDirection',Message)
+    WRITE(Message,'(A,T28,F10.2)') 'Average nodes in cluster:',avepart
+    CALL Info('ClusterNodesByDirection',Message)
+    WRITE(Message,'(A,T28,F10.2)') 'Deviation of nodes:',devpart
+    CALL Info('ClusterNodesByDirection',Message)
+    
+
+    IF( ASSOCIATED(Clustering)) THEN
+      Clustering = Nodepart 
+      DEALLOCATE(Nodepart)
+    ELSE
+      Clustering => Nodepart
+      NULLIFY( Nodepart ) 
+    END IF
+    
+    DEALLOCATE(Order,Arrange,NoPart)
+
+
+  END SUBROUTINE ClusterNodesByDirection
+
+
+
+!------------------------------------------------------------------------------
+  FUNCTION CreateLineMesh( Params ) RESULT( Mesh )
+!------------------------------------------------------------------------------
+!   Create a 1D mesh, may be used in 1D outlet conditions
+!------------------------------------------------------------------------------
+    TYPE(ValueList_t), POINTER :: Params 
+    TYPE(Mesh_t), POINTER :: Mesh
+!------------------------------------------------------------------------------
+    REAL(KIND=dp), POINTER :: x(:),y(:),z(:)
+    INTEGER :: i, j, k, n, NoNodes, NoElements, ActiveDirection, Order
+    LOGICAL :: Found
+    TYPE(Element_t), POINTER :: Element
+    TYPE(ElementType_t),POINTER :: elmt
+    REAL(KIND=dp) :: MeshVector(3), Length, Coord(3)
+
+!------------------------------------------------------------------------------
+    IF ( .NOT. ASSOCIATED( Params ) ) RETURN
+    Mesh => AllocateMesh()
+
+    CALL Info('CreateLineMesh','Starting')
+
+
+!   Read in the parameters defining a uniform 1D mesh
+!--------------------------------------------------------------    
+    Order = ListGetInteger( Params,'1D Element Order',Found,minv=1,maxv=2)
+    NoElements = ListGetInteger( Params,'1D Number Of Elements',minv=1)
+    Length = ListGetConstReal( Params,'1D Mesh Length')    
+    ActiveDirection = ListGetInteger( Params,'1D Active Direction',minv=-3,maxv=3)
+
+    
+!   Compute the resulting mesh parameters
+!--------------------------------------------------------------
+    NoNodes = NoElements + 1 + NoElements * (Order - 1)    
+    MeshVector = 0.0_dp
+    MeshVector( ABS( ActiveDirection ) ) = 1.0_dp
+    IF( ActiveDirection < 0 ) MeshVector = -MeshVector
+    MeshVector = MeshVector * Length
+
+!   Define nodal coordinates
+!   -------------------------------
+    CALL AllocateVector( Mesh % Nodes % x, NoNodes )
+    CALL AllocateVector( Mesh % Nodes % y, NoNodes )
+    CALL AllocateVector( Mesh % Nodes % z, NoNodes )
+
+    x => Mesh % Nodes % x
+    y => Mesh % Nodes % y
+    z => Mesh % Nodes % z
+   
+    DO i=1, NoNodes
+      Coord = MeshVector * (i-1) / (NoNodes-1)
+
+      x(i) = Coord(1)
+      y(i) = Coord(2)
+      z(i) = Coord(3)
+    END DO
+    
+    CALL Info('CreateLineMesh','Nodes created')
+
+!   Define elements
+!   -------------------------------
+    CALL AllocateVector( Mesh % Elements, NoElements )
+
+    IF( Order == 1 ) THEN
+      Elmt => GetElementType( 202 )
+    ELSE
+      Elmt => GetElementType( 203 )
+    END IF
+
+    DO i=1,NoElements
+      Element => Mesh % Elements(i)      
+      Element % TYPE => Elmt
+      Element % EdgeIndexes => NULL()
+      Element % FaceIndexes => NULL()     
+      Element % ElementIndex = i
+      IF( Order == 1 ) THEN
+        CALL AllocateVector( Element % NodeIndexes, 2 )
+        Element % Ndofs = 2
+        Element % NodeIndexes(1) = i
+        Element % NodeIndexes(2) = i + 1
+      ELSE IF( Order == 2 ) THEN
+        CALL AllocateVector( Element % NodeIndexes, 3 )
+        Element % Ndofs = 3
+        Element % NodeIndexes(1) = 2*i-1
+        Element % NodeIndexes(2) = 2*i+1
+        Element % NodeIndexes(3) = 2*i
+      END IF
+    END DO
+
+    CALL Info('CreateLineMesh','Elements created')
+
+!   Update new mesh node count:
+!   ---------------------------
+
+    Mesh % NumberOfNodes = NoNodes
+    Mesh % Nodes % NumberOfNodes = NoNodes
+    Mesh % NumberOfBulkElements = NoElements
+    Mesh % MaxElementNodes = 1 + Order
+    Mesh % MaxElementDOFs = 1 + Order
+
+
+    PRINT *,'NoNodes:',NoNodes
+    PRINT *,'NoElements:',NoElements
+ 
+    CALL Info('CreateLineMesh','All done')
+
+  END FUNCTION CreateLineMesh
+
+
+
+
+
+
+
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+! Stuff for ParticleUtils.src
+
+
+SUBROUTINE AllocateParticles(Particles,NoParticles,dim)
+
+  TYPE(Particle_t) :: Particles
+  INTEGER :: NoParticles
+  INTEGER, OPTIONAL :: dim
+
+  REAL(KIND=dp), POINTER :: NewVelocity(:), NewCoordinate(:), NewDistance(:)
+  INTEGER, POINTER :: NewStatus(:), NewElementIndex(:)
+  INTEGER :: PrevNoParticles, dofs
+
+  IF( NoParticles <= Particles % MaxNumberOfParticles ) THEN
+    CALL Info('AllocateParticles','There are already enough particles')
+    RETURN
+  END IF
+  IF( .NOT. PRESENT( dim ) ) THEN
+    dofs = 3 
+  ELSE
+    IF( dim == 2 .OR. dim == 3 ) THEN
+      dofs = dim
+    ELSE
+      CALL Warn('AllocateParticles','Invalid dimension')
+      RETURN
+    END IF
+  END IF
+
+  IF( Particles % MaxNumberOfParticles == 0 ) THEN
+    ALLOCATE( Particles % Velocity(dim*NoParticles))
+    ALLOCATE( Particles % Coordinate(dim*NoParticles))
+    ALLOCATE( Particles % Distance(NoParticles))
+    ALLOCATE( Particles % Status(NoParticles))
+    ALLOCATE( Particles % ElementIndex(NoParticles))
+
+    Particles % Velocity = 0.0_dp
+    Particles % Coordinate = 0.0_dp
+    Particles % Distance = 0.0_dp
+    Particles % Status = PARTICLE_ALLOCATED
+    Particles % ElementIndex = 0
+    Particles % MaxNumberOfParticles = NoParticles
+  ELSE 
+    PrevNoParticles = Particles % MaxNumberOfParticles 
+    ALLOCATE( NewVelocity(dim*NoParticles))
+    ALLOCATE( NewCoordinate(dim*NoParticles))
+    ALLOCATE( NewDistance(NoParticles))
+    ALLOCATE( NewStatus(NoParticles))
+    ALLOCATE( NewElementIndex(NoParticles))
+
+    NewVelocity(1:dim*PrevNoParticles) = Particles % Velocity(1:dim*PrevNoParticles)
+    NewCoordinate(1:dim*PrevNoParticles) = Particles % Coordinate(1:dim*PrevNoParticles)
+    NewDistance(1:PrevNoParticles) = Particles % Distance(1:PrevNoParticles)
+    NewStatus(1:PrevNoParticles) = Particles % Status(1:PrevNoParticles)
+    NewElementIndex(1:PrevNoParticles) = Particles % ElementIndex(1:PrevNoParticles)
+
+    NewVelocity(dim*PrevNoParticles+1:dim*NoParticles) = 0.0_dp
+    NewCoordinate(dim*PrevNoParticles+1:dim*NoParticles) = 0.0_dp
+    NewDistance(PrevNoParticles+1:NoParticles) = 0.0_dp
+    NewStatus(PrevNoParticles+1:NoParticles) = PARTICLE_ALLOCATED
+    NewElementIndex(PrevNoParticles+1:NoParticles) = 0
+    Particles % MaxNumberOfParticles = NoParticles
+
+    DEALLOCATE( Particles % Velocity ) 
+    DEALLOCATE( Particles % Coordinate ) 
+    DEALLOCATE( Particles % Distance ) 
+    DEALLOCATE( Particles % Status ) 
+    DEALLOCATE( Particles % ElementIndex ) 
+
+    Particles % Velocity => NewVelocity
+    Particles % Coordinate => NewCoordinate
+    Particles % Distance => NewDistance
+    Particles % Status => NewStatus
+    Particles % Status => NewElementIndex
+  END IF
+END SUBROUTINE AllocateParticles
+
+
+
+SUBROUTINE DestroyParticles(Particles) 
+  TYPE(Particle_t) :: Particles
+
+  DEALLOCATE( Particles % Velocity ) 
+  DEALLOCATE( Particles % Coordinate ) 
+  DEALLOCATE( Particles % Distance ) 
+  DEALLOCATE( Particles % Status ) 
+  DEALLOCATE( Particles % ElementIndex ) 
+  Particles % MaxNumberOfParticles = 0
+  Particles % NumberOfParticles = 0
+  
+END SUBROUTINE DestroyParticles
+
+
+
+SUBROUTINE GetParticleLocation(Particles,No,Coord,Velo,Dist,Status,ElementIndex)
+  TYPE(Particle_t) :: Particles
+  INTEGER :: No
+  REAL(KIND=dp) :: Coord(:),Velo(:)
+  REAL(KIND=dp), OPTIONAL :: Dist
+  INTEGER, OPTIONAL :: Status
+  INTEGER, OPTIONAL :: ElementIndex
+
+  IF( Particles % dim == 3 ) THEN
+    Coord = Particles % Coordinate( 3*No-2:3*No)
+    Velo = Particles % Velocity( 3*No-2:3*No)
+  ELSE
+    Coord(1:2) = Particles % Coordinate( 2*No-1:2*No)
+    Velo(1:2) = Particles % Velocity( 2*No-1:2*No)
+  END IF
+  IF( PRESENT(Dist) )   Dist = Particles % Distance(No)
+  IF( PRESENT(Status) ) Status = Particles % Status(No)
+  IF( PRESENT(ElementIndex) ) Status = Particles % ElementIndex(No)
+
+END SUBROUTINE GetParticleLocation
+
+
+SUBROUTINE SetParticleLocation(Particles,No,Coord,Velo,Dist,Status,ElementIndex)
+  TYPE(Particle_t) :: Particles
+  INTEGER :: No
+  REAL(KIND=dp) :: Coord(:),Velo(:)
+  REAL(KIND=dp), OPTIONAL :: Dist
+  INTEGER, OPTIONAL :: Status
+  INTEGER, OPTIONAL :: ElementIndex
+
+  IF( Particles % dim == 3 ) THEN
+    Particles % Coordinate( 3*No-2:3*No) = Coord
+    Particles % Velocity( 3*No-2:3*No) = Velo
+  ELSE
+    Particles % Coordinate( 2*No-1:2*No) = Coord(1:2)
+    Particles % Velocity( 2*No-1:2*No) = Velo(1:2)
+  END IF
+  IF( PRESENT(Dist) )   Particles % Distance(No) = Dist
+  IF( PRESENT(Status) ) Particles % Status(No) = Status
+  IF( PRESENT(ElementIndex) ) Particles % ElementIndex(No) = ElementIndex
+
+END SUBROUTINE SetParticleLocation
+
+
+
+!------------------------------------------------------------------------
+! Initialize particle positions and velocities.
+!-------------------------------------------------------------------------
+SUBROUTINE InitializeParticles( Solver, Particles, InitParticles, AppendParticles ) 
+
+  TYPE(Solver_t) :: Solver
+  TYPE(Particle_t) :: Particles
+  INTEGER, OPTIONAL :: InitParticles
+  LOGICAL, OPTIONAL :: AppendParticles
+
+  TYPE(ValueList_t), POINTER :: Params 
+  TYPE(Variable_t), POINTER :: Var
+  INTEGER :: Offset, NewParticles,LastParticle
+  INTEGER :: dim
+  REAL(KIND=dp), POINTER :: Coords(:), Velo(:)
+  CHARACTER(LEN=MAX_NAME_LEN) :: InitMethod, MaskVariable    
+  INTEGER :: i,j,k,nonodes
+  INTEGER, POINTER :: MaskPerm(:), InvPerm(:)
+  LOGICAL :: GotIt, GotMask
+  REAL(KIND=dp), POINTER :: InitialValues(:,:)
+  REAL(KIND=dp) :: mass,boltz,temp,coeff 
+  CHARACTER(LEN=MAX_NAME_LEN) :: VariableName
+  
+
+  IF( PRESENT( AppendParticles ) ) THEN
+    Offset = Particles % NumberOfParticles
+  ELSE
+    Offset = 0
+  END IF
+  IF( PRESENT( InitParticles ) ) THEN
+    NewParticles = InitParticles
+  ELSE
+    NewParticles = Particles % MaxNumberOfParticles
+  END IF
+
+  LastParticle = Offset + NewParticles
+
+  dim = Solver % Mesh % MeshDim
+  CALL AllocateParticles( Particles, LastParticle, dim ) 
+
+  Coords => Particles % Coordinate
+  Velo => Particles % Velocity
+  
+
+  Params => Solver % Values
+  
+  !------------------------------------------------------------------------
+  ! The user may use a mask to initialize the particles only at a part of the 
+  ! domain, or to utilize the ordeing of the permutation vector.
+  !-------------------------------------------------------------------------
+  
+  GotMask = .FALSE.
+  nonodes = Solver % Mesh % NumberOfNodes
+  
+  MaskVariable = ListGetString( Params,'Mask Variable Name',GotIt )
+  IF(GotIt) THEN
+    Var => VariableGet( Solver % Mesh % Variables, TRIM(VariableName) )
+    IF( ASSOCIATED( Var ) ) THEN
+      MaskPerm => Var % Perm
+      IF( ASSOCIATED(MaskPerm) ) THEN
+        GotMask = .TRUE.
+        nonodes = MAXVAL( MaskPerm ) 
+        ALLOCATE( InvPerm(nonodes) )
+        DO i=1,SIZE(MaskPerm)
+          j = MaskPerm(i)
+          IF( j > 0 ) InvPerm(j) = i
+        END DO
+      END IF
+    END IF
+  END IF
+  
+  !------------------------------------------------------------------------
+  ! Position may be initialized using a given list, or using the nodal
+  ! coordinates to initalize positions.
+  !-------------------------------------------------------------------------
+  
+  InitMethod = ListGetString( Params,'Position Initialization Method',gotIt ) 
+  
+  SELECT CASE ( InitMethod ) 
+    
+  CASE ('nodal ordered')
+    DO i=1,NewParticles
+      k = Offset + (i-1)
+      j = MODULO( i * NewParticles -1 , nonodes ) + 1
+      IF( GotMask ) j = InvPerm(j)
+      Coords(dim*k+1) = Solver % Mesh % Nodes % x(j)
+      Coords(dim*k+2) = Solver % Mesh % Nodes % y(j)
+      IF( dim == 3 ) Coords(DIM*k+3) = Solver % Mesh % Nodes % z(j)
+    END DO
+    
+  CASE DEFAULT 
+    
+    InitialValues => ListGetConstRealArray(Params,'Initial Coordinates',gotIt)    
+      IF(gotIt) THEN
+        IF( SIZE(InitialValues,2) /= dim ) THEN
+          CALL Fatal('ParticleTracker','Wrong dimension in Initial Coordinates')
+        ELSE IF( SIZE(InitialValues,1) == 1 ) THEN
+          DO i=1,NewParticles
+            k = offset + i
+            Coords(dim*(k-1)+1:dim*k) = InitialValues(1,1:dim)
+          END DO
+        ELSE IF( SIZE(InitialValues,1) /= NewParticles ) THEN
+          CALL Fatal('ParticleTracker','Wrong number of particles in Initial Coordinates')
+        ELSE
+          DO i=1,NewParticles
+            k = Offset + i
+            Coords(dim*(k-1)+1:dim*k) = InitialValues(i,1:DIM)
+          END DO
+        END IF
+      ELSE
+        CALL Fatal('ParticleTracker','Initial Coordinates not given')
+      END IF
+    END SELECT
+
+
+    !------------------------------------------------------------------------
+    ! Velocities may be initialized using a given list, or obtaining them
+    ! from a thermal maxwell boltzmann distribution. These are additive to 
+    ! allow bulk velocities with the thermal one.
+    !-------------------------------------------------------------------------
+
+    InitialValues => ListGetConstRealArray(Params,'Initial Velocities',gotIt)
+    IF(gotIt) THEN
+      IF( SIZE(InitialValues,2) /= DIM ) THEN
+        CALL Fatal('ParticleTracker','Wrong dimension in Initial Velocities')
+      ELSE IF( SIZE(InitialValues,1) == 1 ) THEN
+        DO i=1,NewParticles
+          k = Offset + i
+          Velo(DIM*(k-1)+1:DIM*i) = InitialValues(1,1:DIM)
+        END DO
+      ELSE IF( SIZE(InitialValues,1) /= NewParticles ) THEN
+        CALL Fatal('ParticleTracker','Wrong number of particles in Initial Velocities')
+      ELSE
+        DO i=1,NewParticles
+          k = Offset + i
+          Velo(DIM*(k-1)+1:DIM*i) = InitialValues(i,1:DIM)
+        END DO
+      END IF
+    END IF
+
+
+
+    InitMethod = ListGetString( Params,'Velocity Initialization Method',gotIt ) 
+
+    SELECT CASE ( InitMethod ) 
+      
+    CASE ('thermal')  
+      
+      mass = ListGetConstReal( Params,'Particle Mass')
+      temp = ListGetConstReal( Params,'Particle Temperature')
+      boltz = ListGetConstReal( CurrentModel % Constants,'Boltzmann constant')
+      coeff = SQRT(boltz * temp / mass )
+
+      DO i=1,NewParticles
+        k = Offset + i
+        Velo(DIM*(i-1)+1) = Velo(DIM*(i-1)+1) + coeff * NormalRandom()
+        Velo(DIM*(i-1)+2) = Velo(DIM*(i-1)+2) + coeff * NormalRandom()
+        IF( dim == 3 ) Velo(DIM*(i-1)+3) = Velo(DIM*(i-1)+3) + coeff * NormalRandom()
+      END DO
+
+    CASE DEFAULT
+
+    END SELECT
+
+
+    IF( GotMask ) DEALLOCATE( InvPerm ) 
+
+
+  END SUBROUTINE InitializeParticles
+
+
+
+  !------------------------------------------------------------------------
+  ! Write particles in an ascii format 
+  !-------------------------------------------------------------------------
+  SUBROUTINE ParticleOutput( Solver, Particles ) 
+    
+    TYPE(Solver_t), POINTER :: Solver
+    TYPE(Particle_t), POINTER :: Particles
+
+    TYPE(Variable_t), POINTER :: TimeVar
+    TYPE(ValueList_t), POINTER :: Params 
+    CHARACTER(LEN=MAX_NAME_LEN) :: FilePrefix, FileName
+    LOGICAL :: Found, NumberFilesByParticles, NumberFilesBySteps
+    REAL(KIND=dp), POINTER :: Coord(:), Velo(:), Dist(:)
+    REAL(KIND=dp) :: time
+    INTEGER, POINTER :: Status(:)
+    INTEGER :: i,j,dim, MinSaveStatus
+    INTEGER :: VisitedTimes = 0
+
+    SAVE :: VisitedTimes, Params, FilePrefix, NumberFilesByParticles, NumberFilesBySteps, &
+        MinSaveStatus, TimeVar
+
+    IF( VisitedTimes == 0 ) THEN
+      Params => Solver % Values    
+      FilePrefix = ListGetString(Params,'Filename Prefix',Found )
+      IF(.NOT. Found) FilePrefix = 'track'
+      CALL WriteParticleFileNames(FilePrefix)
+
+      NumberFilesByParticles = ListGetLogical( Params,'File Numbering By Particles',Found) 
+      NumberFilesBySteps = ListGetLogical( Params,'File Numbering By Steps',Found) 
+      IF( NumberFilesByParticles .AND. NumberFilesBySteps ) THEN
+        CALL Fatal('ParticleTracker','Files may be numbered either by steps or particles')
+      END IF
+      
+      MinSaveStatus = ListGetInteger( Params,'Min Status for Saving',Found)
+      
+      TimeVar => VariableGet( Solver % Mesh % Variables,'time')
+    END IF
+
+    VisitedTimes = VisitedTimes + 1 
+    time = TimeVar % Values(1)
+
+
+    dim = Particles % dim
+    Coord => Particles % Coordinate
+    Velo => Particles % Velocity 
+    Dist => Particles % Distance
+    Status => Particles % Status
+
+
+    IF(.NOT. NumberFilesByParticles ) THEN
+      IF( NumberFilesBySteps ) THEN
+        CALL OpenParticleFile(FilePrefix, VisitedTimes )
+      ELSE
+        CALL OpenParticleFile(FilePrefix, 0 )        
+      END IF
+      DO i = 1, Particles % NumberOfParticles
+        IF( Particles % Status(i) < MinSaveStatus ) CYCLE
+        CALL WriteParticleLine( dim, i )        
+      END DO
+      CALL CloseParticleFile()
+    ELSE
+      DO i = 1, Particles % NumberOfParticles
+        IF( Particles % Status(i) < MinSaveStatus ) CYCLE
+        CALL OpenParticleFile(FilePrefix, i)
+        CALL WriteParticleLine( dim, i ) 
+        CALL CloseParticleFile()
+      END DO
+    END IF
+
+
+  CONTAINS
+
+    !------------------------------------------------------------------------
+    ! Write the names file for user information. Remember to update this if 
+    ! SaveParticleStep is modified.
+    !-------------------------------------------------------------------------
+    SUBROUTINE WriteParticleFileNames( Prefix ) 
+      
+      CHARACTER(LEN=MAX_NAME_LEN) :: Prefix, FileName
+      INTEGER :: i,j
+      
+      WRITE( FileName,'(A,A)') TRIM(FilePrefix),'.dat.names'
+      
+      OPEN (10, FILE=FileName )
+      
+      WRITE( 10, '(A)' ) 'Variables in file: '//TRIM(FilePrefix)//'*.dat'
+      i = 1
+      WRITE( 10, '(I2,A)' )  i,': time'
+      WRITE( 10, '(I2,A)' )  i+1,': Coordinate_1'
+      WRITE( 10, '(I2,A)' )  i+2,': Coordinate_2'
+      IF(dim == 3) WRITE( 10, '(I2,A)' )  i+3,': Coordinate_3'
+      i = i + DIM
+      WRITE( 10, '(I2,A)' )  i+1,': Velocity_1'
+      WRITE( 10, '(I2,A)' )  i+2,': Velocity_2'
+      IF(dim == 3) WRITE( 10, '(I2,A)' )  i+3,': Velocity_3'
+      i = i + DIM
+      WRITE( 10, '(I2,A)' )  i+1,': Distance'
+      i = i + 1
+      
+      CLOSE( 10 )
+      
+    END SUBROUTINE WriteParticleFileNames
+
+
+
+    !------------------------------------------------------------------------
+    ! Open a numbered file for each particle. These must be separate since the 
+    ! number of steps for each particle may vary greatly
+    !-------------------------------------------------------------------------
+    SUBROUTINE OpenParticleFile( Prefix, FileNo ) 
+      
+      CHARACTER(LEN=MAX_NAME_LEN) :: Prefix
+      INTEGER :: FileNo
+
+      CHARACTER(LEN=MAX_NAME_LEN) :: FileName
+      
+      IF( FileNo == 0 ) THEN
+        WRITE( FileName,'(A,A)') TRIM(FilePrefix),'.dat'
+        CALL Info( 'ParticleTracker', 'Saving particle paths to file: '//TRIM(FileName), Level=4 )
+      ELSE IF( FileNo < 10 ) THEN
+        IF( FileNo == 1 ) THEN
+          WRITE( Message, * ) 'Saving particle paths to files: ', TRIM(FilePrefix)//'_*.dat'
+          CALL Info( 'ParticleTracker', Message, Level=4 )
+        END IF
+        WRITE( FileName,'(A,A,I1,A)') TRIM(FilePrefix),'_',fileno,'.dat'
+      ELSE IF( FileNo < 100 ) THEN
+        WRITE( FileName,'(A,A,I2,A)') TRIM(FilePrefix),'_',fileno,'.dat'
+      ELSE IF( FileNo < 1000 ) THEN
+        WRITE( FileName,'(A,A,I3,A)') TRIM(FilePrefix),'_',fileno,'.dat'
+      END IF
+      
+      IF( VisitedTimes == 0 .OR. NumberFilesBySteps ) THEN
+        OPEN (10, FILE=FileName )
+      ELSE
+        OPEN (10, FILE=FileName,POSITION='APPEND' )
+      END IF
+
+    END SUBROUTINE OpenParticleFile
+    
+    
+    !------------------------------------------------------------------------
+    ! Save one line in the particle file
+    !-------------------------------------------------------------------------
+    SUBROUTINE WriteParticleLine( Dim, No )
+      INTEGER :: Dim, No
+      
+      IF( dim == 2 ) THEN
+        WRITE( 10, * ) time, Coord(2*No-1:2*No), Velo(2*No-1:2*No), Dist(No) 
+      ELSE
+        WRITE( 10, * ) time, Coord(3*No-2:3*No), Velo(3*No-2:3*No), Dist(No) 
+      END IF
+      
+    END SUBROUTINE WriteParticleLine
+    
+    
+    !------------------------------------------------------------------------
+    ! Close the particle file
+    !-------------------------------------------------------------------------
+    SUBROUTINE CloseParticleFile( )
+      
+      CLOSE( 10 )
+      
+    END SUBROUTINE CloseParticleFile
+    
+       
+  END SUBROUTINE ParticleOutput
+
+
+
+
+!---------------------------------------------------------------------------
+  SUBROUTINE SegmentElementIntersection(Mesh,BulkElement,&
+      Rinit,Rfin,MinLambda,FaceIndex) 
+!---------------------------------------------------------------------------
+! This subroutine finds the possible intersection between elementfaces 
+! and a line segment.
+!---------------------------------------------------------------------------
+
+  TYPE(Mesh_t), POINTER :: Mesh
+  TYPE(Element_t), POINTER   :: BulkElement
+  REAL(KIND=dp) :: Rinit(3), Rfin(3), MinLambda
+  INTEGER :: FaceIndex
+  
+  TYPE(Element_t), POINTER   :: BoundaryElement
+  TYPE(Nodes_t), POINTER :: BoundaryNodes
+  REAL(KIND=dp) :: Lambda, Epsilon
+  INTEGER :: i
+  LOGICAL :: AtBoundary 
+
+  
+  MinLambda = HUGE( MinLambda ) 
+  FaceIndex = 0
+  Epsilon = TINY( Lambda ) 
+  
+  IF( BulkElement % TYPE % DIMENSION == 3 ) THEN
+    DO i=1, BulkElement % TYPE % NumberOfFaces  
+      BoundaryElement => Mesh % Faces( BulkElement % FaceIndexes(i) )
+      Lambda = LineFaceIntersection(BoundaryElement,BoundaryNodes,&
+          Rinit,Rfin) 
+      IF( Lambda > Epsilon ) THEN
+        IF( Lambda < MinLambda ) THEN
+          MinLambda = Lambda
+          FaceIndex = i
+        END IF
+      ELSE IF( Lambda > -Epsilon ) THEN
+        AtBoundary = .TRUE.
+      END IF
+    END DO
+  ELSE
+    DO i=1, BulkElement % TYPE % NumberOfEdges  
+      BoundaryElement => Mesh % Edges( BulkElement % EdgeIndexes(i) )
+      Lambda = LineFaceIntersection(BoundaryElement,BoundaryNodes,&
+          Rinit,Rfin) 
+      IF( Lambda > Epsilon ) THEN
+        IF( Lambda < MinLambda ) THEN
+          MinLambda = Lambda
+          FaceIndex = i
+        END IF
+      ELSE IF( Lambda > -Epsilon ) THEN
+        AtBoundary = .TRUE.
+      END IF
+    END DO
+  END IF
+
+END SUBROUTINE SegmentElementIntersection
+
+
+
+
+
+
+!------------------------------------------------------------------------
+! Compute field values at the given points in the FE mesh. 
+!-------------------------------------------------------------------------
+SUBROUTINE LocateParticleInMesh(Solver, ElementIndex, Rinit, Rfin, &
+    LocalCoords, Hit, Lambda )
+  
+  TYPE(Solver_t), POINTER :: Solver
+  INTEGER :: ElementIndex
+  REAL(KIND=dp) :: Rinit(3), Rfin(3),LocalCoords(3)
+  LOGICAL :: Hit
+  REAL(KIND=dp), OPTIONAL :: Lambda
+
+  TYPE(Mesh_t), POINTER :: Mesh
+  TYPE(ValueList_t), POINTER :: Params
+  REAL(KIND=dp) :: Rtmp(3), MinLambda 
+  LOGICAL :: Stat, CheckFirst, StopAtFace, Visited = .FALSE.
+  INTEGER :: i,j,k,n,FaceIndex,SearchMethod
+  TYPE(Nodes_t) :: ElementNodes
+  INTEGER, POINTER :: NodeIndexes(:)
+  TYPE(Element_t), POINTER :: CurrentElement
+  TYPE(Quadrant_t), POINTER, SAVE :: RootQuadrant =>Null(), LeafQuadrant
+  REAL(kind=dp) :: BoundingBox(6), eps2, eps1 = 1e-3
+  
+
+  SAVE :: Mesh, ElementNodes, CheckFirst, SearchMethod
+  
+  IF( .NOT. Visited ) THEN
+    Mesh => Solver % Mesh
+    n = Mesh % MaxElementNodes
+    ALLOCATE( ElementNodes % x(n), ElementNodes % y(n), ElementNodes % z(n))
+
+    Params = Solver % Values
+    CheckFirst = ListGetLogical( Params,'Particle Element Search Check',Stat)
+    SearchMethod = ListGetInteger( Params,'Particle Element Search Method',Stat)
+    StopAtFace = ListGetLogical( Params,'Particle Stop At Face',Stat)
+
+    Visited = .TRUE.
+  END IF
+  
+  Hit = .FALSE.
+  IF( PRESENT( Lambda ) ) Lambda = 1.0_dp
+  
+  
+  ! Check that the previous hit is not hit even now
+  !-------------------------------------------------
+  IF( ElementIndex > 0 .AND. CheckFirst) THEN
+    CurrentElement => Mesh % Elements( ElementIndex ) 
+    n = CurrentElement % TYPE % NumberOfNodes
+    NodeIndexes => CurrentElement % NodeIndexes
+    
+    ElementNodes % x(1:n) = Mesh % Nodes % x(NodeIndexes)
+    ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes)
+    ElementNodes % z(1:n) = Mesh % Nodes % z(NodeIndexes)
+    
+    IF ( PointInElement( CurrentElement, ElementNodes, &
+        Rfin, LocalCoords ) ) THEN
+      Hit = .TRUE.
+    END IF
+  END IF
+  
+  IF( Hit ) RETURN
+  
+  
+  SELECT CASE ( SearchMethod )
+    
+  CASE( 1 ) 
+    !----------------------------------------------------------
+    ! Go through all bulk elements in a dummy search.
+    ! This algorithm is mainly here for debugging purposes.
+    !----------------------------------------------------------
+    DO k=1,Solver % Mesh % NumberOfBulkElements
+      CurrentElement => Mesh % Elements(k)
+      n = CurrentElement % TYPE % NumberOfNodes
+      NodeIndexes => CurrentElement % NodeIndexes
+      
+      ElementNodes % x(1:n) = Mesh % Nodes % x(NodeIndexes)
+      ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes)
+      ElementNodes % z(1:n) = Mesh % Nodes % z(NodeIndexes)
+      
+      IF ( PointInElement( CurrentElement, ElementNodes, &
+          Rfin, LocalCoords ) ) THEN
+        Hit = .TRUE.
+        EXIT
+      END IF
+    END DO
+    
+  CASE( 2 )        
+    !-----------------------------------------------
+    ! Find the right element using an octree search
+    ! This is the preferred algorithms of the two.
+    !-----------------------------------------------
+    IF ( .NOT.ASSOCIATED( Mesh % RootQuadrant ) ) THEN
+      BoundingBox(1) = MINVAL( Mesh % Nodes % x )
+      BoundingBox(2) = MINVAL( Mesh % Nodes % y )
+      BoundingBox(3) = MINVAL( Mesh % Nodes % z )
+      BoundingBox(4) = MAXVAL( Mesh % Nodes % x )
+      BoundingBox(5) = MAXVAL( Mesh % Nodes % y )
+      BoundingBox(6) = MAXVAL( Mesh % Nodes % z )
+      
+      eps2 = eps1 * MAXVAL( BoundingBox(4:6) - BoundingBox(1:3) )
+      BoundingBox(1:3) = BoundingBox(1:3) - eps2
+      BoundingBox(4:6) = BoundingBox(4:6) + eps2
+      
+      CALL BuildQuadrantTree( Mesh,BoundingBox,Mesh % RootQuadrant)
+    END IF
+    
+    RootQuadrant => Mesh % RootQuadrant
+    IF ( ASSOCIATED(RootQuadrant) ) THEN
+      NULLIFY(CurrentElement)
+      CALL FindLeafElements(Rfin, Mesh % MeshDim, &
+          RootQuadrant, LeafQuadrant)
+      IF ( ASSOCIATED(LeafQuadrant) ) THEN
+        DO k=1, LeafQuadrant % NElemsInQuadrant
+          CurrentElement => Mesh % Elements(LeafQuadrant % Elements(k))
+          
+          n = CurrentElement % TYPE % NumberOfNodes
+          NodeIndexes => CurrentElement % NodeIndexes
+          
+          ElementNodes % x(1:n) = Mesh % Nodes % x(NodeIndexes)
+          ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes)
+          ElementNodes % z(1:n) = Mesh % Nodes % z(NodeIndexes)
+          
+          IF ( PointInElement( CurrentElement, ElementNodes, &
+              Rfin, LocalCoords ) ) THEN
+            Hit = .TRUE.
+            EXIT
+          END IF
+        END DO
+      END IF
+    END IF
+    
+    
+  CASE DEFAULT
+    !-----------------------------------------------
+    ! This is a recursive algorithm that checks the intersections 
+    ! of line segments and points until correct element is found.
+    !-----------------------------------------------
+    
+    IF( ElementIndex == 0 ) ElementIndex = 1
+    Hit = .FALSE.
+    
+    DO WHILE( .TRUE. ) 
+      CurrentElement => Mesh % Elements( ElementIndex ) 
+      n = CurrentElement % TYPE % NumberOfNodes
+      NodeIndexes => CurrentElement % NodeIndexes
+      
+      CALL SegmentElementIntersection(Mesh,CurrentElement,&
+          Rinit,Rfin,MinLambda,FaceIndex) 
+      IF( FaceIndex == 0 ) THEN
+        CALL Warn('LocateParticleInMesh','No intersection found?')
+      ELSE IF( MinLambda > 1.0 ) THEN
+        Hit = .TRUE.
+        Rtmp = Rfin
+        EXIT
+      ELSE IF( StopAtFace ) THEN
+        Hit = .TRUE.
+        IF( PRESENT( Lambda ) ) Lambda = MinLambda
+        Rtmp = Rinit + MinLambda * (Rfin - Rinit) 
+        EXIT
+      ELSE      
+        ! ElementIndex = OtherSideOfTheFace(Mesh, ElementIndex, FaceIndex )
+      END IF
+    END DO
+    
+    Hit = PointInElement( CurrentElement, ElementNodes, &
+        Rtmp, LocalCoords ) 
+    IF( .NOT. Hit ) THEN
+      CALL Warn('LocateParticleInMesh','Should have found the point in element!')
+    END IF
+    
+  END SELECT
+  
+END SUBROUTINE LocateParticleInMesh
 
 
 

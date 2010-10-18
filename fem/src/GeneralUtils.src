@@ -122,6 +122,34 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+  FUNCTION i2s(value) RESULT(string)
+!------------------------------------------------------------------------------
+    INTEGER :: value
+    CHARACTER(LEN=16) :: string
+!------------------------------------------------------------------------------
+    INTEGER :: val
+    INTEGER :: i,n,t
+!------------------------------------------------------------------------------
+
+     string = ' '
+     val = value
+     IF ( value > 0 ) THEN
+       n = LOG10(REAL(value))+1
+     ELSE
+       n = 1
+     END IF
+
+     DO i=n-1,0,-1
+      t = val / 10**i
+      val = val - t*10**i
+      string(n-i:n-i) = CHAR(t+ICHAR('0'))
+     END DO
+!------------------------------------------------------------------------------
+  END FUNCTION i2s
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
   SUBROUTINE SystemCommand( cmd ) 
 !------------------------------------------------------------------------------
     CHARACTER(LEN=*) :: cmd
@@ -533,7 +561,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-   RECURSIVE FUNCTION ReadAndTrim( Unit,str,echo ) RESULT(l)
+   RECURSIVE FUNCTION ReadAndTrim( Unit,str,echo,literal ) RESULT(l)
 !------------------------------------------------------------------------------
 !******************************************************************************
 !
@@ -560,7 +588,7 @@ CONTAINS
      INTEGER :: Unit
      CHARACTER(LEN=*) :: str
 
-     LOGICAL, OPTIONAL :: Echo
+     LOGICAL, OPTIONAL :: Echo, literal
  
      LOGICAL :: l
 
@@ -575,6 +603,8 @@ CONTAINS
      INTEGER, PARAMETER :: A=ICHAR('A'),Z=ICHAR('Z'),U2L=ICHAR('a')-ICHAR('A'),Tab=9
 
      SAVE ReadStr, ValueStarts, Prefix, OpenSection
+
+     IF ( PRESENT(literal) ) literal=.FALSE.
 
      l = .TRUE.
      outlen = LEN(str)
@@ -715,6 +745,10 @@ CONTAINS
 
      InsideQuotes = .FALSE.
      str = ' '
+
+     IF ( PRESENT(literal) ) THEN
+       IF ( readstr(i:i) == '"' ) literal=.TRUE.
+     END IF
 
      k = 1
      DO WHILE( i<=inlen )
@@ -885,13 +919,102 @@ END FUNCTION ComponentNameVar
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
+    SUBROUTINE SolveTriDiag( n, y, h, r )
+!------------------------------------------------------------------------------
+       INTEGER :: n
+       REAL(KIND=dp) :: y(n), h(n), r(n)
+       REAL(KIND=dp) :: s,b(n)
+       INTEGER :: i
+
+       DO i=2,n-1
+         b(i) = 2 * ( h(i-1) + h(i) )
+         r(i) = 3 * ( h(i)   * ( y(i)-y(i-1) ) / h(i-1) + &
+                      h(i-1) * ( y(i+1)-y(i) ) / h(i) )
+       END DO
+
+       r(2) = r(2) - h(2) * r(1)
+       DO i=2,n-2
+         s = -h(i+1) / b(i)
+         r(i+1) = r(i+1) + s * r(i)
+         b(i+1) = b(i+1) + s * h(i-1)
+       END DO
+
+       DO i=n-1,2,-1
+          r(i) = (r(i) - h(i-1) * r(i+1)) / b(i)
+       END DO
+!------------------------------------------------------------------------------
+    END SUBROUTINE SolveTriDiag
+!------------------------------------------------------------------------------
+
 
 !------------------------------------------------------------------------------
-   FUNCTION InterpolateCurve( TValues,FValues,T ) RESULT( F )
+    SUBROUTINE CubicSpline( n,x,y,r )
+!------------------------------------------------------------------------------
+      REAL(KIND=dp) :: x(:),y(:),r(:)
+      INTEGER :: n
+
+      REAL(KIND=dp) ::  a,b,c,d,t,dt,lt,h(n)
+      INTEGER :: i,j,k,l
+
+      DO i=1,n-1
+         h(i) = x(i+1) - x(i)
+      END DO
+
+      r(1) = (y(2) - y(1) )
+      r(n) = (y(n) - y(n-1) )
+
+      CALL SolveTriDiag( n,x,h,r )
+!------------------------------------------------------------------------------
+    END SUBROUTINE CubicSpline
+!------------------------------------------------------------------------------
+
+!------------------------------------------------------------------------------
+   FUNCTION CubicSplineVal(x,y,r,t) RESULT(s)
+!------------------------------------------------------------------------------
+      REAL(KIND=dp) :: x(2),y(2),r(2),s,t
+!------------------------------------------------------------------------------
+      REAL(KIND=dp) :: a,b,c,d,h,lt
+
+      h = x(2)-x(1)
+      a = -2 * ( y(2) - y(1) ) + (   r(1) + r(2) ) * h
+      b =  3 * ( y(2) - y(1) ) - ( 2*r(1) + r(2) ) * h
+      c = r(1) * h
+      d = y(1)
+
+      lt = (t - x(1)) / h
+      s = ((a*lt + b) * lt + c) * lt + d
+!------------------------------------------------------------------------------
+   END FUNCTION CubicSplineVal
+!------------------------------------------------------------------------------
+
+!------------------------------------------------------------------------------
+   FUNCTION CubicSplinedVal(x,y,r,t) RESULT(s)
+!------------------------------------------------------------------------------
+      REAL(KIND=dp) :: x(2),y(2),r(2),s,t
+!------------------------------------------------------------------------------
+      REAL(KIND=dp) :: a,b,c,h,lt
+
+      h = x(2)-x(1)
+      a = -2 * ( y(2) - y(1) ) + (   r(1) + r(2) ) * h
+      b =  3 * ( y(2) - y(1) ) - ( 2*r(1) + r(2) ) * h
+      c = r(1) * h
+
+      lt = (t - x(1)) / h
+      s = ((a*lt + b) * lt + c)/h
+!------------------------------------------------------------------------------
+   END FUNCTION CubicSplinedVal
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   FUNCTION InterpolateCurve( TValues,FValues,T, CubicCoeff) RESULT( F )
 !------------------------------------------------------------------------------
      REAL(KIND=dp) :: TValues(:),FValues(:),T,F
+     REAL(KIND=dp), OPTIONAL, POINTER :: CubicCoeff(:)
 !------------------------------------------------------------------------------
      INTEGER :: i,n
+     LOGICAL :: Cubic
 !------------------------------------------------------------------------------
 
      n = SIZE(TValues)
@@ -902,29 +1025,49 @@ END FUNCTION ComponentNameVar
      IF ( i > n ) i = n
      IF ( i < 2 ) i = 2
 
-     F = (T-TValues(i-1)) / (TValues(i)-TValues(i-1))
-     F = (1-F)*FValues(i-1) + F*FValues(i)
+     Cubic = PRESENT(CubicCoeff)
+     Cubic = Cubic .AND. T>=Tvalues(1) .AND. T<=Tvalues(n)
+     IF ( Cubic ) Cubic = Cubic.AND.ASSOCIATED(CubicCoeff)
+
+     IF ( Cubic ) THEN
+       F = CubicSplineVal(Tvalues(i-1:i),FValues(i-1:i),CubicCoeff(i-1:i),T)
+     ELSE
+       F = (T-TValues(i-1)) / (TValues(i)-TValues(i-1))
+       F = (1-F)*FValues(i-1) + F*FValues(i)
+     END IF
    END FUNCTION InterpolateCurve
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   FUNCTION DerivateCurve( TValues,FValues,T ) RESULT( F )
+   FUNCTION DerivateCurve( TValues,FValues,T,CubicCoeff ) RESULT( F )
 !------------------------------------------------------------------------------
      REAL(KIND=dp) :: TValues(:),FValues(:),T,F
+     REAL(KIND=dp), OPTIONAL, POINTER :: CubicCoeff(:)
 !------------------------------------------------------------------------------
      INTEGER :: i,n
+     LOGICAL :: Cubic
 !------------------------------------------------------------------------------
      n = SIZE(TValues)
+
+
 
      DO i=1,n
        IF ( TValues(i) >= T ) EXIT
      END DO
 
-     IF ( i < 2 ) i = 2
      IF ( i > n ) i = n
+     IF ( i < 2 ) i = 2
 
-     F = (FValues(i)-FValues(i-1)) / (TValues(i)-TValues(i-1))
+     Cubic = PRESENT(CubicCoeff)
+     Cubic = Cubic .AND. T>=Tvalues(1) .AND. T<=Tvalues(n)
+     IF ( Cubic ) Cubic = Cubic.AND.ASSOCIATED(CubicCoeff)
+
+     IF (Cubic) THEN
+       F = CubicSplinedVal(Tvalues(i-1:i),FValues(i-1:i),CubicCoeff(i-1:i),T)
+     ELSE
+       F = (FValues(i)-FValues(i-1)) / (TValues(i)-TValues(i-1))
+     END IF
 !------------------------------------------------------------------------------
    END FUNCTION DerivateCurve
 !------------------------------------------------------------------------------
@@ -1019,7 +1162,7 @@ END FUNCTION ComponentNameVar
 !------------------------------------------------------------------------------
       ALLOCATE( Matrix )
 
-      Matrix % Format = MATRIX_CRS
+      Matrix % FORMAT = MATRIX_CRS
 
 
       NULLIFY( Matrix % Child )
@@ -1071,7 +1214,7 @@ END FUNCTION ComponentNameVar
 
       Matrix % Lumped    = .FALSE.
       Matrix % Ordered   = .FALSE. 
-      Matrix % Complex   = .FALSE.
+      Matrix % COMPLEX   = .FALSE.
       Matrix % Symmetric = .FALSE.
       Matrix % SolveCount   = 0
       Matrix % NumberOfRows = 0
@@ -1437,13 +1580,51 @@ END FUNCTION ComponentNameVar
       IF(.NOT. FileIs) EXIT
     END DO
 
-    IF( Present(LastExisting)) THEN
+    IF( PRESENT(LastExisting)) THEN
       IF( LastExisting ) Filename = PrevFilename
     END IF
 
 !------------------------------------------------------------------------------
   END FUNCTION NextFreeFilename
 !------------------------------------------------------------------------------
+
+
+  !---------------------------------------------------------
+  ! Returns values from a normal distribution to be used in 
+  ! thermal velocity distribution, for example.
+  !---------------------------------------------------------
+  
+  FUNCTION NormalRandom() RESULT ( normalrand ) 
+    
+    REAL(KIND=dp) :: normalrand,tmp, mean,sigma 
+    INTEGER :: flag = 0
+    REAL(KIND=dp) :: fac,gsave,rsq,r1,r2 
+    
+    SAVE flag,gsave 
+    
+    IF (flag == 0) THEN 
+      rsq=2.0_dp 
+      
+      DO WHILE(rsq >= 1.0_dp .OR. rsq == 0.0_dp ) 
+        CALL RANDOM_NUMBER(r1)
+        CALL RANDOM_NUMBER(r2)
+        r1 = 2.0_dp * r1 - 1.0_dp
+        r2 = 2.0_dp * r2 - 1.0_dp
+        rsq = r1*r1 + r2*r2 
+      ENDDO
+      
+      fac = SQRT(-2.0_dp * LOG(rsq) / rsq) 
+      gsave = r1 * fac 
+      normalrand = r2 * fac 
+      flag = 1 
+    ELSE 
+      normalrand = gsave 
+      flag = 0 
+    ENDIF
+    
+  END FUNCTION NormalRandom
+
+
     
 
 END MODULE GeneralUtils

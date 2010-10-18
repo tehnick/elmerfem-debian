@@ -36,8 +36,7 @@ target_triplet = @target@
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in \
 	$(srcdir)/elmerf90-nosh.in $(srcdir)/elmerf90.in \
 	$(srcdir)/elmerld.in $(srcdir)/make.bin $(srcdir)/make.dep
-@HAVE_WINDRES_FALSE@bin_PROGRAMS = SC2Elmer$(EXEEXT)
-@HAVE_WINDRES_TRUE@bin_PROGRAMS = SC2Elmer$(EXEEXT)
+bin_PROGRAMS = SC2Elmer$(EXEEXT)
 subdir = src
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/acx_elmer.m4 \
@@ -51,10 +50,7 @@ CONFIG_CLEAN_FILES = elmerf90 elmerf90-nosh elmerld
 am__installdirs = "$(DESTDIR)$(bindir)"
 binPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
 PROGRAMS = $(bin_PROGRAMS)
-am__SC2Elmer_SOURCES_DIST = SC2Elmer.c Sico2Elmer-res.rc
-@HAVE_WINDRES_FALSE@am_SC2Elmer_OBJECTS = SC2Elmer.$(OBJEXT)
-@HAVE_WINDRES_TRUE@am_SC2Elmer_OBJECTS = SC2Elmer.$(OBJEXT) \
-@HAVE_WINDRES_TRUE@	Sico2Elmer-res.$(OBJEXT)
+am_SC2Elmer_OBJECTS = SC2Elmer.$(OBJEXT)
 SC2Elmer_OBJECTS = $(am_SC2Elmer_OBJECTS)
 SC2Elmer_LDADD = $(LDADD)
 DEFAULT_INCLUDES = -I. -I$(top_builddir)@am__isrc@
@@ -65,7 +61,7 @@ COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 CCLD = $(CC)
 LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 SOURCES = $(SC2Elmer_SOURCES)
-DIST_SOURCES = $(am__SC2Elmer_SOURCES_DIST)
+DIST_SOURCES = $(SC2Elmer_SOURCES)
 RECURSIVE_TARGETS = all-recursive check-recursive dvi-recursive \
 	html-recursive info-recursive install-data-recursive \
 	install-dvi-recursive install-exec-recursive \
@@ -188,6 +184,7 @@ SH_LINKING_TO_FLAGS = @SH_LINKING_TO_FLAGS@
 SOLVER_LIBS = @SOLVER_LIBS@
 SOLVER_MPI_LIBS = @SOLVER_MPI_LIBS@
 SONAME_FLAGS = @SONAME_FLAGS@
+STDCXX_LIBS = @STDCXX_LIBS@
 STRIP = @STRIP@
 TEMPLATE_AR = @TEMPLATE_AR@
 TEMPLATE_ARFLAGS = @TEMPLATE_ARFLAGS@
@@ -393,6 +390,7 @@ SOLVEROBJS = \
 		Messages$(OBJ_EXT)				\
 		Multigrid$(OBJ_EXT)				\
 		Smoothers$(OBJ_EXT)				\
+		ClusteringMethods$(OBJ_EXT)			\
 		ParallelUtils$(OBJ_EXT)                         \
                 ParallelEigenSolve$(OBJ_EXT)			\
 		solve_cmplx$(OBJ_EXT)				\
@@ -414,9 +412,9 @@ NORMAL_TARGETS = mpif libelmersolver$(SHL_EXT) ElmerSolver$(EXE_EXT) $(BINARIES)
 MPI_TARGETS = ElmerSolver_mpi$(EXE_EXT)
 @USE_MPI_FALSE@ELMER_TARGETS = $(NORMAL_TARGETS)
 @USE_MPI_TRUE@ELMER_TARGETS = $(NORMAL_TARGETS) $(MPI_TARGETS)
+@USE_MPI_TRUE@INCLUDES = -I$(MPI_INCLUDE_DIR)
 ELMER_SOLVER_DATADIR = $(prefix)/share/elmersolver
-@HAVE_WINDRES_FALSE@SC2Elmer_SOURCES = SC2Elmer.c
-@HAVE_WINDRES_TRUE@SC2Elmer_SOURCES = SC2Elmer.c Sico2Elmer-res.rc
+SC2Elmer_SOURCES = SC2Elmer.c
 EXTRA_DIST = \
 	Adaptive.src \
 	AdvectionDiffusion.src \
@@ -425,6 +423,7 @@ EXTRA_DIST = \
 	ArtificialCompressibility.src \
 	BandMatrix.src \
 	BandwidthOptimize.src \
+	ClusteringMethods.src \
 	CoordinateSystems.src \
 	CPUTime.c \
 	CRSMatrix.src \
@@ -567,14 +566,13 @@ EXTRA_DIST = \
 	elmerf90.in  \
 	elmerld.in  \
 	elmerf90-nosh.in  \
-	_muldc3.oo   \
 	umf4_f77wrapper.c \
 	SOLVER.KEYWORDS
 
 all: all-recursive
 
 .SUFFIXES:
-.SUFFIXES: .$(OBJEXT) .$(SHLEXT) .c .f90 .o .obj .rc .src
+.SUFFIXES: .$(OBJEXT) .$(SHLEXT) .c .f90 .o .obj .src
 $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am $(srcdir)/make.bin $(srcdir)/make.dep $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
@@ -974,7 +972,7 @@ ExchangeCorrelations.$(OBJEXT): ExchangeCorrelations.f90
 FDiffusion3D.$(OBJEXT): FDiffusion3D.f90 Integration.$(OBJEXT) Lists.$(OBJEXT) ElementDescription.$(OBJEXT) LinearAlgebra.$(OBJEXT) Types.$(OBJEXT) SolverUtils.$(OBJEXT)
 FDiffusion.$(OBJEXT): FDiffusion.f90 Integration.$(OBJEXT) Lists.$(OBJEXT) ElementDescription.$(OBJEXT) LinearAlgebra.$(OBJEXT) Types.$(OBJEXT) SolverUtils.$(OBJEXT)
 FilterTimeSeries.$(OBJEXT): FilterTimeSeries.f90 DefUtils.$(OBJEXT)
-FindOptimum.$(OBJEXT): FindOptimum.f90 Integration.$(OBJEXT) Lists.$(OBJEXT) MeshUtils.$(OBJEXT) ElementDescription.$(OBJEXT) Types.$(OBJEXT) SolverUtils.$(OBJEXT)
+FindOptimum.$(OBJEXT): FindOptimum.f90 DefUtils.$(OBJEXT)
 FlowSolve.$(OBJEXT): FlowSolve.f90 NavierStokes.$(OBJEXT) NavierStokesCylindrical.$(OBJEXT) DefUtils.$(OBJEXT) NavierStokesGeneral.$(OBJEXT) FreeSurface.$(OBJEXT) Adaptive.$(OBJEXT) Types.$(OBJEXT)
 FluidicForce.$(OBJEXT): FluidicForce.f90 MaterialModels.$(OBJEXT) DefUtils.$(OBJEXT) Integration.$(OBJEXT) Lists.$(OBJEXT) MeshUtils.$(OBJEXT) ElementDescription.$(OBJEXT) Types.$(OBJEXT) SolverUtils.$(OBJEXT)
 FluxSolver.$(OBJEXT): FluxSolver.f90 DefUtils.$(OBJEXT) CoordinateSystems.$(OBJEXT)
@@ -1014,7 +1012,7 @@ Messages.$(OBJEXT): Messages.f90
 MGPrec.$(OBJEXT): MGPrec.f90 Multigrid.$(OBJEXT)
 ModelDescription.$(OBJEXT): ModelDescription.f90 MeshUtils.$(OBJEXT) ElementDescription.$(OBJEXT) HashTable.$(OBJEXT) Types.$(OBJEXT)
 MovingElstatSolver.$(OBJEXT): MovingElstatSolver.f90 ElementUtils.$(OBJEXT) DefUtils.$(OBJEXT) Differentials.$(OBJEXT) Integration.$(OBJEXT) Lists.$(OBJEXT) ElementDescription.$(OBJEXT) Types.$(OBJEXT) SolverUtils.$(OBJEXT)
-Multigrid.$(OBJEXT): Multigrid.f90 MeshUtils.$(OBJEXT) DirectSolve.$(OBJEXT) IterSolve.$(OBJEXT) Smoothers.$(OBJEXT) CoordinateSystems.$(OBJEXT) CRSMatrix.$(OBJEXT) ModelDescription.$(OBJEXT) Interpolation.$(OBJEXT)
+Multigrid.$(OBJEXT): Multigrid.f90 MeshUtils.$(OBJEXT) DirectSolve.$(OBJEXT) IterSolve.$(OBJEXT) ClusteringMethods.$(OBJEXT) Smoothers.$(OBJEXT) CoordinateSystems.$(OBJEXT) CRSMatrix.$(OBJEXT) ModelDescription.$(OBJEXT) Interpolation.$(OBJEXT)
 NavierStokesCylindrical.$(OBJEXT): NavierStokesCylindrical.f90 DefUtils.$(OBJEXT) MaterialModels.$(OBJEXT) Differentials.$(OBJEXT) ElementUtils.$(OBJEXT)
 NavierStokesGeneral.$(OBJEXT): NavierStokesGeneral.f90 MaterialModels.$(OBJEXT) Differentials.$(OBJEXT) CoordinateSystems.$(OBJEXT) Integration.$(OBJEXT)
 NavierStokes.$(OBJEXT): NavierStokes.f90 DefUtils.$(OBJEXT) MaterialModels.$(OBJEXT) Differentials.$(OBJEXT) ElementUtils.$(OBJEXT)
@@ -1046,6 +1044,7 @@ ScalarPotentialSolver.$(OBJEXT): ScalarPotentialSolver.f90 DefUtils.$(OBJEXT) Co
 ShellSolve.$(OBJEXT): ShellSolve.f90 DefUtils.$(OBJEXT)
 Smitc.$(OBJEXT): Smitc.f90 DefUtils.$(OBJEXT)
 Smoothers.$(OBJEXT): Smoothers.f90 CRSMatrix.$(OBJEXT) LinearAlgebra.$(OBJEXT) Lists.$(OBJEXT) Types.$(OBJEXT) ParallelUtils.$(OBJEXT)
+ClusteringMethods.$(OBJEXT): ClusteringMethods.f90 CRSMatrix.$(OBJEXT) MeshUtils.$(OBJEXT)
 SolveBand.$(OBJEXT): SolveBand.f90 Types.$(OBJEXT)
 solve_cmplx.$(OBJEXT): solve_cmplx.f90 Types.$(OBJEXT)
 solve_real.$(OBJEXT): solve_real.f90
@@ -1084,13 +1083,7 @@ Walls.$(OBJEXT): Walls.f90
 
 all-local: $(ELMER_TARGETS)
 
-@HAVE_WINDRES_TRUE@SUFFIXES: .f90 .so .src .rc
-@HAVE_WINDRES_FALSE@SUFFIXES: .f90 .so .src 
-
-@HAVE_WINDRES_TRUE@.rc.o:
-@HAVE_WINDRES_TRUE@	windres $^ -o $@
-@HAVE_WINDRES_TRUE@%.o : %.rc
-@HAVE_WINDRES_TRUE@	windres $^ -o $@
+SUFFIXES: .f90 .so .src 
 
 # Use basic CPP
 @USE_CPP_TRUE@.src.f90:
@@ -1122,12 +1115,10 @@ fdeps:
 
 @USE_MPI_TRUE@@USE_WINDOWS_COMPILER_TRUE@libelmersolver$(SHL_EXT): $(SOLVEROBJS) binio/libbinio.a
 @USE_MPI_TRUE@@USE_WINDOWS_COMPILER_TRUE@	$(RM) $@
-@USE_MPI_TRUE@@USE_WINDOWS_COMPILER_TRUE@	$(CP) _muldc3.oo _muldc3.o
-@USE_MPI_TRUE@@USE_WINDOWS_COMPILER_TRUE@	$(SH_LD2) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o $@ $(SOLVEROBJS) $(SOLVER_LIBS) $(MPI_LIBS) _muldc3.o -L. -Lbinio -lbinio
+@USE_MPI_TRUE@@USE_WINDOWS_COMPILER_TRUE@	$(SH_LD2) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o $@ $(SOLVEROBJS) $(SOLVER_LIBS) $(MPI_LIBS) -L. -Lbinio -lbinio
 @USE_MPI_FALSE@@USE_WINDOWS_COMPILER_TRUE@libelmersolver$(SHL_EXT): $(SOLVEROBJS) mpi_stubs$(OBJ_EXT) binio/libbinio.a
 @USE_MPI_FALSE@@USE_WINDOWS_COMPILER_TRUE@	$(RM) $@
-@USE_MPI_FALSE@@USE_WINDOWS_COMPILER_TRUE@	$(CP) _muldc3.oo _muldc3.o
-@USE_MPI_FALSE@@USE_WINDOWS_COMPILER_TRUE@	$(SH_LD2) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o $@ $(SOLVEROBJS) $(SOLVER_LIBS) mpi_stubs$(OBJ_EXT) _muldc3.o -L. -Lbinio -lbinio
+@USE_MPI_FALSE@@USE_WINDOWS_COMPILER_TRUE@	$(SH_LD2) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o $@ $(SOLVEROBJS) $(SOLVER_LIBS) mpi_stubs$(OBJ_EXT) -L. -Lbinio -lbinio
 
 @USE_WINDOWS_COMPILER_FALSE@libelmersolver$(SHL_EXT): $(SOLVEROBJS) binio/libbinio.a
 @USE_WINDOWS_COMPILER_FALSE@	$(RM) $@
@@ -1152,42 +1143,23 @@ $(SOLVEROBJS): mpif
 @IBM_AIX_FALSE@@USE_MPI_TRUE@	      -o ElmerSolver_mpi$(EXE_EXT) Solver$(OBJ_EXT) \
 @IBM_AIX_FALSE@@USE_MPI_TRUE@	      -L. -lelmersolver $(MPI_LIBS) $(EXTRA_LIBS)
 
-# Take resource files into account in case of windres:
+ElmerSolver$(EXE_EXT): Solver$(OBJ_EXT) libelmersolver$(SHL_EXT) mpi_stubs$(OBJ_EXT)
+	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
+	      -o ElmerSolver$(EXE_EXT) Solver$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
+	      -L. -lelmersolver $(EXTRA_LIBS) 
 
-@HAVE_WINDRES_TRUE@ElmerSolver$(EXE_EXT): Solver$(OBJ_EXT) libelmersolver$(SHL_EXT) mpi_stubs$(OBJ_EXT) ElmerSolver-res.o
-@HAVE_WINDRES_TRUE@	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
-@HAVE_WINDRES_TRUE@	      -o ElmerSolver$(EXE_EXT) Solver$(OBJ_EXT) \
-@HAVE_WINDRES_TRUE@		ElmerSolver-res.o \
-@HAVE_WINDRES_TRUE@	      -L. -lelmersolver $(EXTRA_LIBS) 
+ViewFactors$(EXE_EXT): libelmersolver$(SHL_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT)
+@USE_WINDOWS_COMPILER_TRUE@	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
+@USE_WINDOWS_COMPILER_TRUE@	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
+@USE_WINDOWS_COMPILER_TRUE@	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS) $(BLAS_LIBS)
+@USE_WINDOWS_COMPILER_FALSE@	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
+@USE_WINDOWS_COMPILER_FALSE@	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
+@USE_WINDOWS_COMPILER_FALSE@	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS) $(BLAS_LIBS) $(STDCXX_LIBS)
 
-@HAVE_WINDRES_TRUE@ViewFactors$(EXE_EXT): libelmersolver$(SHL_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) ViewFactors-res.o
-@HAVE_WINDRES_TRUE@	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
-@HAVE_WINDRES_TRUE@	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) \
-@HAVE_WINDRES_TRUE@		ViewFactors-res.o \
-@HAVE_WINDRES_TRUE@	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
-
-@HAVE_WINDRES_TRUE@GebhardtFactors$(EXE_EXT): libelmersolver$(SHL_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) GebhardtFactors-res.o
-@HAVE_WINDRES_TRUE@	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
-@HAVE_WINDRES_TRUE@	      -o GebhardtFactors$(EXE_EXT) GebhardtFactors$(OBJ_EXT) \
-@HAVE_WINDRES_TRUE@		GebhardtFactors-res.o \
-@HAVE_WINDRES_TRUE@	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
-
-# not windows - no resource files:
-
-@HAVE_WINDRES_FALSE@ElmerSolver$(EXE_EXT): Solver$(OBJ_EXT) libelmersolver$(SHL_EXT) mpi_stubs$(OBJ_EXT)
-@HAVE_WINDRES_FALSE@	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
-@HAVE_WINDRES_FALSE@	      -o ElmerSolver$(EXE_EXT) Solver$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
-@HAVE_WINDRES_FALSE@	      -L. -lelmersolver $(EXTRA_LIBS) 
-
-@HAVE_WINDRES_FALSE@ViewFactors$(EXE_EXT): libelmersolver$(SHL_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT)
-@HAVE_WINDRES_FALSE@	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
-@HAVE_WINDRES_FALSE@	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
-@HAVE_WINDRES_FALSE@	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
-
-@HAVE_WINDRES_FALSE@GebhardtFactors$(EXE_EXT): libelmersolver$(SHL_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT)
-@HAVE_WINDRES_FALSE@	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
-@HAVE_WINDRES_FALSE@	      -o GebhardtFactors$(EXE_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
-@HAVE_WINDRES_FALSE@	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
+GebhardtFactors$(EXE_EXT): libelmersolver$(SHL_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT)
+	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
+	      -o GebhardtFactors$(EXE_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
+	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
 
 @USE_WINDOWS_COMPILER_FALSE@ResultToResult$(EXE_EXT): libelmersolver$(SHL_EXT) ResultToResult$(OBJ_EXT)
 @USE_WINDOWS_COMPILER_FALSE@	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
@@ -1219,7 +1191,7 @@ install-exec-local:
 @USE_MPI_TRUE@	$(CP) ElmerSolver_mpi$(EXEEXT) $(DESTDIR)$(prefix)/bin
 
 clean-local:
-	$(RM) $(ALL) *.o *.mod *.f90 *.F *.fpp *~ *.a *.so *.dll \#* mpif mpif.h ElmerSolver ElmerSolver_mpi
+	$(RM) $(ALL) *.o *.mod *.f90 *.F *.fpp *~ *.a *.so *.dll \#* mpif mpif.h ElmerSolver ElmerSolver_mpi GebhardtFactors ResultToResult ViewFactors
 
 @USE_LOCAL_MPIF_H_TRUE@mpif: mpif_stub.h
 @USE_LOCAL_MPIF_H_TRUE@	$(CP) mpif_stub.h mpif.h

@@ -463,13 +463,14 @@ CONTAINS
 
 !------------------------------------------------------------------------------
     SUBROUTINE VariableAdd( Variables,Mesh,Solver,Name,DOFs,Values,&
-      Perm,Output,Secondary )
+      Perm,Output,Secondary, Type )
 !------------------------------------------------------------------------------
       TYPE(Variable_t), POINTER :: Variables
       TYPE(Mesh_t),   TARGET :: Mesh
       TYPE(Solver_t), TARGET :: Solver
       CHARACTER(LEN=*) :: Name
       INTEGER :: DOFs
+      INTEGER, OPTIONAL :: Type
       REAL(KIND=dp), POINTER :: Values(:)
       LOGICAL, OPTIONAL :: Output
       INTEGER, OPTIONAL, POINTER :: Perm(:)
@@ -537,6 +538,7 @@ CONTAINS
         ptr % Secondary = Secondary
       END IF
 
+      IF ( PRESENT( Type ) ) ptr % Type = Type
       IF ( PRESENT( Output ) ) ptr % Output = Output
 !------------------------------------------------------------------------------
     END SUBROUTINE VariableAdd
@@ -626,24 +628,24 @@ CONTAINS
        REAL(KIND=dp), POINTER :: OldValue(:), NewValue(:), ElementValues(:)
        TYPE(Quadrant_t), POINTER :: LeafQuadrant
        TYPE(Element_t),POINTER :: Element
-
+       
        REAL(KIND=dp), ALLOCATABLE :: Basis(:),dBasisdx(:,:)
        REAL(KIND=dp) :: BoundingBox(6), detJ, u,v,w,s
-
+       
        LOGICAL :: UseQTree, Stat, UseProjector
        TYPE(Quadrant_t), POINTER :: RootQuadrant
-
+       
        INTEGER, POINTER   :: Rows(:), Cols(:)
-
+       
        TYPE Epntr_t
-          TYPE(Element_t), POINTER :: Element
+         TYPE(Element_t), POINTER :: Element
        END TYPE Epntr_t
-
+       
        TYPE(Epntr_t), ALLOCATABLE :: ElemPtrs(:)
-
+       
        INTEGER, ALLOCATABLE:: RInd(:)
        LOGICAL :: Found, EpsAbsGiven,EpsRelGiven, MaskExists
-       REAL(KIND=dp) :: eps1 = 0.1, eps2, eps_abs, eps_rel
+       REAL(KIND=dp) :: eps1 = 0.1, eps2, eps_global, eps_local
        REAL(KIND=dp), POINTER :: Values(:), LocalU(:), LocalV(:), LocalW(:)
 !------------------------------------------------------------------------------
 
@@ -653,52 +655,52 @@ CONTAINS
 !      not already there:
 !      ------------------------------------------------
        IF ( PRESENT(Projector) ) THEN
-          Projector => NewMesh % Projector
-
-          DO WHILE( ASSOCIATED( Projector ) )
-             IF ( ASSOCIATED(Projector % Mesh, OldMesh) ) THEN
-                IF ( PRESENT(OldVariables) ) CALL ApplyProjector
-                RETURN
-             END IF
-             Projector => Projector % Next
-          END DO
-
-          n = NewMesh % NumberOfNodes
-          ALLOCATE( LocalU(n), LocalV(n), LocalW(n), ElemPtrs(n) )
-          DO i=1,n
-            NULLIFY( ElemPtrs(i) % Element )
-          END DO
+         Projector => NewMesh % Projector
+         
+         DO WHILE( ASSOCIATED( Projector ) )
+           IF ( ASSOCIATED(Projector % Mesh, OldMesh) ) THEN
+             IF ( PRESENT(OldVariables) ) CALL ApplyProjector
+             RETURN
+           END IF
+           Projector => Projector % Next
+         END DO
+         
+         n = NewMesh % NumberOfNodes
+         ALLOCATE( LocalU(n), LocalV(n), LocalW(n), ElemPtrs(n) )
+         DO i=1,n
+           NULLIFY( ElemPtrs(i) % Element )
+         END DO
        END IF
 !
 !      Check if using the spatial division hierarchy for the search:
 !      -------------------------------------------------------------
        RootQuadrant => OldMesh % RootQuadrant
        dim = CoordinateSystemDimension()
-
+       
        IF ( .NOT. PRESENT( UseQuadrantTree ) ) THEN
          UseQTree = .TRUE.
        ELSE
          UseQTree = UseQuadrantTree
        ENDIF
-
+       
        IF ( UseQTree ) THEN
-          IF ( .NOT.ASSOCIATED( RootQuadrant ) ) THEN
-             BoundingBox(1) = MINVAL( OldMesh % Nodes % x )
-             BoundingBox(2) = MINVAL( OldMesh % Nodes % y )
-             BoundingBox(3) = MINVAL( OldMesh % Nodes % z )
-             BoundingBox(4) = MAXVAL( OldMesh % Nodes % x )
-             BoundingBox(5) = MAXVAL( OldMesh % Nodes % y )
-             BoundingBox(6) = MAXVAL( OldMesh % Nodes % z )
-
-             eps2 = eps1 * MAXVAL( BoundingBox(4:6) - BoundingBox(1:3) )
-             BoundingBox(1:3) = BoundingBox(1:3) - eps2
-             BoundingBox(4:6) = BoundingBox(4:6) + eps2
-
-             CALL BuildQuadrantTree( OldMesh,BoundingBox,OldMesh % RootQuadrant)
-             RootQuadrant => OldMesh % RootQuadrant
-          END IF
+         IF ( .NOT.ASSOCIATED( RootQuadrant ) ) THEN
+           BoundingBox(1) = MINVAL( OldMesh % Nodes % x )
+           BoundingBox(2) = MINVAL( OldMesh % Nodes % y )
+           BoundingBox(3) = MINVAL( OldMesh % Nodes % z )
+           BoundingBox(4) = MAXVAL( OldMesh % Nodes % x )
+           BoundingBox(5) = MAXVAL( OldMesh % Nodes % y )
+           BoundingBox(6) = MAXVAL( OldMesh % Nodes % z )
+           
+           eps2 = eps1 * MAXVAL( BoundingBox(4:6) - BoundingBox(1:3) )
+           BoundingBox(1:3) = BoundingBox(1:3) - eps2
+           BoundingBox(4:6) = BoundingBox(4:6) + eps2
+           
+           CALL BuildQuadrantTree( OldMesh,BoundingBox,OldMesh % RootQuadrant)
+           RootQuadrant => OldMesh % RootQuadrant
+         END IF
        END IF
-
+       
 ! Use mask or not
 !---------------------------------------
        MaskExists = PRESENT( MaskName )
@@ -707,103 +709,99 @@ CONTAINS
 
        n = OldMesh % MaxElementNodes
        ALLOCATE( ElementNodes % x(n), ElementNodes % y(n), &
-                 ElementNodes % z(n), ElementValues(n) )
-
-       eps_rel = ListGetConstReal( CurrentModel % Simulation,  &
-          'Interpolation Relative Epsilon', EpsRelGiven )
-
-       eps_abs = ListGetConstReal( CurrentModel % Simulation,  &
-          'Interpolation Absolute Epsilon', EpsAbsGiven )
-
+           ElementNodes % z(n), ElementValues(n) )
+       
+       eps_global = ListGetConstReal( CurrentModel % Simulation,  &
+           'Interpolation Global Epsilon', Stat)
+       IF(.NOT. Stat) eps_global = 2.0e-10
+       
+       eps_local = ListGetConstReal( CurrentModel % Simulation,  &
+           'Interpolation Local Epsilon', Stat )
+       IF(.NOT. Stat) eps_local = 1.0e-10
+       
 !------------------------------------------------------------------------------
 ! Loop over all nodes in the new mesh
 !------------------------------------------------------------------------------
        DO i=1,NewMesh % NumberOfNodes
 !------------------------------------------------------------------------------
-          Point(1) = NewMesh % Nodes % x(i)
-          Point(2) = NewMesh % Nodes % y(i)
-          Point(3) = NewMesh % Nodes % z(i)
+         Point(1) = NewMesh % Nodes % x(i)
+         Point(2) = NewMesh % Nodes % y(i)
+         Point(3) = NewMesh % Nodes % z(i)
 !------------------------------------------------------------------------------
 ! Find in which old mesh bulk element the point belongs to
 !------------------------------------------------------------------------------
-          IF ( ASSOCIATED(RootQuadrant) .AND. UseQTree ) THEN
+         IF ( ASSOCIATED(RootQuadrant) .AND. UseQTree ) THEN
 !------------------------------------------------------------------------------
 ! Find the last existing quadrant that the point belongs to
 !------------------------------------------------------------------------------
-             NULLIFY(Element)
-             CALL FindLeafElements(Point, dim, RootQuadrant, LeafQuadrant)
-             IF ( ASSOCIATED(LeafQuadrant) ) THEN
-               ! Go through the bulk elements in the last ChildQuadrant
-               ! only.  Try to find matching element with progressively
-               ! sloppier tests. Allow at most 100 % of slack:
-               ! -------------------------------------------------------
-               Found = .FALSE.
-
-               IF ( EpsRelGiven ) THEN
-                 Eps2 = Eps_rel*1.d-12
-               ELSE IF ( EpsAbsGiven ) THEN
-                 Eps2 = Eps_abs*1.d-12
-               ELSE
-                 Eps2 = 1.d-12
-               END IF
-
-               DO j=1,12
-                 DO k=1, LeafQuadrant % NElemsInQuadrant
-                    Element => OldMesh % Elements(LeafQuadrant % Elements(k))
-
-                    IF( MaskExists ) THEN
-                      bf_id = ListGetInteger( CurrentModel % Bodies(Element % BodyId) % Values, &
+           NULLIFY(Element)
+           CALL FindLeafElements(Point, dim, RootQuadrant, LeafQuadrant)
+           IF ( ASSOCIATED(LeafQuadrant) ) THEN
+             ! Go through the bulk elements in the last ChildQuadrant
+             ! only.  Try to find matching element with progressively
+             ! sloppier tests. Allow at most 100 % of slack:
+             ! -------------------------------------------------------
+             Found = .FALSE.
+             Eps1 = eps_global
+             Eps2 = eps_local
+             
+             DO j=1,12
+               DO k=1, LeafQuadrant % NElemsInQuadrant
+                 Element => OldMesh % Elements(LeafQuadrant % Elements(k))
+                 
+                 IF( MaskExists ) THEN
+                   bf_id = ListGetInteger( CurrentModel % Bodies(Element % BodyId) % Values, &
                        'Body Force', Found )
-                    IF( .NOT. Found ) CYCLE
-                    IF(.NOT. ListCheckPresent( &
-                        CurrentModel % BodyForces(bf_id) % Values,MaskName) ) CYCLE
-                    END IF
-
-                    NodeIndexes => Element % NodeIndexes
-                    n = Element % TYPE % NumberOfNodes
-
-                    ElementNodes % x(1:n) = OldMesh % Nodes % x(NodeIndexes)
-                    ElementNodes % y(1:n) = OldMesh % Nodes % y(NodeIndexes)
-                    ElementNodes % z(1:n) = OldMesh % Nodes % z(NodeIndexes)
-
-                    IF ( EpsAbsGiven ) THEN
-                      Found = PointInElement( Element, ElementNodes, &
-                              Point, LocalCoordinates, Eps_abs=Eps2 )
-                    ELSE
-                      Found = PointInElement( Element, ElementNodes, &
-                              Point, LocalCoordinates, Eps2 )
-                    END IF
-                    IF ( Found ) EXIT
-                 END DO
+                   IF( .NOT. Found ) CYCLE
+                   IF(.NOT. ListCheckPresent( &
+                       CurrentModel % BodyForces(bf_id) % Values,MaskName) ) CYCLE
+                 END IF
+                  
+                 NodeIndexes => Element % NodeIndexes
+                 n = Element % TYPE % NumberOfNodes
+                 
+                 ElementNodes % x(1:n) = OldMesh % Nodes % x(NodeIndexes)
+                 ElementNodes % y(1:n) = OldMesh % Nodes % y(NodeIndexes)
+                 ElementNodes % z(1:n) = OldMesh % Nodes % z(NodeIndexes)
+                 
+                 Found = PointInElement( Element, ElementNodes, &
+                     Point, LocalCoordinates, Eps1, Eps2 )
                  IF ( Found ) EXIT
-                 Eps2  = 10*Eps2
                END DO
-               IF (.NOT.Found) NULLIFY(Element)
-             END IF
-!------------------------------------------------------------------------------
-          ELSE
-!------------------------------------------------------------------------------
-! Go through all old mesh bulk elements
-!------------------------------------------------------------------------------
-             DO k=1,OldMesh % NumberOfBulkElements
-                Element => OldMesh % Elements(k)
-
-                n = Element % TYPE % NumberOfNodes
-                NodeIndexes => Element % NodeIndexes
-
-                ElementNodes % x(1:n) = OldMesh % Nodes % x(NodeIndexes)
-                ElementNodes % y(1:n) = OldMesh % Nodes % y(NodeIndexes)
-                ElementNodes % z(1:n) = OldMesh % Nodes % z(NodeIndexes)
-
-                IF ( PointInElement( Element, ElementNodes, &
-                        Point, LocalCoordinates ) ) EXIT
+               IF ( Found ) EXIT  
+               
+               Eps1 = 10 * Eps1
+               Eps2 = 10 * Eps2               
+               IF( Eps1 > 1.0_dp ) EXIT
              END DO
-             IF ( k == OldMesh % NumberOfBulkElements + 1 ) THEN
-                WRITE( Message, * ) 'Point was not found in any of the elements!',i
-                CALL Warn( 'InterpolateMeshToMesh', Message )
-                CYCLE
-             END IF
-          END IF
+           END IF
+         ELSE
+           !------------------------------------------------------------------------------
+           ! Go through all old mesh bulk elements
+           !------------------------------------------------------------------------------
+           DO k=1,OldMesh % NumberOfBulkElements
+             Element => OldMesh % Elements(k)
+             
+             n = Element % TYPE % NumberOfNodes
+             NodeIndexes => Element % NodeIndexes
+             
+             ElementNodes % x(1:n) = OldMesh % Nodes % x(NodeIndexes)
+             ElementNodes % y(1:n) = OldMesh % Nodes % y(NodeIndexes)
+             ElementNodes % z(1:n) = OldMesh % Nodes % z(NodeIndexes)
+             
+             Found =  PointInElement( Element, ElementNodes, &
+                 Point, LocalCoordinates ) 
+             IF( Found ) EXIT
+           END DO
+         END IF
+         
+         IF (.NOT.Found) THEN
+           NULLIFY(Element)
+           WRITE( Message, * ) 'Point was not found in any of the elements!',i
+           CALL Warn( 'InterpolateMeshToMesh', Message )
+           CYCLE
+         END IF
+
 !------------------------------------------------------------------------------
 !
 !         Found Element in OldModel:
@@ -1354,6 +1352,7 @@ CALL Info( 'VariableGet', Message, Level=7 )
      ptr % NameLen = 0
      ptr % CValue = ' '
      ptr % LValue = .FALSE.
+     NULLIFY( ptr % CubicCoeff )
      NULLIFY( ptr % Next )
      NULLIFY( ptr % FValues )
      NULLIFY( ptr % TValues )
@@ -1368,6 +1367,7 @@ CALL Info( 'VariableGet', Message, Level=7 )
 !------------------------------------------------------------------------------
      TYPE(ValueList_t), POINTER :: ptr
 
+     IF ( ASSOCIATED(ptr % CubicCoeff) ) DEALLOCATE(ptr % CubicCoeff)
      IF ( ASSOCIATED(ptr % FValues) ) DEALLOCATE(ptr % FValues)
      IF ( ASSOCIATED(ptr % TValues) ) DEALLOCATE(ptr % TValues)
      IF ( ASSOCIATED(ptr % IValues) ) DEALLOCATE(ptr % IValues)
@@ -1686,12 +1686,14 @@ CALL Info( 'VariableGet', Message, Level=7 )
 
 
 !------------------------------------------------------------------------------
-    SUBROUTINE ListAddDepReal(List,Name,DependName,N,TValues,FValues,Proc,CValue)
+    SUBROUTINE ListAddDepReal(List,Name,DependName,N,TValues, &
+               FValues,Proc,CValue,CubicTable)
 !------------------------------------------------------------------------------
      TYPE(ValueList_t), POINTER :: List
      CHARACTER(LEN=*) :: Name,DependName
      CHARACTER(LEN=*), OPTIONAL :: Cvalue
      INTEGER :: N
+     LOGICAL, OPTIONAL :: CubicTable
      REAL(KIND=dp) :: FValues(N)
      REAL(KIND=dp) :: TValues(N)
      INTEGER(KIND=AddrInt), OPTIONAL :: Proc
@@ -1706,6 +1708,14 @@ CALL Info( 'VariableGet', Message, Level=7 )
      ptr % TValues = TValues(1:N)
      ptr % FValues(1,1,:) = FValues(1:N)
      ptr % TYPE = LIST_TYPE_VARIABLE_SCALAR
+
+     IF ( n>3 .AND. PRESENT(CubicTable)) THEN
+       IF ( CubicTable ) THEN
+         ALLOCATE(ptr % CubicCoeff(n))
+         CALL CubicSpline(n,ptr % TValues,Ptr % Fvalues(1,1,:), &
+                    Ptr % CubicCoeff )
+       END IF
+     END IF
 
      ptr % NameLen = StringToLowerCase( ptr % Name,Name )
      ptr % DepNameLen = StringToLowerCase( ptr % DependName,DependName )
@@ -1830,6 +1840,7 @@ CALL Info( 'VariableGet', Message, Level=7 )
            CALL Fatal( 'ListGetInteger', Message )
         END IF
      END IF
+!------------------------------------------------------------------------------
    END FUNCTION ListGetInteger
 !------------------------------------------------------------------------------
 
@@ -1865,6 +1876,7 @@ CALL Info( 'VariableGet', Message, Level=7 )
          Ivalues(i) = ExecIntFunction( ptr % PROCEDURE,CurrentModel )
        END DO
      END IF
+!------------------------------------------------------------------------------
    END FUNCTION ListGetIntegerArray
 !------------------------------------------------------------------------------
 
@@ -1965,11 +1977,14 @@ CALL Info( 'VariableGet', Message, Level=7 )
            CALL Fatal( 'ListGetInteger', Message )
         END IF
      END IF
+!------------------------------------------------------------------------------
    END FUNCTION ListGetConstReal
 !------------------------------------------------------------------------------
 
+
 !------------------------------------------------------------------------------
   RECURSIVE FUNCTION ListGetCReal( List, Name, Found ) RESULT(s)
+!------------------------------------------------------------------------------
      TYPE(ValueList_t), POINTER :: List
      CHARACTER(LEN=*) :: Name
      LOGICAL, OPTIONAL :: Found
@@ -2003,6 +2018,105 @@ CALL Info( 'VariableGet', Message, Level=7 )
 
 
 #define MAX_FNC 32
+
+!------------------------------------------------------------------------------
+  SUBROUTINE ListParseStrToValues( str, slen, ind, name, T, count )
+!------------------------------------------------------------------------------
+     CHARACTER(LEN=*) :: str, name
+     REAL(KIND=dp)  :: T(:)
+     INTEGER :: slen, count, ind
+!------------------------------------------------------------------------------
+     TYPE(Element_t), POINTER :: Element
+     INTEGER :: i,j,k,n,k1,l,l0,l1
+     TYPE(Variable_t), POINTER :: Variable, CVar
+
+
+     count=0
+     l0=1
+
+     DO WHILE( .TRUE. )
+       DO WHILE( str(l0:l0) == ' ' )
+         l0 = l0 + 1
+       END DO
+       IF ( l0 > slen ) EXIT
+
+       l1 = INDEX( str(l0:slen),',')
+       IF ( l1 > 0 ) THEN
+         l1=l0+l1-2
+       ELSE
+         l1=slen
+       END IF
+
+       IF ( str(l0:l1) /= 'coordinate' ) THEN
+          Variable => VariableGet( CurrentModel % Variables,TRIM(str(l0:l1)) )
+          IF ( .NOT. ASSOCIATED( Variable ) ) THEN
+             WRITE( Message, * ) 'Can''t find independent variable:[', &
+                 TRIM(str(l0:l1)),']' // &
+                  'for dependent variable:[', TRIM(Name),']'
+             CALL Fatal( 'ListGetReal', Message )
+          END IF
+       ELSE
+          Variable => VariableGet( CurrentModel % Variables,'Coordinate 1' )
+       END IF
+
+       k1 = ind
+       IF ( Variable % Type == Variable_on_nodes_on_elements ) THEN
+         Element => CurrentModel % CurrentElement
+         IF ( ASSOCIATED(Element) ) THEN
+           IF ( ASSOCIATED(Element % DGIndexes) ) THEN
+             n = Element % Type % NumberOfNodes
+             IF ( SIZE(Element % DGIndexes)==n ) THEN
+               DO i=1,n
+                 IF ( Element % NodeIndexes(i)==ind ) THEN
+                   k1 = Element % DGIndexes(i)
+                   EXIT
+                 END IF
+               END DO
+             END IF
+           END IF
+         END IF
+       END IF
+       IF ( ASSOCIATED(Variable % Perm) ) k1 = Variable % Perm(k1)
+
+       IF ( k1>0 .AND. k1<=SIZE(Variable % Values) ) THEN
+         IF ( str(l0:l1) == 'coordinate' ) THEN
+           CVar => VariableGet( CurrentModel % Variables, 'Coordinate 1' )
+           count = count + 1
+           T(1) = CVar % Values(k1)
+           CVar => VariableGet( CurrentModel % Variables, 'Coordinate 2' )
+           count = count + 1
+           T(2) = CVar % Values(k1)
+           CVar => VariableGet( CurrentModel % Variables, 'Coordinate 3' )
+           count = count + 1
+           T(3) = CVar % Values(k1)
+         ELSE
+           IF ( Variable % DOFs == 1 ) THEN
+              count = count + 1
+              T(count) = Variable % Values(k1)
+           ELSE
+              DO l=1,Variable % DOFs
+                 count = count + 1
+                 T(count) = Variable % Values(Variable % DOFs*(k1-1)+l)
+              END DO
+           END IF
+         END IF
+       ELSE
+         count = count + 1
+         IF ( ASSOCIATED(Variable % Perm) ) THEN
+            T(count) = HUGE(1.0_dp)
+            EXIT
+         ELSE
+            T(count) = Variable % Values(1)
+         END IF
+       END IF
+
+       l0 = l1+2
+       IF ( l0 > slen ) EXIT
+     END DO
+!------------------------------------------------------------------------------
+  END SUBROUTINE ListParseStrToValues
+!------------------------------------------------------------------------------
+
 
 !------------------------------------------------------------------------------
    RECURSIVE FUNCTION ListGetReal( List,Name,N,NodeIndexes,Found,minv,maxv ) RESULT(F)
@@ -2047,73 +2161,7 @@ CALL Info( 'VariableGet', Message, Level=7 )
 
        DO i=1,n
          k = NodeIndexes(i)
-
-         j=0
-         l0=1
-         lsize = Ptr % DepNameLen
-         DO WHILE( .TRUE. )
-           DO WHILE( Ptr % DependName(l0:l0) == ' ' )
-             l0 = l0 + 1
-           END DO
-           IF ( l0 > lsize ) EXIT
-
-           l1 = INDEX( ptr % DependName(l0:ptr % DepNameLen),',')
-           IF ( l1 > 0 ) THEN
-             l1=l0+l1-2
-           ELSE
-             l1=lsize
-           END IF
-
-           IF ( ptr % DependName(l0:l1) /= 'coordinate' ) THEN
-              Variable => VariableGet( CurrentModel % Variables,TRIM(ptr % DependName(l0:l1)) )
-              IF ( .NOT. ASSOCIATED( Variable ) ) THEN
-                 WRITE( Message, * ) 'Can''t find independent variable:[', &
-                     TRIM(ptr % DependName(l0:l1)),']' // &
-                      'for dependent variable:[', TRIM(Name),']'
-                 CALL Fatal( 'ListGetReal', Message )
-              END IF
-           ELSE
-              Variable => VariableGet( CurrentModel % Variables,'Coordinate 1' )
-           END IF
-
-           k1 = k
-           IF ( ASSOCIATED(Variable % Perm) ) k1 = Variable % Perm(k1)
-
-           IF ( k1>0 .AND. k1<=SIZE(Variable % Values) ) THEN
-             IF ( ptr % DependName(l0:l1) == 'coordinate' ) THEN
-               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 1' )
-               j = j + 1
-               T(1) = CVar % Values(k1)
-               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 2' )
-               j = j + 1
-               T(2) = CVar % Values(k1)
-               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 3' )
-               j = j + 1
-               T(3) = CVar % Values(k1)
-             ELSE
-               IF ( Variable % DOFs == 1 ) THEN
-                  j = j + 1
-                  T(j) = Variable % Values(k1)
-               ELSE
-                  DO l=1,Variable % DOFs
-                     j = j + 1
-                     T(j) = Variable % Values(Variable % DOFs*(k1-1)+l)
-                  END DO
-               END IF
-             END IF
-           ELSE
-             j = j + 1
-             IF ( ASSOCIATED(Variable % Perm) ) THEN
-                T(j) = HUGE(1.0_dp)
-                EXIT
-             ELSE
-                T(j) = Variable % Values(1)
-             END IF
-           END IF
-
-           l0 = l1+2
-           IF ( l0 > lsize ) EXIT
-         END DO
+         CALL ListParseStrToValues( Ptr % DependName, Ptr % DepNameLen, k, Name, T, j)
 
          IF ( .NOT. ANY( T(1:j)==HUGE(1.0_dp) ) ) THEN
            IF ( ptr % PROCEDURE /= 0 ) THEN
@@ -2126,7 +2174,8 @@ CALL Info( 'VariableGet', Message, Level=7 )
                CALL Fatal( 'ListGetReal', Message )
                RETURN
              END IF
-             F(i) = InterpolateCurve( ptr % TValues,ptr % FValues(1,1,:),T(1) )
+             F(i) = InterpolateCurve( ptr % TValues,ptr % FValues(1,1,:), &
+                            T(1), ptr % CubicCoeff )
            END IF
          END IF
        END DO
@@ -2146,82 +2195,16 @@ CALL Info( 'VariableGet', Message, Level=7 )
 
      CASE( LIST_TYPE_VARIABLE_SCALAR_STR )
        TVar => VariableGet( CurrentModel % Variables, 'Time' ) 
-       WRITE( cmd, * ) 'st = ', TVar % Values(1)
+       WRITE( cmd, * ) 'tx=0; st = ', TVar % Values(1)
        k = LEN_TRIM(cmd)
        CALL matc( cmd, tmp_str, k )
 
        DO i=1,n
          k = NodeIndexes(i)
-
-         j=0
-         l0=1
-         lsize = Ptr % DepNamelen
-         DO WHILE( .TRUE. )
-           DO WHILE( Ptr % DependName(l0:l0) == ' ' )
-             l0 = l0 + 1
-           END DO
-           IF ( l0 > lsize ) EXIT
-
-           l1 = INDEX( ptr % DependName(l0:Ptr % DepNameLen),',')
-           IF ( l1 > 0 ) THEN
-             l1=l0+l1-2
-           ELSE
-             l1=lsize
-           END IF
-
-           IF ( ptr % DependName(l0:l1) /= 'coordinate' ) THEN
-              Variable => VariableGet( CurrentModel % Variables,ptr % DependName(l0:l1) )
-              IF ( .NOT. ASSOCIATED( Variable ) ) THEN
-                 WRITE( Message, * ) 'Can''t find independent variable:[', &
-                     TRIM(ptr % DependName(l0:l1)),']' // &
-                      'for dependent variable:[', TRIM(Name),']'
-                 CALL Fatal( 'ListGetReal', Message )
-              END IF
-           ELSE
-              Variable => VariableGet( CurrentModel % Variables,'Coordinate 1' )
-           END IF
-
-           k1 = k
-           IF ( ASSOCIATED(Variable % Perm) ) k1 = Variable % Perm(k1)
-
-           IF ( k1 > 0 .AND. SIZE(Variable % Values) >= k1 ) THEN
-              IF ( ptr % DependName(l0:l1) == 'coordinate' ) THEN
-                CVar => VariableGet( CurrentModel % Variables, 'Coordinate 1' )
-                j = j + 1
-                T(j) = CVar % Values(k1)
-                CVar => VariableGet( CurrentModel % Variables, 'Coordinate 2' )
-                j = j + 1
-                T(j) = CVar % Values(k1)
-                CVar => VariableGet( CurrentModel % Variables, 'Coordinate 3' )
-                j = j + 1
-                T(j) = CVar % Values(k1)
-              ELSE
-                IF ( Variable % DOFs == 1 ) THEN
-                  j = j + 1
-                  T(j) = Variable % Values(k1)
-                ELSE
-                  DO l=1,Variable % DOFs
-                   j = j + 1
-                     T(j) = Variable % Values(Variable % DOFs*(k1-1)+l)
-                  END DO
-                END IF
-              END IF
-           ELSE
-             j = j + 1
-             IF ( ASSOCIATED(Variable % Perm) ) THEN
-               T(j) = HUGE(1.0_dp)
-               EXIT
-             ELSE
-               T(j) = Variable % Values(1)
-             END IF
-           END IF
-           l0 = l1+2
-           IF ( l0 > lsize ) EXIT
-         END DO
-
+         CALL ListParseStrToValues( Ptr % DependName, Ptr % DepNameLen, k, Name, T, j)
          IF ( .NOT. ANY( T(1:j)==HUGE(1.0_dp) ) ) THEN
            DO l=1,j
-             WRITE( cmd, * ) 'tx(',l-1,') = ', T(l)
+             WRITE( cmd, * ) 'tx('//trim(i2s(l-1))//')=', T(l)
              k1 = LEN_TRIM(cmd)
              CALL matc( cmd, tmp_str, k1 )
            END DO
@@ -2302,10 +2285,11 @@ CALL Info( 'VariableGet', Message, Level=7 )
 !------------------------------------------------------------------------------
      TYPE(ValueList_t), POINTER :: ptr
 
-     TYPE(Variable_t), POINTER :: Variable, CVar
+     TYPE(Variable_t), POINTER :: Variable, CVar, TVar
 
      REAL(KIND=dp) :: T(MAX_FNC)
-     INTEGER :: i,j,k,nlen,N1,N2
+     INTEGER :: i,j,k,nlen,N1,N2,k1,l
+     CHARACTER(LEN=2048) :: tmp_str, cmd
 !------------------------------------------------------------------------------
      ptr => ListFind(List,Name,Found)
      IF ( .NOT.ASSOCIATED(ptr) ) RETURN
@@ -2343,55 +2327,39 @@ CALL Info( 'VariableGet', Message, Level=7 )
        END IF
    
      
-     CASE( LIST_TYPE_VARIABLE_TENSOR )
-       IF ( ptr % DependName /= 'coordinate' ) THEN
-          Variable => VariableGet( CurrentModel % Variables,ptr % DependName ) 
-          IF ( .NOT. ASSOCIATED( Variable ) ) THEN
-             WRITE( Message, * ) 'Can''t find independent variable:[', &
-                TRIM(ptr % DependName),']' // &
-                  'for dependent variable:[', TRIM(Name),']'
-             CALL Fatal( 'ListGetReal', Message )
-          END IF
-       ELSE
-          Variable => VariableGet( CurrentModel % Variables,'Coordinate 1' )
-       END IF
+     CASE( LIST_TYPE_VARIABLE_TENSOR,LIST_TYPE_VARIABLE_TENSOR_STR )
+       TVar => VariableGet( CurrentModel % Variables, 'Time' ) 
+       WRITE( cmd, '(a,e15.8)' ) 'tx=0; st = ', TVar % Values(1)
+       k = LEN_TRIM(cmd)
+       CALL matc( cmd, tmp_str, k )
 
        DO i=1,n
          k = NodeIndexes(i)
-         IF ( ASSOCIATED(Variable % Perm) ) k = Variable % Perm( k )
-         IF ( k > 0 ) THEN
-           IF ( SIZE( Variable % Values ) >= k ) THEN
+         CALL ListParseStrToValues( Ptr % DependName, Ptr % DepNameLen, k, Name, T, j)
+         IF ( ANY(T(1:j)==HUGE(1._dP)) ) CYCLE
 
-             IF ( ptr % DependName == 'coordinate' ) THEN
-               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 1' )
-               T(1) = CVar % Values(k)
-               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 2' )
-               T(2) = CVar % Values(k)
-               CVar => VariableGet( CurrentModel % Variables, 'Coordinate 3' )
-               T(3) = CVar % Values(k)
-             ELSE
-               IF ( Variable % DOFs == 1 ) THEN
-                  T = Variable % Values(k)
-               ELSE
-                  DO j=1,Variable % DOFs
-                     T(j) = Variable % Values(Variable % DOFs*(k-1)+j)
-                  END DO
-               END IF
-             END IF
-           ELSE
-             T(1) = Variable % Values(1)
-           END IF
-           IF ( ptr % PROCEDURE /= 0 ) THEN
-             G => F(:,:,i)
-             CALL ExecRealArrayFunction( ptr % PROCEDURE,CurrentModel, &
-                       NodeIndexes(i), T, G )
-           ELSE
-             DO j=1,N1
-               DO k=1,N2
-                 F(j,k,i) = InterpolateCurve(ptr % TValues, ptr % FValues(j,k,:),T(1))
-               END DO
+         IF ( ptr % Type==LIST_TYPE_VARIABLE_TENSOR_STR) THEN
+           DO l=1,j
+             WRITE( cmd, '(a,g19.12)' ) 'tx('//trim(i2s(l-1))//')=', T(l)
+             k1 = LEN_TRIM(cmd)
+             CALL matc( cmd, tmp_str, k1 )
+           END DO
+
+           cmd = ptr % CValue
+           k1 = LEN_TRIM(cmd)
+           CALL matc( cmd, tmp_str, k1 )
+           READ( tmp_str(1:k1), * ) ((F(j,k,i),k=1,N2),j=1,N1)
+         ELSE IF ( ptr % PROCEDURE /= 0 ) THEN
+           G => F(:,:,i)
+           CALL ExecRealArrayFunction( ptr % PROCEDURE,CurrentModel, &
+                     NodeIndexes(i), T, G )
+         ELSE
+           DO j=1,N1
+             DO k=1,N2
+               F(j,k,i) = InterpolateCurve(ptr % TValues, ptr % FValues(j,k,:), &
+                                T(1), ptr % CubicCoeff )
              END DO
-           END IF
+           END DO
          END IF
        END DO
 
@@ -2442,7 +2410,8 @@ CALL Info( 'VariableGet', Message, Level=7 )
            IF ( ASSOCIATED(Variable % Perm) ) k = Variable % Perm(K)
            IF ( k > 0 ) THEN
              T = Variable % Values(k)
-             F(i) = DerivateCurve(ptr % TValues,ptr % FValues(1,1,:),T)
+             F(i) = DerivateCurve(ptr % TValues,ptr % FValues(1,1,:), &
+                               T, ptr % CubicCoeff )
            END IF
          END DO
      END SELECT

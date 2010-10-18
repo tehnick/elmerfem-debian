@@ -319,9 +319,7 @@ CONTAINS
         Perm => Solver % Variable % Perm
       ELSE
         ALLOCATE( Perm(Ndeg), STAT=istat )
-        IF ( istat /= 0 ) THEN
-          CALL Fatal( 'AddEquation', 'Memory allocation error.' )
-        END IF
+        IF ( istat /= 0 ) CALL Fatal( 'AddEquation', 'Memory allocation error.' )
       END IF
       
       Solver % Matrix => CreateMatrix( CurrentModel, Solver, Solver % Mesh, Perm, &
@@ -331,6 +329,7 @@ CONTAINS
       IF ( ASSOCIATED( Solver % Matrix ) ) Nrows = Solver % Matrix % NumberOfRows
       IF ( .NOT. ASSOCIATED( Solver % Variable ) ) THEN
         ALLOCATE( Solution(Nrows), STAT=istat )
+        IF ( istat /= 0 ) CALL Fatal( 'AddEquation', 'Memory allocation error.' )
         
         ! First add components to the variable list separately (must be done
         ! this way for the output routines to work properly...):
@@ -378,9 +377,7 @@ CONTAINS
         Perm => Solver % Variable % Perm
       ELSE
         ALLOCATE( Perm(NDeg),STAT=istat )
-        IF ( istat /= 0 ) THEN
-          CALL Fatal( 'AddEquation', 'Elmer Solver: Memory allocation error.' )
-        END IF
+        IF ( istat /= 0 ) CALL Fatal( 'AddEquation', 'Memory allocation error.' )
       END IF
       
       Solver % Matrix => CreateMatrix( CurrentModel, Solver, Solver % Mesh, &
@@ -389,48 +386,18 @@ CONTAINS
       Nrows = 3*Ndeg
       IF ( ASSOCIATED( Solver % Matrix ) ) Nrows = Solver % Matrix % NumberOfRows
       IF ( .NOT. ASSOCIATED( Solver % Variable ) ) THEN
-        ALLOCATE( Solution(Nrows), STAT=istat )
-        
-        Component => Solution( 1 : Nrows : 3 )
-        CALL VariableAdd( Solver % Mesh % Variables,Solver % Mesh,Solver, &
-            'Magnetic Field 1', 1, Component, Perm,Output=VariableOutput )
+        ALLOCATE( Solution (Nrows), STAT=istat)
+        IF ( istat /= 0 ) CALL Fatal( 'AddEquation', 'Memory allocation error.' )
 
-        Component => Solution( 2 : Nrows : 3 )
-        CALL VariableAdd( Solver % Mesh % Variables,Solver % Mesh,Solver, &
-            'Magnetic Field 2', 1, Component, Perm,Output=VariableOutput )
-
-        Component => Solution( 3 : Nrows : 3 )
-        CALL VariableAdd( Solver % Mesh % Variables,Solver % Mesh,Solver, &
-            'Magnetic Field 3', 1, Component, Perm,Output=VariableOutput )
-        !------------------------------------------------------------------------------
-        !         Then add the thing itself
-        !------------------------------------------------------------------------------
-        CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver, &
-            'Magnetic Field',3,Solution,Perm,Output=VariableOutput )
-        
-        Solver % Variable => VariableGet( Solver % Mesh % Variables, 'Magnetic Field' )
-        
+        CALL VariableAddVector( Solver % Mesh % Variables, Solver % Mesh,Solver, &
+            'Magnetic Field',3,Solution,Perm,Output=VariableOutput )        
+        Solver % Variable => VariableGet( Solver % Mesh % Variables, 'Magnetic Field' )        
         Solution = 0.0d0
-        !------------------------------------------------------------------------------
-        !         Add first components to the variable list separately...
-        !------------------------------------------------------------------------------
-        ALLOCATE( Solution(Nrows), STAT=istat )
-        
-        Component => Solution( 1 : Nrows : 3 )
-        CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver, &
-            'Electric Current 1', 1, Component, Perm,Output=VariableOutput )
-        
-        Component => Solution( 2 : Nrows : 3 )
-        CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver, &
-            'Electric Current 2', 1, Component, Perm,Output=VariableOutput )
-        
-        Component => Solution( 3 : Nrows : 3 )
-        CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver, &
-            'Electric Current 3', 1, Component, Perm,Output=VariableOutput )
-        !------------------------------------------------------------------------------
-        !         Then add the thing itself
-        !------------------------------------------------------------------------------
-        CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver,&
+
+	NULLIFY( Solution )	
+        ALLOCATE( Solution ( Nrows ), STAT=istat)
+        IF ( istat /= 0 ) CALL Fatal( 'AddEquation', 'Memory allocation error.' )
+        CALL VariableAddVector( Solver % Mesh % Variables, Solver % Mesh,Solver,&
             'Electric Current', 3, Solution, Perm, Output=VariableOutput )
         Solution = 0.0d0
       END IF
@@ -460,31 +427,11 @@ CONTAINS
       Nrows = DOFs * Ndeg
       IF ( ASSOCIATED( Solver % Matrix ) ) Nrows = Solver % Matrix % NumberOfRows
       IF ( .NOT.ASSOCIATED( Solver % Variable ) ) THEN
-        ALLOCATE( Solution(Nrows), STAT=istat )
-        
-        ! First add the components to the variable list separately:
-        !----------------------------------------------------------
-        Component => Solution( 1 : Nrows : DOFs )
-        CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver, &
-            'Displacement 1',1, Component, Perm,Output=VariableOutput )
-        
-        Component => Solution( 2 : Nrows : DOFs )
-        CALL VariableAdd( Solver % Mesh % Variables,Solver % Mesh,Solver, &
-            'Displacement 2', 1, Component, Perm,Output=VariableOutput )
-        
-        IF ( CoordinateSystemDimension() >= 3 ) THEN
-          Component => Solution( 3 : Nrows : DOFs )
-          CALL VariableAdd( Solver % Mesh % Variables,Solver % Mesh,Solver,  &
-              'Displacement 3', 1, Component, Perm, Output=VariableOutput )
-        END IF
-        
-        ! Then add the thing itself:
-        !---------------------------
-        CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver,&
-            'Displacement',DOFs,Solution,Perm,Output=VariableOutput )
-        
-        Solver % Variable => VariableGet(Solver % Mesh % Variables, 'Displacement')
-        
+        ALLOCATE( Solution ( Nrows ), STAT=istat)
+        IF ( istat /= 0 ) CALL Fatal( 'AddEquation', 'Memory allocation error.' )
+        CALL VariableAddVector( Solver % Mesh % Variables, Solver % Mesh,Solver,&
+            'Displacement',DOFs,Solution,Perm,Output=VariableOutput )        
+        Solver % Variable => VariableGet(Solver % Mesh % Variables, 'Displacement')        
         Solution = 0.0D0
       END IF
       CALL AddSolverProcedure( Solver, StressSolver )
@@ -513,27 +460,9 @@ CONTAINS
       Nrows = DOFs * Ndeg
       IF ( ASSOCIATED( Solver % Matrix ) ) Nrows = Solver % Matrix % NumberOfRows
       IF (.NOT. ASSOCIATED( Solver % Variable ) ) THEN
-        ALLOCATE( Solution(Nrows), STAT=istat )
-        
-        ! First add the components to the variable list separately:
-        !----------------------------------------------------------
-        Component => Solution( 1 : Nrows : DOFs )
-        CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver, &
-            'Mesh Update 1',1, Component, Perm,Output=VariableOutput )
-        
-        Component => Solution( 2 : Nrows : DOFs )
-        CALL VariableAdd( Solver % Mesh % Variables,Solver % Mesh,Solver, &
-            'Mesh Update 2', 1, Component, Perm,Output=VariableOutput )
-        
-        IF ( CoordinateSystemDimension() >= 3 ) THEN
-          Component => Solution( 3 : Nrows : DOFs )
-          CALL VariableAdd( Solver % Mesh % Variables,Solver % Mesh,Solver,  &
-              'Mesh Update 3', 1, Component, Perm,Output=VariableOutput )
-        END IF
-        
-        !      Then add the thing itself...
-        !------------------------------------------------------------------------------
-        CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver,&
+        ALLOCATE( Solution (Nrows), STAT=istat)
+        IF ( istat /= 0 ) CALL Fatal( 'AddEquation', 'Memory allocation error.' )
+        CALL VariableAddVector( Solver % Mesh % Variables, Solver % Mesh,Solver,&
             'Mesh Update',DOFs,Solution,Perm,Output=VariableOutput )
         Solution = 0.0d0
         Solver % Variable => VariableGet( Solver % Mesh % Variables, 'Mesh Update' )
@@ -542,28 +471,10 @@ CONTAINS
       Var =>  VariableGet( Solver % Mesh % Variables, 'Mesh Velocity')
       IF ( .NOT. ASSOCIATED(Var) ) THEN
         IF ( Transient ) THEN
-          ALLOCATE( Solution(Nrows), STAT=istat )
-          IF ( istat /= 0 ) THEN
-            CALL Fatal( 'AddEquation', 'Memory allocation error.' )
-          END IF
-          
-          Component => Solution( 1 : Nrows : DOFs )
-          CALL VariableAdd( Solver % Mesh % Variables,Solver % Mesh, &
-              Solver, 'Mesh Velocity 1',1, Component, Perm,Output=VariableOutput)
-          
-          Component => Solution( 2 : Nrows : DOFs )
-          CALL VariableAdd( Solver % Mesh % Variables,Solver % Mesh, &
-              Solver, 'Mesh Velocity 2', 1, Component, Perm,Output=VariableOutput)
-          
-          IF ( CoordinateSystemDimension() >= 3 ) THEN
-            Component => Solution( 3 : Nrows : DOFs )
-            CALL VariableAdd(Solver % Mesh % Variables,Solver % Mesh, &
-                Solver, 'Mesh Velocity 3', 1, Component, Perm,Output=VariableOutput)
-          END IF
-          
-          CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh,Solver,&
-              'Mesh Velocity',DOFs,Solution,Perm,Output=VariableOutput )
-          
+          ALLOCATE( Solution ( Nrows ), STAT=istat) 
+	  IF ( istat /= 0 ) CALL Fatal( 'AddEquation', 'Memory allocation error.' )
+          CALL VariableAddVector( Solver % Mesh % Variables, Solver % Mesh,Solver,&
+              'Mesh Velocity',DOFs,Solution,Perm,Output=VariableOutput )          
           Solution = 0.0D0
         END IF
       END IF
@@ -767,11 +678,20 @@ CONTAINS
         END IF
       END IF
 
+      IF( ListGetLogical( Solver % Values,'Radiation Solver',Found ) ) THEN
+        CALL RadiationFactors( Solver, .TRUE.)
+      END IF
+
+
       !------------------------------------------------------------------------------
     END SELECT
 
-    IF ( ASSOCIATED(Solver % Matrix) ) Solver % Matrix % Comm = MPI_COMM_WORLD
- 
+    IF ( ASSOCIATED(Solver % Matrix) ) THEN
+      Solver % Matrix % Comm = MPI_COMM_WORLD
+      IF ( Solver % Matrix % DGMatrix ) &
+          Solver % Variable % Type=Variable_on_nodes_on_elements
+    END IF
+
     !------------------------------------------------------------------------------
     ! Add the exported variables which are typically auxiliary variables derived
     ! from the solution without their own matrix equation.  
@@ -844,10 +764,11 @@ CONTAINS
         Solution = 0.0d0
         IF( ASSOCIATED(Perm) ) THEN
           CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver,&
-              var_name, DOFs, Solution, Solver % Variable % Perm,Output=VariableOutput )
+              var_name, DOFs, Solution, Solver % Variable % Perm, &
+                 Output=VariableOutput, Type=Solver % Variable % Type )
         ELSE          
           CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver,&
-              var_name, DOFs, Solution )
+              var_name, DOFs, Solution, Type=Solver % Variable % Type )
         END IF
         
         IF ( DOFs > 1 .AND. .NOT. VariableGlobal ) THEN
@@ -857,10 +778,11 @@ CONTAINS
             Component => Solution( j:nSize-DOFs+j:DOFs )
             IF( ASSOCIATED(Perm) ) THEN
               CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver,&
-                  tmpname, 1, Component, Perm, Output=VariableOutput )
+                  tmpname, 1, Component, Perm,  &
+                     Output=VariableOutput, Type=Solver % Variable % Type )
             ELSE
               CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver,&
-                  tmpname, 1, Component )               
+                  tmpname, 1, Component, Type=Solver % Variable % Type )
             END IF
           END DO
         END IF
@@ -1088,29 +1010,15 @@ CONTAINS
           ALLOCATE( Solution( SIZE( Solver % Variable % Values) ) )
           Solution = 0.0_dp
           str = TRIM( Solver % Variable % Name ) // ' Velocity'
-          CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+          CALL VariableAddVector( Solver % Mesh % Variables, Solver % Mesh, Solver, &
               str, Solver % Variable % Dofs, Solution, Solver % Variable % Perm )
-          
-          DO k=1,Solver % Variable % DOFs
-            Component => Solution(k::Solver % Variable % DOFs )
-            str = ComponentName( Solver % Variable % Name) // ' Velocity ' // CHAR(i+ICHAR('0'))
-            CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
-                str, 1, Component, Solver % Variable % Perm )
-          END DO
           NULLIFY( Solution )
         ELSE IF ( Solver % TimeOrder >= 2 ) THEN
           Component => Solver % Variable % PrevValues(:,1)
           str = TRIM( Solver % Variable % Name ) // ' Velocity'
-          CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+          CALL VariableAddVector( Solver % Mesh % Variables, Solver % Mesh, Solver, &
               str, Solver % Variable % Dofs, Component, Solver % Variable % Perm, &
               Secondary = .TRUE. )
-          
-          DO k=1,Solver % Variable % DOFs
-            Component => Solver % Variable % PrevValues(k::Solver % Variable % DOFs,1)          
-            str = ComponentName( Solver % Variable % Name) // ' Velocity ' // CHAR(i+ICHAR('0'))
-            CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
-                str, 1, Component, Solver % Variable % Perm, Secondary = .TRUE. )
-          END DO
         END IF
       END IF
 
@@ -1136,6 +1044,19 @@ CONTAINS
 
     ELSE
       Solver % TimeOrder = 0
+
+      IF( ListGetLogical( Solver % Values,'Calculate Derivative',Found) ) THEN
+PRINT *,'adding derivative'
+
+        NULLIFY( Solution ) 
+        ALLOCATE( Solution( SIZE( Solver % Variable % Values) ) )
+        Solution = 0.0_dp
+        str = TRIM( Solver % Variable % Name ) // ' Derivative'
+        CALL VariableAddVector( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+            str, Solver % Variable % Dofs, Solution, Solver % Variable % Perm )
+        NULLIFY( Solution )
+      END IF
+
       IF ( EigAnal ) THEN
         ComplexFlag = ListGetLogical( Solver % Values,  'Eigen System Complex', Found )
         IF ( .NOT. Found ) ComplexFlag = .FALSE.
@@ -1336,7 +1257,7 @@ CONTAINS
     REAL(KIND=dp) :: RelativeChange, Tolerance, PrevDT = 0.0d0, Relaxation
     INTEGER :: i,j,k,l,n,ierr,istat
     LOGICAL :: Found, Stat, AbsNorm, Scanning, Convergence, RungeKutta, MeActive, &
-       Relax, NeedSol, IsCoupledSolver, IsAssemblySolver
+       NeedSol, IsCoupledSolver, IsAssemblySolver, CalculateDerivative, TestConvergence
     LOGICAL, ALLOCATABLE :: DoneThis(:), AfterConverged(:)
     TYPE(Solver_t), POINTER :: Solver
     TYPE(Mesh_t),   POINTER :: Mesh
@@ -1467,16 +1388,25 @@ CONTAINS
             Solver % Variable % PrevNorm = Solver % Variable % Norm
           END IF
 
-!------------------------------------------------------------------------------
-          Relaxation = ListGetConstReal( Solver % Values, &
-              'Steady State Relaxation Factor', Relax )
-          Relax = Relax .AND. (Relaxation /= 1.0d0)
-          
-          NeedSol = ( ListGetString( Solver % Values, &
-              'Steady State Convergence Measure', Stat ) /= 'norm')  
-          NeedSol = NeedSol .AND. Stat
+          ! There are some operations that require that the previous steady state values
+          ! are present. Check for these operations.
+          !------------------------------------------------------------------------------
+          CalculateDerivative = ListGetLogical( Solver % Values, &
+                'Calculate Derivative', Stat )
 
-          IF ( ( Relax .OR. NeedSol ) .AND. n>0 ) THEN
+          NeedSol = CalculateDerivative
+          IF(.NOT. NeedSol ) THEN
+            NeedSol = ( ListGetString( Solver % Values, &
+                'Steady State Convergence Measure', Stat ) /= 'norm')  
+            NeedSol = NeedSol .AND. Stat
+          END IF
+          IF(.NOT. NeedSol ) THEN
+            Relaxation = ListGetConstReal( Solver % Values, &
+                'Steady State Relaxation Factor', Stat )
+            NeedSol = Stat .AND. (Relaxation /= 1.0d0)
+          END IF
+
+          IF ( NeedSol .AND. n > 0 ) THEN
             Stat = ASSOCIATED(Solver % Variable % SteadyValues)
             IF(Stat .AND. SIZE(Solver % Variable % SteadyValues) /= n) THEN
               DEALLOCATE(Solver % Variable % SteadyValues)
@@ -1538,58 +1468,67 @@ CONTAINS
 !------------------------------------------------------------------------------
 
            IF ( Scanning ) THEN
+             
+             TestConvergence = ( i >= CoupledMinIter .AND. i /= CoupledMaxIter )
 
-              IF ( i >= CoupledMinIter ) THEN
-                 IF ( i /= CoupledMaxIter ) THEN
+             IF ( TestConvergence .OR. CalculateDerivative ) THEN
+               IF ( ParEnv % PEs>1 ) THEN
+                 IF ( ParEnv % Active(ParEnv % MyPE+1) ) &
+                     CALL ComputeChange(Solver,.TRUE., n)
+               ELSE
+                 CALL ComputeChange(Solver,.TRUE.)
+                 !                 CALL ComputeChange(Solver,.TRUE.,n)
+               END IF
 
-                    IF ( ParEnv % PEs>1 ) THEN
-                       IF ( ParEnv % Active(ParEnv % MyPE+1) ) &
-                            CALL ComputeChange(Solver,.TRUE., n)
-                    ELSE
-                       CALL ComputeChange(Solver,.TRUE.)
-                       !                 CALL ComputeChange(Solver,.TRUE.,n)
-                    END IF
-                    RelativeChange = Solver % Variable % SteadyChange
-                    Tolerance = ListGetConstReal( Solver % Values,   &
-                         'Steady State Convergence Tolerance', Found ) 
-                    
-                    IF ( Found ) THEN
-                       DoneThis(k) = (RelativeChange < Tolerance)
-                    ELSE
-                       DoneThis(k) = .TRUE.
-                    END IF
-                 END IF
-              END IF
-	
-           ELSE
+               ! The ComputeChange subroutine sets a flag to zero if not yet converged (otherwise -1/1)
+               !----------------------------------------------------------------------
+               IF( TestConvergence ) THEN
+                 IF( Solver % Variable % SteadyConverged == 0 ) THEN
+                   DoneThis(k) = .FALSE.
+                 ELSE                   
+                   DoneThis(k) = .TRUE.
+                 END IF                   
+               END IF
+             END IF
+             
+           ELSE IF( TransientSimulation ) THEN
+             
+             TestConvergence = ( i >= CoupledMinIter .AND. i /= CoupledMaxIter )
+             IF ( TestConvergence ) THEN
+               IF ( ParEnv % PEs>1 ) THEN
+                 IF ( ParEnv % Active(ParEnv % MyPE+1) ) &
+                     CALL ComputeChange(Solver,.TRUE., n)
+               ELSE
+                 CALL ComputeChange(Solver,.TRUE.)
+                 !                 CALL ComputeChange(Solver,.TRUE.,n)
+               END IF
+               IF( Solver % Variable % SteadyConverged == 0 ) THEN
+                 DoneThis(k) = .FALSE.
+               ELSE                   
+                 DoneThis(k) = .TRUE.
+               END IF
+             END IF
 
-              IF ( i >= CoupledMinIter .OR. .NOT. TransientSimulation ) THEN
-                 IF ( i /= CoupledMaxIter .OR. .NOT. TransientSimulation ) THEN
+           ELSE    ! Steady-state
+             IF ( ParEnv % PEs > 1 ) THEN
+               IF ( ParEnv % Active(ParEnv % MyPE+1) ) &
+                   CALL ComputeChange(Solver,.TRUE., n)
+             ELSE
+               CALL ComputeChange(Solver,.TRUE.)
+               !                 CALL ComputeChange(Solver,.TRUE.,n)
+             END IF             
 
-                    IF ( ParEnv % PEs>1 ) THEN
-                       IF ( ParEnv % Active(ParEnv % MyPE+1) ) &
-                            CALL ComputeChange(Solver,.TRUE., n)
-                    ELSE
-                       CALL ComputeChange(Solver,.TRUE.)
-                       !                 CALL ComputeChange(Solver,.TRUE.,n)
-                    END IF
-                    RelativeChange = Solver % Variable % SteadyChange
-                    Tolerance = ListGetConstReal( Solver % Values,   &
-                         'Steady State Convergence Tolerance', Found ) 
-
-                    IF ( Found ) THEN
-                       DoneThis(k) = (RelativeChange < Tolerance)
-                    ELSE
-                       DoneThis(k) = .TRUE.
-                    END IF
-                 END IF
-              END IF
+             IF( Solver % Variable % SteadyConverged == 0 ) THEN
+               DoneThis(k) = .FALSE.
+             ELSE                   
+               DoneThis(k) = .TRUE.
+             END IF
            END IF
-
-          CALL ParallelAllReduceAnd( DoneThis(k) )
-          IF( ALL(DoneThis) ) EXIT
+           
+           CALL ParallelAllReduceAnd( DoneThis(k) )
+           IF( ALL(DoneThis) ) EXIT
 !------------------------------------------------------------------------------
-       END DO
+         END DO
 !------------------------------------------------------------------------------
        Model % Mesh % Changed = .FALSE.
        IF ( ALL(DoneThis) ) EXIT
@@ -2010,7 +1949,7 @@ CONTAINS
       NoTests = GetInteger( SolverParams,'Nonlinear System Linesearch Iterations',GotIt)
       IF(.NOT. GotIt) NoTests = NoIterations
       CALL ListAddString(Solver % Values,'Nonlinear System Convergence Measure','residual')
-      CALL ListAddLogical(Solver % Values,'Skip Compute Change',.TRUE.)
+      CALL ListAddLogical(Solver % Values,'Skip Compute Nonlinear Change',.TRUE.)
     END IF
        
     Amat => GetMatrix()
@@ -2799,12 +2738,14 @@ END SUBROUTINE CoupledSolver
      IF ( ASSOCIATED(Solver % Matrix) ) THEN
        ParEnv % ActiveComm = Solver % Matrix % Comm
        IF ( ParEnv % PEs>1 .AND. MeActive ) THEN
-         IF (.NOT. ASSOCIATED(Solver % Matrix % ParMatrix) ) &
-           CALL ParallelInitMatrix(Solver, Solver % Matrix )
+         IF ( ASSOCIATED(Solver % Mesh % ParallelInfo % Interface) ) THEN
+           IF (.NOT. ASSOCIATED(Solver % Matrix % ParMatrix) ) &
+             CALL ParallelInitMatrix(Solver, Solver % Matrix )
 
-         Solver % Matrix % ParMatrix % ParEnv % ActiveComm = &
-                  Solver % Matrix % Comm
-         ParEnv = Solver % Matrix % ParMatrix % ParEnv
+           Solver % Matrix % ParMatrix % ParEnv % ActiveComm = &
+                    Solver % Matrix % Comm
+           ParEnv = Solver % Matrix % ParMatrix % ParEnv
+         END IF
        END IF
      END IF
      str = ListGetString( Solver  % Values,'Procedure', Found )
