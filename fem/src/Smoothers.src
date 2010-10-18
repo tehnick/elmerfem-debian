@@ -51,7 +51,8 @@ MODULE Smoothers
 CONTAINS
 
 !------------------------------------------------------------------------------
-    FUNCTION MGSmooth( Solver, A, Mesh, x, b, r, Level, DOFs, PreSmooth, CF) RESULT(RNorm)
+    FUNCTION MGSmooth( Solver, A, Mesh, x, b, r, Level, DOFs, &
+        PreSmooth, LowestSmooth, CF) RESULT(RNorm)
 !------------------------------------------------------------------------------
       USE ParallelUtils
       TYPE(Solver_t), POINTER :: Solver
@@ -59,11 +60,11 @@ CONTAINS
       TYPE(Mesh_t) :: Mesh
       INTEGER :: Level, DOFs
       REAL(KIND=dp), TARGET :: x(:),b(:),r(:),RNorm, rphi=5.0_dp
-      LOGICAL PreSmooth
+      LOGICAL, OPTIONAL :: PreSmooth, LowestSmooth
       INTEGER, POINTER, OPTIONAL :: CF(:)
 !------------------------------------------------------------------------------
       CHARACTER(LEN=MAX_NAME_LEN) :: IterMethod, im
-      LOGICAL :: Parallel, Found
+      LOGICAL :: Parallel, Found, Lowest, Pre
       TYPE(Matrix_t), POINTER :: M
       INTEGER :: n, Rounds, InvLevel
       INTEGER, POINTER :: Iters(:)
@@ -91,10 +92,23 @@ CONTAINS
       n = M % NumberOfRows
       InvLevel = 1 + Solver % MultiGridTotal - Level
 
+      Lowest = .FALSE.
+      IF( PRESENT( LowestSmooth ) ) Lowest = LowestSmooth
+
+      Pre = .FALSE.
+      IF( PRESENT( PreSmooth ) ) Pre = PreSmooth
+      
+
 !      Smoothing iterative method:
 !      ---------------------------
-      IterMethod = ListGetString( Solver % Values, 'MG Smoother', Found )
-      
+      IF( Lowest )THEN
+        IterMethod = ListGetString( Solver % Values, 'MG Lowest Smoother', Found )
+      ELSE
+        Found = .FALSE.
+      END IF
+      IF(.NOT. Found) THEN
+        IterMethod = ListGetString( Solver % Values, 'MG Smoother', Found )
+      END IF
       IF ( .NOT. Found ) THEN
         IterMethod = ListGetString( Solver % Values, &
             'Linear System Iterative Method', Found )
@@ -107,7 +121,11 @@ CONTAINS
         END IF
       END IF
 
-      IF(Presmooth) THEN
+      
+      IF(Lowest) THEN
+        Rounds = ListGetInteger( Solver % Values,'MG Lowest Smoothing Iterations',Found)
+      END IF
+      IF(Pre .OR. (Lowest .AND. .NOT. Found)) THEN
         Iters => ListGetIntegerArray( Solver % Values,'MG Pre Smoothing Iterations',Found)
         IF(Found) THEN
           Rounds = Iters(MIN(InvLevel,SIZE(Iters)))
@@ -854,7 +872,7 @@ CONTAINS
          r(1:n) = b(1:n) - r(1:n)
          st_norm = SQRT(SUM(r**2))
 
-if ( Rounds == 0 ) return
+IF ( Rounds == 0 ) RETURN
 
 DO it=1,200
          k = 0
@@ -924,7 +942,7 @@ DO it=1,200
          IF ( it > Rounds ) THEN
            IF ( SQRT(SUM(r**2)) < 0.5_dp*st_norm ) EXIT
          END IF
-end do
+END DO
 !------------------------------------------------------------------------------
       END SUBROUTINE Uzawa
 !------------------------------------------------------------------------------
@@ -1111,7 +1129,7 @@ end do
 !------------------------------------------------------------------------------
       SUBROUTINE Vanka( n, A, M, x, b, r, Rounds )
 !------------------------------------------------------------------------------
-use linearalgebra
+USE linearalgebra
         TYPE(Matrix_t), POINTER :: A,M
         INTEGER :: Rounds
         REAL(KIND=dp) :: x(:),b(:),r(:)
@@ -1143,7 +1161,7 @@ use linearalgebra
             element => Mesh % Elements(t)
             IF ( ANY(Var % Perm(Element % NodeIndexes)<=0) ) CYCLE
 
-            nn = Element % Type % NumberOfnodes
+            nn = Element % TYPE % NumberOfnodes
             nsize = nn*DOFs
 
             k = 0
@@ -1263,4 +1281,4 @@ use linearalgebra
 
     END FUNCTION MGSmooth
 
-  END MODULE Smoothers
+END MODULE Smoothers

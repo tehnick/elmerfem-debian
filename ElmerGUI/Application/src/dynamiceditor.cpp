@@ -81,7 +81,7 @@ DynamicEditor::~DynamicEditor()
 }
 
 //----------------------------------------------------------------------------
-void DynamicEditor::setupTabs(QDomDocument &elmerDefs, QString Section, int ID)
+void DynamicEditor::setupTabs(QDomDocument *elmerDefs, const QString &Section, int ID)
 {
   // Clear:
   //-------
@@ -103,7 +103,7 @@ void DynamicEditor::setupTabs(QDomDocument &elmerDefs, QString Section, int ID)
 
   // Get root element of elmerDefs:
   //-------------------------------
-  root = elmerDefs.documentElement();
+  root = elmerDefs->documentElement();
 
   tabWidget = new QTabWidget;
   //tabWidget->setTabShape(QTabWidget::Triangular);
@@ -133,24 +133,20 @@ void DynamicEditor::setupTabs(QDomDocument &elmerDefs, QString Section, int ID)
 
       param = section.firstChildElement("Parameter");
       
-      for( ; !param.isNull(); param=param.nextSiblingElement(), params++ ) {
+      // ML: Added argument "Parameter" for nextSiblingElement(), 5. August 2010:
+      for( ; !param.isNull(); param=param.nextSiblingElement("Parameter"), params++ ) {
 
         // label
         QString widget_type = param.attribute("Widget","Edit");
         QString widget_enabled = param.attribute("Enabled","True");
         QString widget_visible = param.attribute("Visible","True");
-
         QString paramType = param.firstChildElement("Type").text().trimmed();
-
         QString labelName = param.firstChildElement("Name").text().trimmed();
         QString sifName   = param.firstChildElement("SifName").text().trimmed();
         if ( sifName == "" ) sifName = labelName;
-
         QString paramDefault = param.firstChildElement("DefaultValue").text().trimmed();
-
         QString whatis    = param.firstChildElement("Whatis").text().trimmed();
         QString statusTip = param.firstChildElement("StatusTip").text().trimmed();
-
         QString fullName  = "/"+name.text().trimmed()+"/"+Section+"/"+labelName+"/"+QString::number(ID);
         h.widget = NULL;
 
@@ -159,10 +155,22 @@ void DynamicEditor::setupTabs(QDomDocument &elmerDefs, QString Section, int ID)
           h.widget = edit->lineEdit;
           edit->lineEdit->setText(paramDefault);
           edit->name = fullName;
-          connect(edit->lineEdit, SIGNAL(returnPressed()), edit, SLOT(editSlot()));
-          connect(edit->lineEdit, SIGNAL(textChanged(QString)), this, SLOT(textChangedSlot(QString)));
+          connect(edit->lineEdit, SIGNAL(returnPressed()),
+		  edit, SLOT(editSlot()));
+          connect(edit->lineEdit, SIGNAL(textChanged(QString)),
+		  this, SLOT(textChangedSlot(QString)));
 
-        } else if ( widget_type == "Combo" ) {
+        } else if (widget_type == "TextEdit") {
+	  QTextEdit *textEdit = new QTextEdit;
+	  // set height to 5..8 lines of current font:
+	  QFont currentFont = textEdit->currentFont();
+	  QFontMetrics fontMetrics(currentFont);
+	  int fontHeight = fontMetrics.height();
+	  textEdit->setMinimumHeight(5*fontHeight);
+	  textEdit->setMaximumHeight(8*fontHeight);
+	  h.widget = textEdit;
+
+	} else if ( widget_type == "Combo" ) {
           QComboBox *combo = new QComboBox;
           h.widget = combo;
 
@@ -202,14 +210,25 @@ void DynamicEditor::setupTabs(QDomDocument &elmerDefs, QString Section, int ID)
         if ( h.widget ) {
           h.widget->setWhatsThis(whatis);
           h.widget->setStatusTip(statusTip);
-
           h.widget->setProperty( "dom address",fullName);
           h.elem = param;
 
           if ( widget_enabled == "False" ) h.widget->setEnabled(false);
 
-          h.widget->setFixedHeight(18);
-          if ( widget_type != "Label" ) {
+	  if(widget_type != "TextEdit") h.widget->setFixedHeight(18);
+
+	  if(widget_type == "TextEdit") {
+            QLabel *textEditLabel = new QLabel;
+            textEditLabel->setText(labelName);
+            h.label = textEditLabel;
+	    grid->addWidget(h.widget, params, 0, 1, 2);
+
+            if ( widget_visible == "False" ) {
+              h.label->hide();
+              h.widget->hide();
+            }
+
+	  } else if ( widget_type != "Label" ) {
             QLabel *label = new QLabel;
             label->setText(labelName);
             h.label = label;
@@ -228,27 +247,28 @@ void DynamicEditor::setupTabs(QDomDocument &elmerDefs, QString Section, int ID)
         }
       }
     }
-    // add a dummy widget in the left bottom corner of grid for stretching:
+
+    // add a dummy widget in the left bottom corner:
     QWidget *dummyWidget = new QWidget;
     grid->addWidget(dummyWidget, params, 0);
-
+    grid->setRowStretch(params, 1);
+    
     // put the grid in a widget:
     QWidget *frmWidget = new QWidget;
     frmWidget->setLayout(grid);
-
+    
     // set up the scroll area:
     QScrollArea *src = new QScrollArea;
     src->setWidget(frmWidget);
     src->setMinimumHeight(300);
     src->setWidgetResizable(true);
- 
-   // add the scroll area to tab:
-   if (params>0) {
-     tabWidget->addTab(src, name.text().trimmed());
-   }
-
+    
+    // add the scroll area to the tab:
+    if (params>0)
+      tabWidget->addTab(src, name.text().trimmed());
+    
     tabs++;
-    element = element.nextSiblingElement();
+    element = element.nextSiblingElement("PDE"); // ML: Added "PDE" 5. August 2010
   }
 
   // Buttons:
@@ -275,17 +295,17 @@ void DynamicEditor::setupTabs(QDomDocument &elmerDefs, QString Section, int ID)
   newButton->setIcon(newIcon);
   connect(newButton, SIGNAL(clicked()), this, SLOT(newButtonClicked()));
 
-  QHBoxLayout *nameLayout = new QHBoxLayout;  
+  QHBoxLayout *nameLayout = new QHBoxLayout;
   nameLayout->addWidget(lbl);
   nameLayout->addWidget(nameEdit);
 
-  QHBoxLayout *buttonLayout = new QHBoxLayout;  
+  QHBoxLayout *buttonLayout = new QHBoxLayout;
   buttonLayout->addWidget(newButton);
   buttonLayout->addWidget(applyButton);
   buttonLayout->addWidget(okButton);
   buttonLayout->addWidget(discardButton);
 
-  QHBoxLayout *spareButtonLayout = new QHBoxLayout;  
+  QHBoxLayout *spareButtonLayout = new QHBoxLayout;
   spareButton = new QPushButton(tr("SpareButton"));;
   spareButton->setVisible(false);
   spareButtonLayout->addWidget(spareButton);
@@ -493,7 +513,7 @@ QSize DynamicEditor::minimumSizeHint() const
 //----------------------------------------------------------------------------
 QSize DynamicEditor::sizeHint() const
 {
-  return QSize(400, 300);
+  return QSize(400, 500);
 }
 
 //----------------------------------------------------------------------------
@@ -582,6 +602,14 @@ void DynamicEditor::dumpHash(QDomDocument *projectDoc, QDomElement *item)
       itemLineEdit.appendChild(itemLineEditValue);
       itemWidget.appendChild(itemLineEdit);
       itemWidget.setAttribute("type", "Edit");
+
+    } else if(elem.attribute("Widget") == "TextEdit") {
+      QTextEdit *textEdit = (QTextEdit*)widget;
+      QDomElement itemTextEdit = projectDoc->createElement("value");
+      QDomText itemTextEditValue = projectDoc->createTextNode(textEdit->toPlainText());
+      itemTextEdit.appendChild(itemTextEditValue);
+      itemWidget.appendChild(itemTextEdit);
+      itemWidget.setAttribute("type", "TextEdit");
       
     } else if(elem.attribute("Widget") == "Combo") {
       QComboBox *comboBox = (QComboBox*)widget;
@@ -606,7 +634,8 @@ void DynamicEditor::populateHash(QDomElement *item)
 {
   QDomElement widget = item->firstChildElement("widget");
   
-  for(; !widget.isNull(); widget = widget.nextSiblingElement()) {  
+  // ML: Added argument "widget" for nextSiblingElement(), 5. August 2010:
+  for(; !widget.isNull(); widget = widget.nextSiblingElement("widget")) {
     QString type = widget.attribute("type").trimmed();
     QString key = widget.firstChildElement("key").text().trimmed();
     QString value = widget.firstChildElement("value").text().trimmed();
@@ -646,6 +675,13 @@ void DynamicEditor::populateHash(QDomElement *item)
 	    cout << "Load project: type mismatch with lineEdit" << endl;
 	  QLineEdit *lineEdit = (QLineEdit*)widget;
 	  lineEdit->setText(value);
+	  
+	} else if(elem.attribute("Widget") == "TextEdit") {
+	  if(type != "TextEdit")
+	    cout << "Load project: type mismatch with textEdit" << endl;
+	  QTextEdit *textEdit = (QTextEdit*)widget;
+	  textEdit->clear();
+	  textEdit->append(value);
 	  
 	} else if(elem.attribute("Widget") == "Combo") {
 	  if(type != "Combo")

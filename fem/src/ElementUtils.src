@@ -383,6 +383,9 @@ CONTAINS
         Projector => Model % BCs(This) % PMatrix
         IF ( .NOT. ASSOCIATED(Projector) ) CYCLE
 
+	IF( ListGetLogical( Model % BCs(This) % Values,'Periodic BC Explicit',Found ) ) &
+	  CYCLE
+
         DO i=1,Projector % NumberOfRows
           k = Reorder( Projector % InvPerm(i) )
           IF ( k > 0 ) THEN
@@ -792,7 +795,7 @@ CONTAINS
    n2 = ABS(Normal(2))
    n3 = ABS(Normal(3))
 
-   IF ( n1 <= n3 .OR. n1 <= n2 ) THEN
+   IF ( n1 <= n3 .AND. n2 <= n3 ) THEN
      Tangent1(1) =  0.0_dp
      Tangent1(2) = -Normal(3)
      Tangent1(3) =  Normal(2)

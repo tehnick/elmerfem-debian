@@ -14,26 +14,14 @@ MPI_TARGETS=ElmerSolver_mpi$(EXE_EXT)
 
 if USE_MPI
 ELMER_TARGETS=$(NORMAL_TARGETS) $(MPI_TARGETS)
+INCLUDES=-I$(MPI_INCLUDE_DIR)
 else
 ELMER_TARGETS=$(NORMAL_TARGETS)
 endif
 
 all-local: $(ELMER_TARGETS)
 
-if HAVE_WINDRES
-SUFFIXES: .f90 .so .src .rc
-else
 SUFFIXES: .f90 .so .src 
-endif
-
-
-if HAVE_WINDRES
-.rc.o:
-	windres $^ -o $@
-%.o : %.rc
-	windres $^ -o $@
-endif
-
 
 if USE_CPP
 # Use basic CPP
@@ -72,13 +60,11 @@ EliminatePeriodic.$(SHLEXT): EliminateDirichlet$(OBJ_EXT) EliminatePeriodic$(OBJ
 if USE_MPI
 libelmersolver$(SHL_EXT): $(SOLVEROBJS) binio/libbinio.a
 	$(RM) $@
-	$(CP) _muldc3.oo _muldc3.o
-	$(SH_LD2) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o $@ $(SOLVEROBJS) $(SOLVER_LIBS) $(MPI_LIBS) _muldc3.o -L. -Lbinio -lbinio
+	$(SH_LD2) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o $@ $(SOLVEROBJS) $(SOLVER_LIBS) $(MPI_LIBS) -L. -Lbinio -lbinio
 else
 libelmersolver$(SHL_EXT): $(SOLVEROBJS) mpi_stubs$(OBJ_EXT) binio/libbinio.a
 	$(RM) $@
-	$(CP) _muldc3.oo _muldc3.o
-	$(SH_LD2) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o $@ $(SOLVEROBJS) $(SOLVER_LIBS) mpi_stubs$(OBJ_EXT) _muldc3.o -L. -Lbinio -lbinio
+	$(SH_LD2) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o $@ $(SOLVEROBJS) $(SOLVER_LIBS) mpi_stubs$(OBJ_EXT) -L. -Lbinio -lbinio
 endif
 
 else
@@ -123,52 +109,26 @@ endif
 
 
 
-if HAVE_WINDRES
-
-# Take resource files into account in case of windres:
-
-ElmerSolver$(EXE_EXT): Solver$(OBJ_EXT) libelmersolver$(SHL_EXT) mpi_stubs$(OBJ_EXT) ElmerSolver-res.o
-	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
-	      -o ElmerSolver$(EXE_EXT) Solver$(OBJ_EXT) \
-		ElmerSolver-res.o \
-	      -L. -lelmersolver $(EXTRA_LIBS) 
-
-ViewFactors$(EXE_EXT): libelmersolver$(SHL_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) ViewFactors-res.o
-	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
-	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) \
-		ViewFactors-res.o \
-	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
-
-GebhardtFactors$(EXE_EXT): libelmersolver$(SHL_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) GebhardtFactors-res.o
-	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
-	      -o GebhardtFactors$(EXE_EXT) GebhardtFactors$(OBJ_EXT) \
-		GebhardtFactors-res.o \
-	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
-
-
-else
-
-# not windows - no resource files:
-
 ElmerSolver$(EXE_EXT): Solver$(OBJ_EXT) libelmersolver$(SHL_EXT) mpi_stubs$(OBJ_EXT)
 	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
 	      -o ElmerSolver$(EXE_EXT) Solver$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
 	      -L. -lelmersolver $(EXTRA_LIBS) 
 
 ViewFactors$(EXE_EXT): libelmersolver$(SHL_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT)
+if USE_WINDOWS_COMPILER
 	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
 	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
-	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
+	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS) $(BLAS_LIBS)
+else
+	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
+	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
+	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS) $(BLAS_LIBS) $(STDCXX_LIBS)
+endif
 
 GebhardtFactors$(EXE_EXT): libelmersolver$(SHL_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT)
 	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
 	      -o GebhardtFactors$(EXE_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
 	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
-
-
-endif
-
-
 
 
 
@@ -213,16 +173,11 @@ if USE_MPI
 endif
 
 clean-local:
-	$(RM) $(ALL) *.o *.mod *.f90 *.F *.fpp *~ *.a *.so *.dll \#* mpif mpif.h ElmerSolver ElmerSolver_mpi
+	$(RM) $(ALL) *.o *.mod *.f90 *.F *.fpp *~ *.a *.so *.dll \#* mpif mpif.h ElmerSolver ElmerSolver_mpi GebhardtFactors ResultToResult ViewFactors
 
 
-if HAVE_WINDRES
-bin_PROGRAMS = SC2Elmer 
-SC2Elmer_SOURCES = SC2Elmer.c Sico2Elmer-res.rc
-else
 bin_PROGRAMS = SC2Elmer 
 SC2Elmer_SOURCES = SC2Elmer.c
-endif
 
 
 if USE_LOCAL_MPIF_H
@@ -242,6 +197,7 @@ EXTRA_DIST = \
 	ArtificialCompressibility.src \
 	BandMatrix.src \
 	BandwidthOptimize.src \
+	ClusteringMethods.src \
 	CoordinateSystems.src \
 	CPUTime.c \
 	CRSMatrix.src \
@@ -384,6 +340,5 @@ EXTRA_DIST = \
 	elmerf90.in  \
 	elmerld.in  \
 	elmerf90-nosh.in  \
-	_muldc3.oo   \
 	umf4_f77wrapper.c \
 	SOLVER.KEYWORDS

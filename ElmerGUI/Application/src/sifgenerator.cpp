@@ -81,42 +81,42 @@ void SifGenerator::setGeneralSetup(GeneralSetup* g)
   this->generalSetup = g;
 }
 
-void SifGenerator::setEquationEditor(QVector<DynamicEditor*>& d)
+void SifGenerator::setEquationEditor(const QVector<DynamicEditor*>& d)
 {
   this->equationEditor = d;
 }
 
-void SifGenerator::setMaterialEditor(QVector<DynamicEditor*>& d)
+void SifGenerator::setMaterialEditor(const QVector<DynamicEditor*>& d)
 {
   this->materialEditor = d;
 }
 
-void SifGenerator::setBodyForceEditor(QVector<DynamicEditor*>& d)
+void SifGenerator::setBodyForceEditor(const QVector<DynamicEditor*>& d)
 {
   this->bodyForceEditor = d;
 }
 
-void SifGenerator::setInitialConditionEditor(QVector<DynamicEditor*>& d)
+void SifGenerator::setInitialConditionEditor(const QVector<DynamicEditor*>& d)
 {
   this->initialConditionEditor = d;
 }
 
-void SifGenerator::setBoundaryConditionEditor(QVector<DynamicEditor*>& d)
+void SifGenerator::setBoundaryConditionEditor(const QVector<DynamicEditor*>& d)
 {
   this->boundaryConditionEditor = d;
 }
 
-void SifGenerator::setSolverParameterEditor(QVector<SolverParameterEditor*>& s)
+void SifGenerator::setSolverParameterEditor(const QVector<SolverParameterEditor*>& s)
 {
   this->solverParameterEditor = s;
 }
 
-void SifGenerator::setBoundaryPropertyEditor(QVector<BoundaryPropertyEditor*>& b)
+void SifGenerator::setBoundaryPropertyEditor(const QVector<BoundaryPropertyEditor*>& b)
 {
   this->boundaryPropertyEditor = b;
 }
 
-void SifGenerator::setBodyPropertyEditor(QVector<BodyPropertyEditor*>& b)
+void SifGenerator::setBodyPropertyEditor(const QVector<BodyPropertyEditor*>& b)
 {
   this->bodyPropertyEditor = b;
 }
@@ -142,14 +142,18 @@ void SifGenerator::makeHeaderBlock()
   if(ui.checkKeywordsWarn->isChecked())
     te->append("  CHECK KEYWORDS Warn");
 
-  const QString &qs1 = ui.meshDBEdit1->text().trimmed(); 
-  const QString &qs2 = ui.meshDBEdit2->text().trimmed(); 
-  const QString &qs3 = ui.includePathEdit->text().trimmed(); 
-  const QString &qs4 = ui.resultsDirectoryEdit->text().trimmed(); 
-  
+  QString qs1 = ui.meshDBEdit1->text().trimmed();
+  QString qs2 = ui.meshDBEdit2->text().trimmed(); 
+  QString qs3 = ui.includePathEdit->text().trimmed(); 
+  QString qs4 = ui.resultsDirectoryEdit->text().trimmed(); 
+  QString qs5 = ui.headerFreeTextEdit->toPlainText();
+
   te->append("  Mesh DB \"" +  qs1 + "\" \"" + qs2 + "\"");
   te->append("  Include Path \"" + qs3 + "\"");
   te->append("  Results Directory \"" + qs4 + "\"");
+
+  if(!qs5.isEmpty())
+    te->append(qs5);
 
   te->append("End\n");
 }
@@ -187,6 +191,11 @@ void SifGenerator::makeSimulationBlock()
   addSifLine("  Post File = ", 
 	     ui.postFileEdit->text().trimmed());
 
+  QString qs = ui.simulationFreeTextEdit->toPlainText();
+
+  if(!qs.isEmpty())
+    te->append(qs);
+
   te->append("End\n");
 }
 
@@ -208,6 +217,11 @@ void SifGenerator::makeConstantsBlock()
 	     ui.boltzmannEdit->text().trimmed());
   addSifLine("  Unit Charge = ",
 	     ui.unitChargeEdit->text().trimmed());
+
+  QString qs = ui.constantsFreeTextEdit->toPlainText();
+
+  if(!qs.isEmpty())
+    te->append(qs);
 
   te->append("End\n");
 }
@@ -249,22 +263,18 @@ void SifGenerator::makeBodyBlocks()
       i = bodyEdit->ui.equationCombo->currentIndex();
       if(i > 0)
 	te->append("  Equation = " + QString::number(i));
-      // te->append("  Equation = " + QString::number(i+1));
       
       i = bodyEdit->ui.materialCombo->currentIndex();
       if(i > 0)
 	te->append("  Material = " + QString::number(i));
-      // te->append("  Material = " + QString::number(i+1));
       
       i = bodyEdit->ui.bodyForceCombo->currentIndex();
       if(i > 0)
 	te->append("  Body Force = " + QString::number(i));
-      // te->append("  Body Force = " + QString::number(i+1));
       
       i = bodyEdit->ui.initialConditionCombo->currentIndex();
       if(i > 0)
 	te->append("  Initial condition = " + QString::number(i));
-      // te->append("  Initial condition = " + QString::number(i+1));
       
       te->append("End\n");      
     }
@@ -295,22 +305,18 @@ void SifGenerator::makeBodyBlocks()
       i = bodyEdit->ui.equationCombo->currentIndex();
       if(i > 0)
 	te->append("  Equation = " + QString::number(i));
-      // te->append("  Equation = " + QString::number(i+1));
       
       i = bodyEdit->ui.materialCombo->currentIndex();
       if(i > 0)
 	te->append("  Material = " + QString::number(i));
-      // te->append("  Material = " + QString::number(i+1));
       
       i = bodyEdit->ui.bodyForceCombo->currentIndex();
       if(i > 0)
 	te->append("  Body Force = " + QString::number(i));
-      // te->append("  Body Force = " + QString::number(i+1));
       
       i = bodyEdit->ui.initialConditionCombo->currentIndex();
       if(i > 0)
 	te->append("  Initial condition = " + QString::number(i));
-      // te->append("  Initial condition = " + QString::number(i+1));
       
       te->append("End\n");      
     }
@@ -318,7 +324,7 @@ void SifGenerator::makeBodyBlocks()
 }
 
 
-int SifGenerator::findHashValue(DynamicEditor *de,QString sname, QString name)
+int SifGenerator::findHashValue(DynamicEditor *de, const QString &sname, const QString &name)
 {
     for(int i = 0; i < de->hash.count(); i++) {
       hash_entry_t entry = de->hash.values().at(i); 
@@ -332,74 +338,23 @@ int SifGenerator::findHashValue(DynamicEditor *de,QString sname, QString name)
 
         QDomElement elem = entry.elem;
         if ( solverName==sname && labelName==name &&
-            elem.attribute("Widget","")=="Edit" )
-        {
-          QLineEdit *line = (QLineEdit*)widget;
-          QString str = line->text().trimmed();
-          if ( str.isEmpty() ) return 0;
-          return str.toInt();
-        }
+	     elem.attribute("Widget","")=="Edit" ) {
+	  QLineEdit *line = static_cast<QLineEdit*>(widget);
+	  QString str = line->text().trimmed();
+	  if ( str.isEmpty() ) return 0;
+	  return str.toInt();
+	}
       }
     }
     return 0;
 }
 
-
-int SifGenerator::sort_index(int n, int a[], QString b[])
-{
-   int i,j,l,ir;
-   int ra;
-   QString rb;
-
-   if ( n <= 1 ) return true;
-
-   l = n / 2 +1;
-   ir = n-1;
-   while( true ) {
-     if ( l >= 1 ) {
-       l = l - 1;
-       ra = a[l];
-       rb = b[l];
-     } else {
-       ra = a[ir];
-       rb = b[ir];
-       a[ir] = a[0];
-       b[ir] = b[0];
-       ir = ir - 1;
-       if ( ir == 0 ) {
-         a[0] = ra;
-         b[0] = rb;
-         return true;
-       }
-     }
-     i = l;
-     j = l + l;
-     while( j <= ir ) {
-       if ( j<ir  ) {
-          if ( a[j]<a[j+1] ) j = j+1;
-       }
-       if ( ra<a[j] ) {
-         a[i] = a[j];
-         b[i] = b[j];
-         i = j;
-         j =  j + i;
-       } else {
-         j = ir + 1;
-       }
-       a[i] = ra;
-       b[i] = rb;
-    }
-  }
-  return true;
-}
-
-
 // Make Equation/Solver -blocks:
 //-----------------------------------------------------------------------------
 void SifGenerator::makeEquationBlocks()
 {
-  // enumerate solvers && write solver blocks:
-
+  // Enumerate solvers && write solver blocks:
+  //-------------------------------------------
   QMap<QString, int> numberForSolver;
   numberForSolver.clear();
 
@@ -422,10 +377,10 @@ void SifGenerator::makeEquationBlocks()
 	  QString solverName = keySplitted.at(1).trimmed();
 
 	  if(labelName=="Active" && elem.attribute("Widget", "")=="CheckBox") {
-	    QCheckBox *checkBox = (QCheckBox*)widget;
+	    QCheckBox *checkBox = static_cast<QCheckBox*>(widget);
 	    if(checkBox->isChecked()) {
 	      if(!numberForSolver.contains(solverName)) {
-                int pri=findHashValue( eqEditor, solverName, "Priority");
+                int pri = findHashValue( eqEditor, solverName, "Priority");
                 numberForSolver.insert(solverName, pri);
 	      }
 	    }
@@ -435,32 +390,37 @@ void SifGenerator::makeEquationBlocks()
     }
   }
 
-  int n=numberForSolver.count();
-  int j=0;
-  int *snum = new int[n];          // snum[n];
-  QString *sname = new QString[n]; // sname[n];
+  // Sort and enumerate solvers according to their priority:
+  //---------------------------------------------------------
+  QList<QPair<int, QString> > tmpList;
 
-  QMapIterator<QString, int> map_it(numberForSolver);
-  while (map_it.hasNext()) {
-      map_it.next();
-      snum[j]=map_it.value(); 
-      sname[j]=map_it.key(); 
-      j++;
+  foreach(const QString &key, numberForSolver.keys()) {
+    int value = numberForSolver.value(key);
+    tmpList << qMakePair(value, key);
   }
-  sort_index(n,snum,sname);
+
+  qSort(tmpList);
+
   numberForSolver.clear();
-  for( int i=0; i<n; i++ )
-  {
-    numberForSolver.insert(sname[i],n-i);
-    snum[i]=0;
+
+  int n = tmpList.count();
+
+  for(int i = 0; i < n; i++) {
+    const QPair<int, QString> &pair = tmpList[i];
+    const QString &key = pair.second;
+    numberForSolver.insert(key, n-i);
   }
-  
+
+  // Generate solver blocks:
+  //-------------------------
+  QMap<int, int> handled;
+
   for(int index = 0; index < equationEditor.size(); index++) {
     DynamicEditor *eqEditor = equationEditor[index];
     if(eqEditor->menuAction != NULL) {
       for(int i = 0; i < eqEditor->hash.count(); i++) {
 	hash_entry_t entry = eqEditor->hash.values().at(i); 
-
+	
 	QWidget *widget = entry.widget;
         if (widget->isEnabled()) {
 	  QString key = eqEditor->hash.keys().at(i);
@@ -470,26 +430,27 @@ void SifGenerator::makeEquationBlocks()
           QDomElement elem = entry.elem;
 
 	  if(labelName=="Active" && elem.attribute("Widget", "")=="CheckBox") {
-             QCheckBox *checkBox = (QCheckBox*)widget;
-	     if(checkBox->isChecked()) {
-                solverNumber=numberForSolver.find(solverName).value();
-                if(solverNumber>0 && snum[solverNumber-1]==0 ) {
-                  snum[solverNumber-1]=1; 
-                  te->append("Solver " + QString::number(solverNumber));
-                  te->append("  Equation = " + solverName);
-                  makeSolverBlocks(solverName);
-                  te->append("End");
-                  te->append("");
-	       }
-	     }
+	    QCheckBox *checkBox = static_cast<QCheckBox*>(widget);
+	    if(checkBox->isChecked()) {
+	      solverNumber = numberForSolver.value(solverName);
+	      if((solverNumber>0) && (handled[solverNumber]==0)) {
+		handled[solverNumber] = 1; 
+		te->append("Solver " + QString::number(solverNumber));
+		te->append("  Equation = " + solverName);
+		makeSolverBlocks(solverName);
+		te->append("End");
+		te->append("");
+	      }
+	    }
 	  }
 	}
       }
     }
   }
   
-  // generate equation blocks:
-  int* solverActive = new int[solverParameterEditor.size()];
+  // Generate equation blocks:
+  //---------------------------
+  QMap<int, bool> solverActive;
 
   int sifIndex = 0;
   for(int index = 0; index < equationEditor.size(); index++) {
@@ -500,7 +461,6 @@ void SifGenerator::makeEquationBlocks()
       
       QString name = eqEditor->nameEdit->text().trimmed();
       te->append("  Name = \"" + name + "\"");
-      // addSifLine("  Name = ", name);
 
       QString solverString = "";
       int nofSolvers = 0;
@@ -521,7 +481,7 @@ void SifGenerator::makeEquationBlocks()
 
 	  // solver active?
 	  if((labelName == "Active") && (elem.attribute("Widget", "") == "CheckBox")) {
-	    QCheckBox *checkBox = (QCheckBox*)widget;
+	    QCheckBox *checkBox = static_cast<QCheckBox*>(widget);
 	    if(checkBox->isChecked()) {
 	      nofSolvers++;
 	      solverNumber = numberForSolver.value(solverName);
@@ -556,6 +516,9 @@ void SifGenerator::makeEquationBlocks()
 	  
 	  if(elem.attribute("Widget", "") == "Combo")
 	    handleComboBox(elem, widget);
+
+	  if(elem.attribute("Widget", "") == "TextEdit")
+	    handleTextEdit(elem, widget);
         }
       }
 
@@ -566,17 +529,11 @@ void SifGenerator::makeEquationBlocks()
       
       te->append("End\n");
     }
-
   }
-
-  delete [] solverActive;
-
-  delete [] snum;
-  delete [] sname;
 }
 
 //-------------------------------------------------------------------------
-void SifGenerator::makeSolverBlocks(QString solverName)
+void SifGenerator::makeSolverBlocks(const QString &solverName)
 {
   SolverParameterEditor *spe, *tmp;
   Ui::solverParameterEditor ui;
@@ -606,7 +563,7 @@ void SifGenerator::makeSolverBlocks(QString solverName)
 
   if ( !tmp->generalOptions ) {
     tmp->generalOptions = new DynamicEditor;
-    tmp->generalOptions->setupTabs(*elmerDefs, "Solver", current );
+    tmp->generalOptions->setupTabs(elmerDefs, "Solver", current );
   }
 
   bool hasMatrix = parseSolverSpecificTab(tmp->generalOptions, solverName);
@@ -628,8 +585,6 @@ void SifGenerator::makeSolverBlocks(QString solverName)
     delete tmp;
   }
 }
-
-
 
 // Make Material-blocks:
 //-----------------------------------------------------------------------------
@@ -663,13 +618,15 @@ void SifGenerator::makeMaterialBlocks()
 	
 	 if(elem.attribute("Widget", "") == "Combo")
 	   handleComboBox(elem, widget);
+
+	 if(elem.attribute("Widget", "") == "TextEdit")
+	   handleTextEdit(elem, widget);
         }
       }
       te->append("End\n");
     }
   }
 }
-
 
 
 // Make body force blocks:
@@ -686,7 +643,6 @@ void SifGenerator::makeBodyForceBlocks()
       
       QString name = bfEdit->nameEdit->text().trimmed();
       te->append("  Name = \"" + name + "\"");
-      // addSifLine("  Name = ", name);
       
       for(int i = 0; i < bfEdit->hash.count(); i++) {
 	hash_entry_t entry = bfEdit->hash.values().at(i); 
@@ -704,6 +660,9 @@ void SifGenerator::makeBodyForceBlocks()
 	  
 	  if(elem.attribute("Widget", "") == "Combo")
 	    handleComboBox(elem, widget);
+
+	  if(elem.attribute("Widget", "") == "TextEdit")
+	    handleTextEdit(elem, widget);
         }
       }
       te->append("End\n");
@@ -726,7 +685,6 @@ void SifGenerator::makeInitialConditionBlocks()
       
       QString name = icEdit->nameEdit->text().trimmed();
       te->append("  Name = \"" + name + "\"");
-      // addSifLine("  Name = ", name);
       
       for(int i = 0; i < icEdit->hash.count(); i++) {
 	hash_entry_t entry = icEdit->hash.values().at(i); 
@@ -744,6 +702,9 @@ void SifGenerator::makeInitialConditionBlocks()
 	  
 	  if(elem.attribute("Widget", "") == "Combo")
 	    handleComboBox(elem, widget);
+
+	  if(elem.attribute("Widget", "") == "TextEdit")
+	    handleTextEdit(elem, widget);
         }
       }
       te->append("End\n");
@@ -758,7 +719,8 @@ void SifGenerator::makeInitialConditionBlocks()
 void SifGenerator::makeBoundaryBlocks()
 {
   int sifIndex = 0;
-  int* boundaryBC = new int[boundaryPropertyEditor.size()];
+  QMap<int, int> boundaryBC;
+  boundaryBC.clear();
 
   for(int index = 0; index < boundaryMap.count(); index++) {
     BoundaryPropertyEditor *bEdit = boundaryPropertyEditor[index];
@@ -789,7 +751,6 @@ void SifGenerator::makeBoundaryBlocks()
       const QString &name = bEdit->ui.boundaryConditionCombo->currentText().trimmed();
       if(i > -1) 
 	te->append("  Name = \"" +  name + "\"");
-      // te->append("  Name = " +  name);
 
       // check which one of the dynamic editors has "name" typed in nameEdit:
       for(int j = 0; j < boundaryConditionEditor.size(); j++) {
@@ -816,6 +777,9 @@ void SifGenerator::makeBoundaryBlocks()
 		
 		if(elem.attribute("Widget", "") == "Combo")
 		  handleComboBox(elem, widget);
+
+		if(elem.attribute("Widget", "") == "TextEdit")
+		  handleTextEdit(elem, widget);
 	      }
 	    }
 	  }
@@ -824,17 +788,13 @@ void SifGenerator::makeBoundaryBlocks()
       te->append("End\n");      
     }
   }
-
-  delete [] boundaryBC;
 }
-
-
 
 // Parse "Solver specific tab"
 //-----------------------------------------------------------------------------
-bool SifGenerator::parseSolverSpecificTab(DynamicEditor *solEditor, QString solverName)
+bool SifGenerator::parseSolverSpecificTab(DynamicEditor *solEditor, const QString &solverName)
 {
-  // returns true if there is a matrix involved. otherwise returns false.
+  // Returns true if there is a matrix involved. otherwise returns false.
   if ( !solEditor ) return false;
 
   bool hasMatrix = true;
@@ -860,7 +820,7 @@ bool SifGenerator::parseSolverSpecificTab(DynamicEditor *solEditor, QString solv
     // Has matrix?
     if(labelName == "No Matrix Equation") {
       if(entry.elem.attribute("Widget", "") == "CheckBox") {
-	QCheckBox* cb = (QCheckBox*)entry.widget;
+	QCheckBox *cb = static_cast<QCheckBox*>(entry.widget);
 	hasMatrix = !cb->isChecked();
       }
     }
@@ -870,7 +830,7 @@ bool SifGenerator::parseSolverSpecificTab(DynamicEditor *solEditor, QString solv
     if ( labelName=="Variable" || labelName.mid(0,17)=="Exported Variable" ) {
       if( entry.elem.attribute("Widget", "") != "Edit") continue;
 
-      QLineEdit *l = (QLineEdit *)entry.widget;
+      QLineEdit *l = static_cast<QLineEdit*>(entry.widget);
       QString varName = l->text().trimmed();
 
       if ( varName == "" ) continue;
@@ -929,6 +889,9 @@ bool SifGenerator::parseSolverSpecificTab(DynamicEditor *solEditor, QString solv
 
      if(elem.attribute("Widget", "") == "Combo")
        handleComboBox(elem, widget);
+
+     if(elem.attribute("Widget", "") == "TextEdit")
+       handleTextEdit(elem, widget);
     }
   }
 
@@ -1012,9 +975,6 @@ void SifGenerator::parseNonlinearSystemTab(Ui::solverParameterEditor ui)
 //-----------------------------------------------------------------------------
 void SifGenerator::parseParallelTab(Ui::solverParameterEditor ui)
 {
-  // cout << ui.useParasails->isChecked() << endl;
-  // cout << ui.useBoomerAMG->isChecked() << endl;
-
   if(ui.useHypre->isChecked()) {
     addSifLine("  Linear System Use HYPRE = ", "True");
     
@@ -1068,8 +1028,7 @@ void SifGenerator::parseParallelTab(Ui::solverParameterEditor ui)
 void SifGenerator::parseLinearSystemTab(Ui::solverParameterEditor ui)
 {
   bool hyprePreconditioning 
-    = ui.useParasails->isChecked() 
-    | ui.useBoomerAMG->isChecked();
+    = ui.useParasails->isChecked() | ui.useBoomerAMG->isChecked();
 
   if(ui.linearSystemSolverDirect->isChecked()) {
     
@@ -1111,7 +1070,7 @@ void SifGenerator::parseLinearSystemTab(Ui::solverParameterEditor ui)
     
     addSifLine("  Linear System Solver = ", "Multigrid");
     
-    // TODO: rest
+    // TODO: rest of the less common params etc.
   }
 }
 
@@ -1136,13 +1095,13 @@ void SifGenerator::addSifLineBool(const QString &var, bool val)
 }
 
 
-void SifGenerator::handleBCLineEdit(QDomElement elem, QWidget *widget,int *boundaryBC)
+void SifGenerator::handleBCLineEdit(const QDomElement &elem, QWidget *widget, const QMap<int, int> &boundaryBC)
 {
   QString name = elem.firstChildElement("SifName").text().trimmed();
   if( name == "" )
     name= elem.firstChildElement("Name").text().trimmed();
 
-  QLineEdit *lineEdit = (QLineEdit*)widget;
+  QLineEdit *lineEdit = static_cast<QLineEdit*>(widget);
   QString value = lineEdit->text().trimmed();
 
   if ( name=="Periodic BC" && value != "" ) 
@@ -1155,31 +1114,38 @@ void SifGenerator::handleBCLineEdit(QDomElement elem, QWidget *widget,int *bound
   addSifLine("  " + name + " = ", value);
 }
 
-void SifGenerator::handleLineEdit(QDomElement elem, QWidget *widget)
+void SifGenerator::handleLineEdit(const QDomElement &elem, QWidget *widget)
 {
   QString name = elem.firstChildElement("SifName").text().trimmed();
   if( name == "" )
     name= elem.firstChildElement("Name").text().trimmed();
 
-  QLineEdit *lineEdit = (QLineEdit*)widget;
+  QLineEdit *lineEdit = static_cast<QLineEdit*>(widget);
   QString value = lineEdit->text().trimmed();
   addSifLine("  " + name + " = ", value);
 }
 
-void SifGenerator::handleComboBox(QDomElement elem, QWidget *widget)
+void SifGenerator::handleTextEdit(const QDomElement &elem, QWidget *widget)
+{
+  QTextEdit *textEdit = static_cast<QTextEdit*>(widget);
+  QString value = textEdit->toPlainText();
+  if(!value.isEmpty()) te->append(value);
+}
+
+void SifGenerator::handleComboBox(const QDomElement &elem, QWidget *widget)
 {  
   QString name = elem.firstChildElement("SifName").text().trimmed();
   if( name == "" )
     name= elem.firstChildElement("Name").text().trimmed();
 
-  QComboBox *comboBox = (QComboBox*)widget;
+  QComboBox *comboBox = static_cast<QComboBox*>(widget);
   QString value = comboBox->currentText().trimmed();
 
   if(value != "None")
     addSifLine("  " + name + " = ", value);
 }
 
-void SifGenerator::handleCheckBox(QDomElement elem, QWidget *widget)
+void SifGenerator::handleCheckBox(const QDomElement &elem, QWidget *widget)
 {
   QString name = elem.firstChildElement("SifName").text().trimmed();
   if( name == "" )
@@ -1189,7 +1155,7 @@ void SifGenerator::handleCheckBox(QDomElement elem, QWidget *widget)
   if ( def_val == "" )
     def_val = "False";
 
-  QCheckBox *checkBox = (QCheckBox*)widget;
+  QCheckBox *checkBox = static_cast<QCheckBox*>(widget);
   
   if(checkBox->isChecked()) {
     if ( def_val != "True" )

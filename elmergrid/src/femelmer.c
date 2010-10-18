@@ -518,7 +518,7 @@ int LoadElmerInput(struct FemType *data,struct BoundaryType *bound,
     return(1);
   }
   else 
-    printf("Loading Elmer header from %s\n",filename);
+    printf("Loading header from %s\n",filename);
 
   getline;
   sscanf(line,"%d %d %d",&noknots,&noelements,&nosides);
@@ -570,14 +570,19 @@ int LoadElmerInput(struct FemType *data,struct BoundaryType *bound,
     return(3);
   }
   else 
-    if(info) printf("Loading %d Elmer elements from %s\n",noelements,filename);
+    if(info) printf("Loading %d bulk elements from %s\n",noelements,filename);
 
   for(i=1; i <= noelements; i++) {
     fscanf(in,"%d",&j);
     if(0 && i != j) printf("LoadElmerInput: i=%d element=%d\n",i,dummyint);
     fscanf(in,"%d",&(data->material[j]));
-    fscanf(in,"%d",&(data->elementtypes[j]));
-    for(k=0;k< data->elementtypes[j]%100 ;k++) 
+    fscanf(in,"%d",&elementtype);
+    if(elementtype > maxelemtype ) {
+      printf("Invalid bulk elementtype: %d\n",elementtype);
+      bigerror("Cannot continue with invalid elements");
+    }
+    data->elementtypes[j] = elementtype;
+    for(k=0;k< elementtype%100 ;k++) 
       fscanf(in,"%d",&(data->topology[j][k]));
   }
   fclose(in);
@@ -590,7 +595,7 @@ int LoadElmerInput(struct FemType *data,struct BoundaryType *bound,
     return(4);
   }
   else {
-    if(info) printf("Loading %d Elmer boundaries from %s\n",nosides,filename);
+    if(info) printf("Loading %d boundary elements from %s\n",nosides,filename);
   }
 
   AllocateBoundary(bound,nosides);
@@ -608,6 +613,11 @@ int LoadElmerInput(struct FemType *data,struct BoundaryType *bound,
     fscanf(in,"%d",&(bound->parent[i]));
     fscanf(in,"%d",&(bound->parent2[i]));
     fscanf(in,"%d",&elementtype);
+
+    if(elementtype > maxelemtype ) {
+      printf("Invalid boundary elementtype: %d\n",elementtype);
+      bigerror("Cannot continue with invalid elements");
+    }
     for(j=0;j< elementtype%100 ;j++) 
       fscanf(in,"%d",&(sideind[j]));
 
@@ -634,6 +644,8 @@ int LoadElmerInput(struct FemType *data,struct BoundaryType *bound,
   fclose(in); 
 
   if(!cdstat) chdir("..");
+
+  printf("All done\n");
 
   return(0);
 }
@@ -2194,10 +2206,10 @@ int PartitionSimpleElements(struct FemType *data,int dimpart[],int dimper[],
 int PartitionSimpleNodes(struct FemType *data,int dimpart[],int dimper[],
 			 int partorder, Real corder[],int info)
 {
-  int i,j,k,ind,minpart,maxpart;
+  int i,j,k,k0,l,ind,minpart,maxpart;
   int noknots, noelements,nonodes,elemsinpart,periodic;
   int partitions1,partitions2,partitions3,partitions;
-  int vpartitions1,vpartitions2,vpartitions3,vpartitions;
+  int vpartitions1,vpartitions2,vpartitions3,vpartitions,hit;
   int *indx,*part1,*nopart,*inpart,*nodepart;
   Real *arrange;
   Real x,y,z,cx,cy,cz;
@@ -2271,11 +2283,11 @@ int PartitionSimpleNodes(struct FemType *data,int dimpart[],int dimper[],
     for(j=1;j<=noknots;j++) {
       x = data->x[j];
       y = data->y[j];
-      if(data->dim==3) z = data->z[k];
+      if(data->dim==3) z = data->z[j];
       arrange[j] = cx*x + cy*y + cz*z;
     }
     SortIndex(noknots,arrange,indx);
-    
+
     for(i=1;i<=noknots;i++) {
       ind = indx[i];
       k = (i*vpartitions1-1)/noknots+1;
@@ -2298,17 +2310,29 @@ int PartitionSimpleNodes(struct FemType *data,int dimpart[],int dimper[],
       nopart[i] = 0;
     
     elemsinpart = noknots / (vpartitions1*vpartitions2);
+    j = 1;
     for(i=1;i<=noknots;i++) {
-      j = 0;
       ind = indx[i];
-      do {
-	j++;
-	k = (nodepart[ind]-1) * vpartitions2 + j;
+      k0 = (nodepart[ind]-1) * vpartitions2;
+      for(l=1;l<=vpartitions2;l++) {
+	hit = FALSE;
+	if( j < vpartitions ) {
+	  if( nopart[k0+j] >= elemsinpart ) {
+	    j += 1;
+	    hit = TRUE;
+	  }
+	}
+	if( j > 1 ) {
+	  if( nopart[k0+j-1] < elemsinpart ) {
+	    j -= 1;
+	    hit = TRUE;
+	  }
+	}
+	if( !hit ) break;
       }
-      while(nopart[k] >= elemsinpart && j < vpartitions2);
-      
+      k = k0 + j;
       nopart[k] += 1;
-      nodepart[ind] = (nodepart[ind]-1)*vpartitions2 + j;
+      nodepart[ind] = k;
     }
   }  
 
@@ -2327,17 +2351,30 @@ int PartitionSimpleNodes(struct FemType *data,int dimpart[],int dimper[],
       nopart[i] = 0;
     
     elemsinpart = noknots / (vpartitions1*vpartitions2*vpartitions3);
+    j = 1;
     for(i=1;i<=noknots;i++) {
-      j = 0;
       ind = indx[i];
-      do {
-	j++;
-	k = (nodepart[ind]-1)*vpartitions3 + j;
+      k0 = (nodepart[ind]-1)*vpartitions3;
+
+      for(l=1;l<=vpartitions;l++) {
+	hit = FALSE;
+	if( j < vpartitions3 ) {
+	  if( nopart[k0+j] >= elemsinpart ) {
+	    j += 1;
+	    hit = TRUE;
+	  }
+	}
+	if( j > 1 ) {
+	  if( nopart[k0+j-1] < elemsinpart ) {
+	    j -= 1;
+	    hit = TRUE;
+	  }
+	}
+	if( !hit ) break;
       }
-      while(nopart[k] >= elemsinpart && j < vpartitions3);
-    
+      k = k0 + j;
       nopart[k] += 1;
-      nodepart[ind] = (nodepart[ind]-1)*vpartitions3 + j;
+      nodepart[ind] = k;
     }
   }
   
@@ -2708,7 +2745,7 @@ int PartitionMetisNodes(struct FemType *data,struct BoundaryType *bound,
 			&numflag,&nparts,&options[0],&edgecut,npart);
   }
   else 
-    printf("Unknown Metis option\n",metisopt);
+    printf("Unknown Metis option %d\n",metisopt);
 
   if(info) printf("Finished Metis graph partitioning call.\n");
 
@@ -2786,7 +2823,7 @@ int PartitionMetisNodes(struct FemType *data,struct BoundaryType *bound,
 #endif  
 
 
-static int CheckPartitioning(struct FemType *data,int info)
+static void CheckPartitioning(struct FemType *data,int info)
 {
   int i,j,partitions,part,part2,noknots,noelements,mini,maxi,sumi,hit,ind,nodesd2,elemtype;
   int *elempart, *nodepart,*elemsinpart,*nodesinpart,*sharedinpart;
@@ -2911,7 +2948,7 @@ static int CheckPartitioning(struct FemType *data,int info)
 	if(hit && !part) break;
     }
     if(!hit) {
-      printf("***** Node %d in partition %d is not in partition list\n",i,part,j);
+      printf("***** Node %d in partition %d is not in partition list\n",i,part);
     }
   }
 }
@@ -3170,7 +3207,7 @@ static int RenumberCuthillMckee( int nrows, int *rows, int *cols, int *iperm )
 
 
 
-static int RenumberPartitions(struct FemType *data,int info)
+static void RenumberPartitions(struct FemType *data,int info)
 {
   int i,j,k,l,n,m,hit,con,totcon,noelements,noknots,partitions;
   int maxneededtimes,totneededtimes;

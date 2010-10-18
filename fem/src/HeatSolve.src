@@ -102,7 +102,7 @@
 
      INTEGER, POINTER :: NodeIndexes(:)
      LOGICAL :: Stabilize = .TRUE., Bubbles = .TRUE., UseBubbles,NewtonLinearization = .FALSE., &
-         Found, GotIt, HeatFluxBC, HeatGapBC, GotMeltPoint
+         Found, GotIt, HeatFluxBC, HeatGapBC, GotMeltPoint, IsRadiation
 ! Which compressibility model is used
      CHARACTER(LEN=MAX_NAME_LEN) :: CompressibilityFlag, ConvectionField
      INTEGER :: CompressibilityModel
@@ -151,7 +151,7 @@
        FORCE, ElementNodes, HeatConductivity, HeatCapacity, HeatTransferCoeff, &
        Enthalpy, Density, LatentHeat, PhaseVelocity, AllocationsDone, Viscosity, TimeForce, &
        LocalNodes, LocalTemperature, Work, ElectricConductivity, &
-       NodalEmissivity, Permeability, TSolution, TSolution1, C0, dPressuredt, Pressure, &
+       NodalEmissivity, Permeability, C0, dPressuredt, Pressure, &
        GasConstant,AText,Hwrk, XX, YY, ForceHeater, Power, HeaterArea, HeaterTarget, &
        HeaterScaling, HeaterDensity, HeaterSource, SmartHeaters, IntegralHeaters, SmartTolReached,    &
        ReferenceTemperature, HeatExpansionCoeff, PrevPowerScaling, PowerScaling, &
@@ -189,12 +189,24 @@
 
      REAL(KIND=dp) :: at,at0,totat,st,totst,t1,CPUTime,RealTime
 
+
+! Newton lineariarization option is needed only when there is radiation
+
+     IsRadiation = .FALSE.
+     DO i=1,Model % NumberOfBCs
+       IsRadiation = ListCheckPresent( Model % BCs(i) % Values,'Radiation')
+       IF( IsRadiation ) EXIT
+     END DO
 !------------------------------------------------------------------------------
 !    The View and Gebhardt factors may change. If this is necessary, this is 
 !    done within this subroutine. The routine is called in the
 !    start as it may affect the matrix topology.
 !------------------------------------------------------------------------------
-     CALL RadiationFactors( Solver, .FALSE.)
+
+     IF( IsRadiation ) THEN
+       CALL RadiationFactors( Solver, .FALSE.)
+     END IF
+
 
 !------------------------------------------------------------------------------
 !    Get variables needed for solution
@@ -347,8 +359,11 @@
 !------------------------------------------------------------------------------
      dt = Timestep
      Constants => GetConstants()
-     StefanBoltzmann = ListGetConstReal( Model % Constants, &
+     IF( IsRadiation ) THEN
+       StefanBoltzmann = ListGetConstReal( Model % Constants, &
                      'Stefan Boltzmann' )
+     END IF
+
 !------------------------------------------------------------------------------
      Stabilize = GetLogical( SolverParams,'Stabilize',Found )
 
@@ -376,11 +391,16 @@
 
      NonlinearTol  = GetConstReal( SolverParams, &
                      'Nonlinear System Convergence Tolerance',    Found )
-     NewtonTol     = GetConstReal( SolverParams, &
-                      'Nonlinear System Newton After Tolerance',  Found )
 
-     NewtonIter    = GetInteger(   SolverParams, &
+     IF( IsRadiation ) THEN
+       NewtonTol     = GetConstReal( SolverParams, &
+                      'Nonlinear System Newton After Tolerance',  Found )
+       NewtonIter    = GetInteger(   SolverParams, &
                       'Nonlinear System Newton After Iterations', Found )
+     ELSE
+       NewtonTol = 1.0_dp
+       NewtonIter =  0
+     END IF
      IF ( NewtonIter == 0) NewtonLinearization = .TRUE.
 
      Relax = GetCReal( SolverParams, &
@@ -508,8 +528,11 @@
 
         SmartTol  = GetConstReal( SolverParams, &
              'Smart Heater Control After Tolerance',  Found )
-        IF(.NOT. Found) SmartTol = 1.0
-        
+        IF(.NOT. Found) THEN
+          SmartTolReached = .TRUE.
+          SmartTol = 1.0
+        END IF   
+     
         PowerTimeScale = ListGetConstReal(Solver % Values, &
              'Smart Heater Time Scale',Found)
 
@@ -562,6 +585,11 @@
 !    Save current solution
 !------------------------------------------------------------------------------
      PrevSolution = Temperature(1:LocalNodes)
+     IF ( TransientSimulation ) THEN
+       IF ( .NOT. ALLOCATED(TSolution) ) &
+         ALLOCATE( TSolution(LocalNodes), TSolution1(LocalNodes) )
+       TSolution = Solver % Variable % PrevValues(:,1)
+     END IF
 !------------------------------------------------------------------------------
 
      totat = 0.0d0
@@ -1019,7 +1047,7 @@
         IF(.NOT. TransientHeaterControl) THEN
  
           CALL ListAddLogical(SolverParams, &
-              'Skip Compute Change',.TRUE.)
+              'Skip Compute Nonlinear Change',.TRUE.)
 
           Relax = GetCReal( SolverParams, &
               'Nonlinear System Relaxation Factor', Found )
@@ -1037,7 +1065,7 @@
           CALL SolveSystem( Solver % Matrix, ParMatrix, &
               Solver % Matrix % RHS, YY, Norm, 1, Solver )
 
-          CALL ListAddLogical(SolverParams,'Skip Compute Change',.FALSE.)
+          CALL ListAddLogical(SolverParams,'Skip Compute Nonlinear Change',.FALSE.)
         ELSE          
           CALL SolveSystem( Solver % Matrix, ParMatrix, &
               Solver % Matrix % RHS, Temperature, Norm, 1, Solver )
@@ -1200,18 +1228,6 @@ print *,'MeltPoint',MeltPoint,yave
         Temperature = Temperature * (1 + PowerRelax * (MeltPoint/yave - 1.0d0)   )     
       END IF
       YY = Temperature
-    END IF
-
-
-    IF ( TransientSimulation .AND. PhaseChange ) THEN
-      IF ( .NOT.ALLOCATED(TSolution) ) THEN
-        ALLOCATE( TSolution(LocalNodes),TSolution1(LocalNodes),STAT=istat )
- 
-        IF ( istat /= 0 ) THEN
-           CALL Fatal( 'HeatSolve', 'Memory allocation error.' )
-         END IF
-      END IF
-      TSolution(1:LocalNodes) = PrevSolution(1:LocalNodes)
     END IF
 
 !------------------------------------------------------------------------------

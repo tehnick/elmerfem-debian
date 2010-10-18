@@ -227,10 +227,10 @@ CONTAINS
 
     INTEGER(KIND=AddrInt) :: Proc
 
-    CHARACTER(LEN=1024) :: name,depname,str,section
+    CHARACTER(LEN=2048) :: section, name, depname, str
 
     LOGICAL :: SizeGiven
-    LOGICAL :: FreeNames, Echo = .FALSE.
+    LOGICAL :: FreeNames=.FALSE., Echo = .FALSE.
     INTEGER :: CheckAbort = 0
 
     TYPE(Solver_t), POINTER :: ASolvers(:)
@@ -244,19 +244,12 @@ CONTAINS
 
     LOGICAL :: FirstTime = .TRUE.
 
-    INTEGER :: IValues(512),nlen
+    INTEGER :: nlen
     REAL(KIND=dp) :: Value
-    REAL(KIND=dp), POINTER :: ATx(:,:,:), ATt(:), ATtBuf(:), ATxBuf(:,:,:)
 !------------------------------------------------------------------------------
 
 !   OPEN( InFileUnit,FILE=TRIM(FileName),STATUS='OLD',ERR=10 )
 
-    NULLIFY( ATx )
-    NULLIFY( ATt )
-    IF ( .NOT. ScanOnly ) THEN
-       ALLOCATE( ATt(512) )
-       ALLOCATE( ATx(1,1,512) )
-    END IF
 !
 !------------------------------------------------------------------------------
 !   Read model header first
@@ -264,8 +257,8 @@ CONTAINS
     CheckAbort = 1
     IF ( FirstTime ) THEN
        FirstTime = .FALSE.
-       Section = 'simulation'
-       CALL CheckKeyword( 'coordinate system', 'string' )
+       CALL CheckKeyword( 'coordinate system', 'string', &
+           CheckAbort,FreeNames,'simulation' )
     END IF
  
     IF ( BaseLoad ) THEN
@@ -293,10 +286,10 @@ CONTAINS
         ELSE IF ( Name(1:7)  == 'mesh db' ) THEN
           k = 9
           i = 1
-          nlen = LEN_TRIM(name)
-          DO WHILE( name(k:k) /= ' ' )
-            MeshDir(i:i)  = name(k:k)
-            Meshname(i:i) = name(k:k)
+          nlen = LEN_TRIM(Name)
+          DO WHILE( Name(k:k) /= ' ' )
+            MeshDir(i:i)  = Name(k:k)
+            Meshname(i:i) = Name(k:k)
             k = k + 1
             i = i + 1
           END DO
@@ -309,7 +302,7 @@ CONTAINS
           IF ( k<=nlen ) THEN
              MeshName(i:i) = '/'
              i = i + 1
-             DO WHILE( name(k:k) /= ' ' )
+             DO WHILE( Name(k:k) /= ' ' )
                MeshName(i:i) = Name(k:k)
                k = k + 1
                i = i + 1
@@ -331,16 +324,16 @@ CONTAINS
         END IF
       END DO
 
-      NULLIFY( Model % BCs )
-      NULLIFY( Model % ICs )
-      NULLIFY( Model % Bodies )
-      NULLIFY( Model % Solvers )
-      NULLIFY( Model % Equations )
-      NULLIFY( Model % Materials )
-      NULLIFY( Model % Constants )
-      NULLIFY( Model % Simulation )
-      NULLIFY( Model % BodyForces )
-      NULLIFY( Model % Boundaries )
+      Model % BCs => Null()
+      Model % ICs => Null()
+      Model % Bodies => Null()
+      Model % Solvers => Null()
+      Model % Equations => Null()
+      Model % Materials => Null()
+      Model % Constants => Null()
+      Model % Simulation => Null()
+      Model % BodyForces => Null()
+      Model % Boundaries => Null()
     END IF
 
 
@@ -401,7 +394,7 @@ CONTAINS
       ELSE IF ( Section(1:18) == 'boundary condition' ) THEN
 
         IF ( ScanOnly ) THEN
-           READ( section(19:),* ) Arrayn
+           READ( Section(19:),* ) Arrayn
            Model % NumberOFBCs = MAX( Model % NumberOfBCs, Arrayn )
         ELSE
            IF ( .NOT.ASSOCIATED( Model % BCs ) ) THEN
@@ -410,7 +403,7 @@ CONTAINS
                  NULLIFY( Model % BCs(i) % Values )
               END DO
            ELSE 
-             READ( section(19:),* ) Arrayn
+             READ( Section(19:),* ) Arrayn
              Model % NumberOfBCs = MAX( Arrayn, Model % NumberOfBCs )
 
              IF ( SIZE( Model % BCs ) < Model % NumberOfBCs ) THEN
@@ -426,7 +419,7 @@ CONTAINS
              END IF
            END IF
 
-           READ( section(19:),* ) Arrayn
+           READ( Section(19:),* ) Arrayn
            IF ( Arrayn <= 0 .OR. Arrayn > Model % NumberOfBCs ) THEN
               WRITE( Message, * ) 'Boundary Condition section number: ',Arrayn, &
                             ' exeeds header value.'
@@ -452,7 +445,7 @@ CONTAINS
               END DO
            END IF
 
-           READ( section(9:),* ) Arrayn
+           READ( Section(9:),* ) Arrayn
            BoundaryIndex = BoundaryIndex + 1
            IF ( BoundaryIndex <= 0 .OR. BoundaryIndex >  &
                  Model % NumberOfBoundaries ) THEN
@@ -467,7 +460,7 @@ CONTAINS
       ELSE IF ( Section(1:17) == 'initial condition' ) THEN
 
         IF ( ScanOnly ) THEN
-           READ( section(18:),* ) Arrayn
+           READ( Section(18:),* ) Arrayn
            Model % NumberOFICs = MAX( Model % NumberOfICs, ArrayN )
         ELSE
            IF ( .NOT.ASSOCIATED( Model % ICs ) ) THEN
@@ -476,7 +469,7 @@ CONTAINS
                  NULLIFY( Model % ICs(i) % Values )
               END DO
            ELSE
-              READ( section(18:),* ) Arrayn
+              READ( Section(18:),* ) Arrayn
               Model % NumberOfICs = MAX( Model % NumberOfICs, Arrayn )
               IF ( SIZE( Model % ICs ) < Model % NumberOfICs ) THEN
                 ALLOCATE( AIC(Model % NumberOfICs) )
@@ -491,7 +484,7 @@ CONTAINS
               END IF
            END IF
 
-           READ( section(18:),* ) Arrayn
+           READ( Section(18:),* ) Arrayn
            IF ( Arrayn <= 0 .OR. Arrayn > Model % NumberOfICs ) THEN
               WRITE( Message, * ) 'Initial Condition section number: ',Arrayn, &
                           ' exeeds header value.'
@@ -506,7 +499,7 @@ CONTAINS
       ELSE IF ( Section(1:8) == 'material' ) THEN
 
         IF ( ScanOnly ) THEN
-           READ( section(9:),* ) Arrayn
+           READ( Section(9:),* ) Arrayn
            Model % NumberOFMaterials = MAX( Model % NumberOfMaterials, ArrayN )
         ELSE
            IF ( .NOT.ASSOCIATED( Model % Materials ) ) THEN
@@ -515,7 +508,7 @@ CONTAINS
                  NULLIFY( Model % Materials(i) % Values )
               END DO
            ELSE
-              READ( section(9:),* ) Arrayn
+              READ( Section(9:),* ) Arrayn
               Model % NumberOfMaterials = MAX( Arrayn, Model % NumberOFMaterials ) 
               IF ( SIZE( Model % Materials ) < Model % NumberOfMaterials ) THEN
                 ALLOCATE( AMaterial(Model % NumberOfMaterials) )
@@ -530,7 +523,7 @@ CONTAINS
               END IF
            END IF
 
-           READ( section(9:),* ) Arrayn
+           READ( Section(9:),* ) Arrayn
            IF ( Arrayn <= 0 .OR. Arrayn > Model % NumberOfMaterials ) THEN
               WRITE( Message, * ) 'Material section number: ',Arrayn, &
                              ' exeeds header value.'
@@ -542,7 +535,7 @@ CONTAINS
       ELSE IF ( Section(1:10) == 'body force' ) THEN
 
         IF ( ScanOnly ) THEN
-           READ( section(12:),* ) Arrayn
+           READ( Section(12:),* ) Arrayn
            Model % NumberOFBodyForces = MAX( Model % NumberOFBodyForces, ArrayN)
         ELSE
            IF ( .NOT.ASSOCIATED( Model % BodyForces ) ) THEN
@@ -551,7 +544,7 @@ CONTAINS
                 NULLIFY( Model % BodyForces(i) % Values )
              END DO
            ELSE
-              READ( section(12:),* ) Arrayn
+              READ( Section(12:),* ) Arrayn
               Model % NumberOFBodyForces = MAX( Arrayn, Model % NumberOfBodyForces )
               IF ( SIZE( Model % BodyForces ) < Model % NumberOfBodyForces ) THEN
                  ALLOCATE( ABF(Model % NumberOfBodyForces) )
@@ -566,7 +559,7 @@ CONTAINS
               END IF
            END IF
 
-           READ( section(12:),* ) Arrayn
+           READ( Section(12:),* ) Arrayn
            IF ( Arrayn <= 0 .OR. Arrayn > Model % NumberOfBodyForces ) THEN
               WRITE( Message, * ) 'Body Force section number: ',Arrayn, &
                           ' exeeds header value.'
@@ -578,7 +571,7 @@ CONTAINS
       ELSE IF ( Section(1:8) == 'equation' ) THEN
 
         IF ( ScanOnly ) THEN
-           READ( section(9:),* ) Arrayn
+           READ( Section(9:),* ) Arrayn
            Model % NUmberOfEquations = MAX( Model % NumberOFEquations, ArrayN )
         ELSE
            IF ( .NOT.ASSOCIATED( Model % Equations ) ) THEN
@@ -587,7 +580,7 @@ CONTAINS
                NULLIFY( Model % Equations(i) % Values )
              END DO
            ELSE
-              READ( section(9:),* ) Arrayn
+              READ( Section(9:),* ) Arrayn
               Model % NumberOFEquations = MAX( Arrayn, Model % NumberOFEquations )
               IF ( SIZE( Model % Equations ) < Model % NumberOfEquations ) THEN
                 ALLOCATE( AEquation(Model % NumberOfEquations) )
@@ -602,7 +595,7 @@ CONTAINS
               END IF
            END IF
 
-           READ( section(9:),* ) Arrayn
+           READ( Section(9:),* ) Arrayn
            IF ( Arrayn <= 0 .OR. Arrayn > Model % NumberOfEquations ) THEN
               WRITE( Message, * ) 'Equation section number: ',Arrayn, &
                            ' exeeds header value.'
@@ -616,7 +609,7 @@ CONTAINS
       ELSE IF ( Section(1:4) == 'body' ) THEN
 
         IF ( ScanOnly ) THEN
-           READ( section(5:),* ) Arrayn
+           READ( Section(5:),* ) Arrayn
            Model % NumberOFBodies = MAX( Model % NumberOFBodies, ArrayN )
         ELSE
            IF ( .NOT.ASSOCIATED( Model % Bodies ) ) THEN
@@ -625,7 +618,7 @@ CONTAINS
                NULLIFY( Model % Bodies(i) % Values )
              END DO
            ELSE
-              READ( section(5:),* ) Arrayn
+              READ( Section(5:),* ) Arrayn
               Model % NumberOFBodies = MAX( Arrayn, Model % NumberOFBodies )
               IF ( SIZE( Model % Bodies ) < Model % NumberOfBodies ) THEN
                  ALLOCATE( ABody(Model % NumberOfBodies) )
@@ -640,7 +633,7 @@ CONTAINS
               END IF
            END IF
 
-           READ( section(5:),* ) Arrayn
+           READ( Section(5:),* ) Arrayn
            IF ( Arrayn <= 0 .OR. Arrayn > Model % NumberOfBodies ) THEN
               WRITE( Message, * ) 'Body section number: ',Arrayn, &
                         ' exeeds header value. Aborting. '
@@ -652,7 +645,7 @@ CONTAINS
       ELSE IF ( Section(1:6) == 'solver' ) THEN
 
         IF ( ScanOnly ) THEN
-           READ( section(7:),* ) Arrayn
+           READ( Section(7:),* ) Arrayn
            Model % NumberOfSolvers = MAX( Model % NumberOfSolvers, ArrayN )
         ELSE
            IF ( .NOT.ASSOCIATED( Model % Solvers ) ) THEN
@@ -665,7 +658,7 @@ CONTAINS
                 Model % Solvers(i) % NumberOfActiveElements = 0
              END DO
            ELSE
-              READ( section(7:),* ) Arrayn
+              READ( Section(7:),* ) Arrayn
               Model % NumberOfSolvers = MAX( Arrayn, Model % NumberOfSolvers )
               IF ( SIZE(Model % Solvers) < Model % NumberOfSolvers ) THEN
                 ALLOCATE( ASolvers(Model % NumberOfSolvers) )
@@ -685,7 +678,7 @@ CONTAINS
               END IF
            END IF
 
-           READ( section(7:),* ) Arrayn
+           READ( Section(7:),* ) Arrayn
            IF ( Arrayn <= 0 .OR. Arrayn > Model % NumberOfSolvers ) THEN
               WRITE( Message, * ) 'Solver section number: ',Arrayn, &
                                ' exeeds header value. Aborting. '
@@ -700,7 +693,32 @@ CONTAINS
 !------------------------------------------------------------------------------
       IF ( .NOT. ScanOnly .AND. ArrayN == 0 ) CYCLE
 
-      CALL SectionContents( InFileUnit, ScanOnly, Atx, Att )
+      CALL SectionContents( Model, List, CheckAbort, FreeNames, &
+                Section, InFileUnit, ScanOnly, Echo )
+
+      IF ( .NOT. ScanOnly ) THEN
+        IF ( Section(1:9) == 'constants' ) THEN
+          Model % Constants => List
+        ELSE IF ( Section(1:10) == 'simulation' ) THEN
+          Model % Simulation => List
+        ELSE IF ( Section(1:18) == 'boundary condition' ) THEN
+          Model % BCs(Arrayn) % Values => List
+        ELSE IF ( Section(1:8) == 'boundary' ) THEN
+          Model % Boundaries(BoundaryIndex) % Values => List
+        ELSE IF ( Section(1:17) == 'initial condition' ) THEN
+          Model % ICs(Arrayn) % Values => List
+        ELSE IF ( Section(1:8) == 'material' ) THEN
+          Model % Materials(Arrayn) % Values => List
+        ELSE IF ( Section(1:10) == 'body force' ) THEN
+          Model % BodyForces(Arrayn) % Values => List
+        ELSE IF ( Section(1:8) == 'equation' ) THEN
+          Model % Equations(Arrayn) % Values  => List
+        ELSE IF ( Section(1:4) == 'body' ) THEN
+          Model % Bodies(Arrayn) % Values => List
+        ELSE IF ( Section(1:6) == 'solver' ) THEN
+          Model % Solvers(Arrayn) % Values => List
+        END IF
+      END IF
 !------------------------------------------------------------------------------
     END DO
 !------------------------------------------------------------------------------
@@ -708,8 +726,6 @@ CONTAINS
 !   CLOSE( InFileUnit )
 
     IF ( .NOT. ScanOnly )  THEN
-      IF ( ASSOCIATED(ATx) ) DEALLOCATE( ATx )
-      IF ( ASSOCIATED(ATt) ) DEALLOCATE( ATt )
 
       ! Add default equation, material, ic, bodyforce, and body if not given:
       ! ---------------------------------------------------------------------
@@ -765,16 +781,17 @@ CONTAINS
 
 CONTAINS
 
-    SUBROUTINE CheckKeyWord( Name,TYPE,ReturnType )
+    SUBROUTINE CheckKeyWord( Name,Type,CheckAbort,FreeNames,Section,ReturnType )
        USE HashTable
 
-       CHARACTER(LEN=*) :: Name,TYPE
-       LOGICAL, OPTIONAL :: ReturnType
-       INTEGER :: i,j, n, istat
-       TYPE(HashTable_t), POINTER :: Hash
+       CHARACTER(LEN=*) :: Name,Type,Section
+       INTEGER :: CheckAbort
+       LOGICAL, OPTIONAL :: ReturnType,FreeNames
+
+       INTEGER :: i,j, k,n, istat
+       TYPE(HashTable_t), POINTER :: Hash =>Null()
        TYPE(HashValue_t), POINTER :: Value
        LOGICAL :: FirstTime = .TRUE.,lstat
-       SAVE FirstTime, Hash
        CHARACTER(LEN=MAX_PATH_LEN) :: str,str1
        EXTERNAL ENVIR
 
@@ -830,6 +847,7 @@ CONTAINS
 !         Read the keywords file row by row and add to the hash table:
 !         ------------------------------------------------------------
           DO WHILE( ReadAndTrim( 1, str ) )
+
              i = INDEX( str, ':' )
              j = INDEX( str, "'" )
              IF ( i <= 0 .OR. j<= 0 ) CYCLE
@@ -943,30 +961,40 @@ CONTAINS
                  ' database not available.' )
        END IF
 !------------------------------------------------------------------------------
-    END SUBROUTINE
+    END SUBROUTINE CheckKeyword
 !------------------------------------------------------------------------------
 
 
 
 !------------------------------------------------------------------------------
-    RECURSIVE SUBROUTINE SectionContents( InFileUnit, ScanOnly, ATx, Att )
+    RECURSIVE SUBROUTINE SectionContents( Model,List, CheckAbort,FreeNames, &
+              Section, InFileUnit, ScanOnly, Echo )
 !------------------------------------------------------------------------------
+      TYPE(ValueList_t), POINTER :: List,ll
+      INTEGER :: InFileUnit,CheckAbort
+      TYPE(Model_t) :: Model
+      LOGICAL :: FreeNames,Echo
+      CHARACTER(LEN=*)  :: Section
 
-      INTEGER :: InFileUnit
+      INTEGER, ALLOCATABLE  :: IValues(:)
+      REAL(KIND=dp), ALLOCATABLE :: Atx(:,:,:), ATt(:)
 
-      REAL(KIND=dp), POINTER :: Atx(:,:,:), ATt(:)
+      CHARACTER(LEN=MAX_NAME_LEN) :: TypeString,Keyword
+      CHARACTER(LEN=MAX_PATH_LEN) :: Name,str, Depname
+      LOGICAL :: ReturnType, ScanOnly, String_literal,  SizeGiven, Cubic
 
-      CHARACTER(LEN=MAX_NAME_LEN) :: TypeString
-      LOGICAL :: ReturnType, ScanOnly
-      CHARACTER(LEN=MAX_PATH_LEN) :: Name
+      INTEGER(KIND=AddrInt) :: Proc
+      INTEGER :: i,j,k,l,n,slen, str_beg, str_end, n1,n2, type, abuflen=0
 
-      INTEGER :: LEN
+      ALLOCATE( ATt(1), ATx(1,1,1), IValues(1) )
 
-      DO WHILE( ReadAndTrim( InFileUnit,name,Echo ) )
+
+      DO WHILE( ReadAndTrim( InFileUnit,Name,Echo ) )
 
         IF ( Name(1:7) == 'include' ) THEN
           OPEN( InFileUnit-1,FILE=TRIM(Name(9:)),STATUS='OLD',ERR=10 )
-          CALL SectionContents( InFileUnit-1,ScanOnly,Atx,Att )
+          CALL SectionContents( Model,List,CheckAbort,FreeNames, &
+                  Section,InFileUnit-1,ScanOnly, Echo )
           CLOSE( InFileUnit-1 )
           CYCLE
 
@@ -986,21 +1014,41 @@ CONTAINS
         N1   = 1
         N2   = 1
         SizeGiven = .FALSE.
-        DO WHILE( ReadAndTrim(InFileUnit,str,echo) ) 
+        str = ''
+        DO WHILE( ReadAndTrim(InFileUnit,str,echo,string_literal) ) 
+
+          IF ( string_literal ) THEN
+            ReturnType = .TRUE.
+            CALL CheckKeyWord( Name, TypeString, CheckAbort,FreeNames,Section,ReturnType )
+            IF ( .NOT. ReturnType ) THEN
+              CALL SyntaxError( Section, Name,str )
+            ELSE IF (TypeString/='string' .AND. TypeString/='file') THEN 
+              CALL SyntaxError( Section, Name,str )
+            ELSE
+              str = TRIM(TypeString) // ' ' // TRIM(str)
+            END IF
+          END IF
 
 20        CONTINUE
 
-          LEN = LEN_TRIM(str)
+          slen = len_trim(str)
+          j = slen
+          DO i=1,slen
+            IF ( str(i:i)==' ') EXIT
+            j = i
+          END DO
+          Keyword=str(1:j)
+          str_beg = j+2
 
-          IF ( str(1:4) == 'real' ) THEN
-
-             CALL CheckKeyWord( Name,'real' )
+          SELECT CASE(Keyword)
+          CASE('real')
+             CALL CheckKeyWord( Name,'real',CheckAbort,FreeNames,Section )
 
              Proc = 0
-             IF ( str(6:14) == 'procedure' ) THEN
+             IF ( str(str_beg:str_beg+9) == 'procedure ' ) THEN
 
                IF ( .NOT. ScanOnly ) THEN
-                  Proc = GetProcAddr( str(16:) )
+                  Proc = GetProcAddr( str(str_beg+10:) )
 
                   SELECT CASE( TYPE )
                   CASE( LIST_TYPE_CONSTANT_SCALAR )
@@ -1023,7 +1071,7 @@ CONTAINS
                   END SELECT
                END IF
 
-             ELSE IF ( str(6:9) == 'matc' ) THEN
+             ELSE IF ( str(str_beg:str_beg+4) == 'matc ' ) THEN
 
                IF ( .NOT. ScanOnly ) THEN
 
@@ -1031,18 +1079,21 @@ CONTAINS
                   CASE( LIST_TYPE_CONSTANT_SCALAR )
 
                     IF ( SizeGiven ) THEN
-                       CALL ListAddConstRealArray( List,Name,N1,N2, ATx(1:N1,1:N2,1), Proc, str(11:) )
+                       CALL ListAddConstRealArray( List,Name,N1,N2, &
+                         ATx(1:N1,1:N2,1), Proc, str(str_beg+5:) )
                     ELSE
-                      CALL ListAddConstReal( List,Name,Value,Proc, str(11:) )
+                      CALL ListAddConstReal( List,Name,Value,Proc, &
+                                  str(str_beg+5:) )
                     END IF
    
                   CASE( LIST_TYPE_VARIABLE_SCALAR )
 
                     IF ( SizeGiven ) THEN
                       CALL ListAddDepRealArray( List,Name,Depname,1,ATt, &
-                            N1,N2,ATx(1:N1,1:N2,1:n),Proc, str(11:) )
+                            N1,N2,ATx(1:N1,1:N2,1:n),Proc, str(str_beg+5:) )
                     ELSE
-                      CALL ListAddDepReal( List,Name,Depname,1,ATt,ATx,Proc, str(11:) )
+                      CALL ListAddDepReal( List,Name,Depname,1,ATt,ATx, &
+                                  Proc, str(str_beg+5:) )
                     END IF
                   END SELECT
                END IF
@@ -1051,26 +1102,31 @@ CONTAINS
 
                SELECT CASE( TYPE )
                CASE( LIST_TYPE_CONSTANT_SCALAR )
-                  IF ( .NOT. ScanOnly ) THEN
-                     k = 0
-                     DO i=1,N1
-                        DO j=1,N2
-                           DO WHILE( k <= LEN )
-                              k = k + 1
-                              IF ( str(k:k) == ' ' ) EXIT
-                           END DO
- 
-                           DO WHILE( k <= LEN )
-                             k = k + 1
-                             IF ( str(k:k) /= ' ' ) EXIT
-                           END DO
- 
-                           IF ( k > LEN ) CALL SyntaxError( Section, Name,str )
- 
-                           READ( str(k:),* ) ATx(i,j,1)
+                  k = 0
+                  DO i=1,N1
+                     DO j=1,N2
+                        DO WHILE( k <= slen )
+                           k = k + 1
+                           IF ( str(k:k) == ' ' ) EXIT
                         END DO
+
+                        DO WHILE( k <= slen )
+                          k = k + 1
+                             IF ( str(k:k) /= ' ' ) EXIT
+                        END DO
+
+                        IF ( k > slen ) THEN
+                          IF ( .NOT. ReadAndTrim( InFileUnit,str,Echo) ) &
+                            CALL SyntaxError( Section,Name,str )
+                          k = 1
+                          slen = LEN_TRIM(str)
+                        END IF
+
+                        IF (.NOT.ScanOnly ) READ( str(k:),* ) ATx(i,j,1)
                      END DO
+                  END DO
  
+                  IF ( .NOT. ScanOnly ) THEN
                      IF ( SizeGiven ) THEN
                        CALL ListAddConstRealArray( List,Name,N1,N2, &
                               ATx(1:N1,1:N2,1) )
@@ -1080,70 +1136,74 @@ CONTAINS
                   END IF
   
                CASE( LIST_TYPE_VARIABLE_SCALAR )
-                 n = 0
+                 IF (ScanOnly) THEN
+                   AbufLen=0
+                 ELSE
+                   IF (ALLOCATED(ATt) ) DEALLOCATE(ATt,ATx)
+                   ALLOCATE( ATt(ABufLen), ATx(n1,n2,AbufLen) )
+                 END IF
  
+                 Cubic = str(str_beg:str_beg+4)=='cubic'
+                 n = 0
                  DO WHILE( ReadAndTrim(InFileUnit,str,Echo) )
+
                    IF ( str(1:3) == 'end' ) EXIT
                    IF ( str(1:1) == ' '  ) CYCLE
  
+                   slen = LEN_TRIM(str)
                    IF ( .NOT. ScanOnly ) THEN
-                      LEN = LEN_TRIM(str)
- 
-                      n = n + 1
-                      IF ( n > SIZE(ATt) ) THEN
-                         ALLOCATE( ATtBuf( SIZE(ATt)+512) )
-                         ATtBuf(1:n-1) = ATt(1:n-1)
-                         DEALLOCATE( ATt )
-                         ATt => ATtBuf
- 
-                         ALLOCATE( ATxBuf( n1,n2,SIZE(ATt)+512) )
-                         ATxBuf(1:n1,1:n2,1:n-1) = ATx(1:n1,1:n2,1:n-1)
-                         DEALLOCATE( ATx )
-                         ATx => ATxBuf
-                      END IF
- 
-                      READ( str,* ) ATt(n)
- 
-                      k = 0
-                      DO i=1,N1
-                        DO j=1,N2
-                          DO WHILE( k <= LEN )
-                            k = k + 1
-                            IF ( str(k:k) == ' ') EXIT
-                          END DO
- 
-                          DO WHILE( k <= LEN )
-                            k = k + 1
-                            IF ( str(k:k) /= ' ') EXIT
-                          END DO
- 
-                          IF ( k > LEN ) CALL SyntaxError( Section, Name,str )
- 
-                          READ( str(k:),* ) ATx(i,j,n)
-                        END DO
-                      END DO
+                     n = n + 1
+                     READ( str,* ) ATt(n)
+                   ELSE
+                     AbufLen = AbufLen+1
                    END IF
+
+                   k = 0
+                   DO i=1,N1
+                     DO j=1,N2
+                       DO WHILE( k <= slen )
+                         k = k + 1
+                         IF ( str(k:k) == ' ' ) EXIT
+                       END DO
+
+                       DO WHILE( k <= slen )
+                         k = k + 1
+                         IF ( str(k:k) /= ' ' ) EXIT
+                       END DO
+
+                       IF ( k > slen ) THEN
+                          IF ( .NOT. ReadAndTrim( InFileUnit,str,Echo) ) &
+                            CALL SyntaxError( Section,Name,str )
+
+                          k = 1
+                          slen = LEN_TRIM(str)
+                       END IF
+
+                       IF ( .NOT. ScanOnly ) READ( str(k:),* ) ATx(i,j,n)
+                     END DO
+                   END DO
                  END DO
  
                  IF (.NOT. ScanOnly ) THEN
                    IF ( SizeGiven ) THEN
                      CALL ListAddDepRealArray( List,Name,Depname,n,ATt(1:n), &
-                              N1,N2,ATx(1:N1,1:N2,1:N) )
+                              N1,N2,ATx(1:N1,1:N2,1:n) )
                    ELSE
                      CALL ListAddDepReal( List,Name,Depname,n,ATt(1:n), &
-                                   ATx(1,1,1:N) )
+                                   ATx(1,1,1:n),CubicTable=Cubic )
                    END IF
                  END IF
                END SELECT
              END IF
              EXIT
 
-          ELSE IF ( str(1:7) == 'logical' ) THEN
+          CASE('logical')
 
-            CALL CheckKeyWord( Name,'logical' )
+            CALL CheckKeyWord( Name,'logical',CheckAbort,FreeNames,Section )
 
             IF ( .NOT. ScanOnly ) THEN
-               IF ( str(9:12) == 'true' .OR. str(9:9) == '1' ) THEN
+               IF ( str(str_beg:str_beg+3) == 'true' .OR. &
+                 str(str_beg:str_beg) == '1' ) THEN
                  CALL ListAddLogical( List,Name,.TRUE. )
                ELSE 
                  CALL ListAddLogical( List,Name,.FALSE. )
@@ -1151,71 +1211,86 @@ CONTAINS
             END IF
             EXIT
 
-          ELSE IF ( str(1:7) == 'integer' ) THEN
+          CASE('integer')
 
-            CALL CheckKeyWord( Name,'integer' )
+            CALL CheckKeyWord( Name,'integer',CheckAbort,FreeNames,Section )
 
-            IF ( .NOT. ScanOnly ) THEN
-               Proc = 0
-               IF ( str(9:17) == 'procedure' ) THEN
-                 Proc = GetProcAddr( str(19:) )
+
+             Proc = 0
+             IF ( str(str_beg:str_beg+9) == 'procedure ' ) THEN
+               IF ( .NOT. ScanOnly ) THEN
+                 Proc = GetProcAddr( str(str_beg+10:) )
                  IF ( SizeGiven ) THEN
                    CALL ListAddIntegerArray( List,Name,N1,IValues,Proc )
                  ELSE
                    CALL ListAddInteger( List,Name,k,Proc )
                  END IF
-               ELSE
-                 IF ( SizeGiven ) THEN
-                   k = 0
-                   DO i=1,N1
-                     DO WHILE( k <= LEN )
-                        k = k + 1
-                        IF ( str(k:k) == ' ') EXIT
-                     END DO
-
-                     DO WHILE( k <= LEN )
-                       k = k + 1
-                       IF ( str(k:k) /= ' ') EXIT
-                     END DO
-
-                     IF ( k > LEN ) CALL SyntaxError( Section, Name,str )
-
-                     READ( str(k:),* ) IValues(i)
-                   END DO
-                   CALL ListAddIntegerArray( List,Name,N1,IValues )
-                 ELSE
-                   READ( str(9:),* ) k 
-                   CALL ListAddInteger( List,Name,k )
-                 END IF
                END IF
-            END IF
+             ELSE
+               IF ( SizeGiven ) THEN
+                 IF ( .NOT. ScanOnly ) THEN
+                   IF (SIZE(IValues)<n1) THEN
+                     DEALLOCATE(IValues)
+                     ALLOCATE(IValues(n1))
+                   END IF
+                 END IF
+
+                 k = 0
+                 DO i=1,N1
+                   DO WHILE( k <= slen )
+                      k = k + 1
+                      IF ( str(k:k) == ' ') EXIT
+                   END DO
+
+                   DO WHILE( k <= slen )
+                     k = k + 1
+                     IF ( str(k:k) /= ' ') EXIT
+                   END DO
+
+                   IF ( k > slen ) THEN
+                     IF ( .NOT. ReadAndTrim(InFileUnit,str,Echo)) &
+                       CALL SyntaxError( Section,Name,str )
+
+                     k = 0
+                     slen = LEN_TRIM(str)
+                   END IF
+                   IF ( .NOT. ScanOnly ) READ( str(k:),* ) IValues(i)
+                 END DO
+                 IF ( .NOT. ScanOnly ) CALL ListAddIntegerArray( &
+                              List,Name,N1,IValues )
+               ELSE IF (.NOT.ScanOnly) THEN
+                 READ( str(str_beg:),* ) k 
+                 CALL ListAddInteger( List,Name,k )
+               END IF
+             END IF
+             EXIT
+
+          CASE('string')
+
+            CALL CheckKeyWord( Name,'string',CheckAbort,FreeNames,Section )
+
+            IF ( .NOT. ScanOnly ) CALL ListAddString( List,Name,str(str_beg:) )
             EXIT
 
-          ELSE IF ( str(1:6) == 'string' ) THEN
+          CASE('file')
 
-            CALL CheckKeyWord( Name,'string' )
+            CALL CheckKeyWord( Name,'file',CheckAbort,FreeNames,Section )
 
-            IF ( .NOT. ScanOnly ) CALL ListAddString( List,Name,str(8:) )
+            IF ( .NOT. ScanOnly ) CALL ListAddString( List,Name, &
+                          str(str_beg:),.FALSE. )
             EXIT
 
-          ELSE IF ( str(1:4) == 'file' ) THEN
-
-            CALL CheckKeyWord( Name,'file' )
-
-            IF ( .NOT. ScanOnly ) CALL ListAddString( List,Name,str(6:),.FALSE. )
-            EXIT
-
-          ELSE IF ( str(1:8) == 'variable' ) THEN
+          CASE('variable')
 
             DO k=MAX_NAME_LEN,1,-1
               IF ( str(k:k) /= ' ' ) EXIT 
             END DO
 
             Depname = ' '
-            Depname(1:k-9) = str(10:k)
+            Depname(1:k-9) = str(str_beg:k)
             TYPE = LIST_TYPE_VARIABLE_SCALAR
 
-          ELSE IF ( str(1:6) == 'equals' ) THEN
+          CASE('equals')
 
             IF ( .NOT. ScanOnly ) THEN
                DO k=MAX_NAME_LEN,1,-1
@@ -1223,7 +1298,7 @@ CONTAINS
                END DO
 
                Depname = ' '
-               Depname(1:k-7) = str(8:k)
+               Depname(1:k-7) = str(str_beg:k)
 
                n = 2
                IF ( n > SIZE( ATt ) ) THEN
@@ -1235,70 +1310,44 @@ CONTAINS
                ATt(2) = 1
                ATx(1,1,1) = 0
                ATx(1,1,2) = 1
-               CALL ListAddDepReal( List,Name,Depname,n,ATt(1:n), ATx(1,1,1:n) )
+               CALL ListAddDepReal(List,Name,Depname,n,ATt(1:n),ATx(1,1,1:n))
             END IF
             EXIT
 
-          ELSE IF ( str(1:4) == 'size' ) THEN
+          CASE('size')
             N1 = 1
             N2 = 1
-            READ( str(5:),*,err=1,END=1) N1,N2
+            READ( str(str_beg:),*,err=1,END=1) N1,N2
+
 1           CONTINUE
 
             IF ( .NOT. ScanOnly ) THEN
-               IF ( ASSOCIATED( ATx ) ) DEALLOCATE( ATx )
-               ALLOCATE( ATx(N1,N2,512) )
-               IF ( ASSOCIATED( ATt ) ) DEALLOCATE( ATt )
-               ALLOCATE( ATt(512) )
+               IF ( ALLOCATED( ATx ) ) DEALLOCATE( ATx )
+               ALLOCATE( ATx(N1,N2,1) )
+               IF ( ALLOCATED( ATt ) ) DEALLOCATE( ATt )
+               ALLOCATE( ATt(1) )
             END IF
 
             SizeGiven = .TRUE.
 
-          ELSE IF ( str(1:7) == '-remove' ) THEN
+          CASE('-remove')
 
             IF ( .NOT. ScanOnly ) CALL ListRemove( List, Name )
             EXIT
 
-          ELSE 
+          CASE DEFAULT
 
             ReturnType = .TRUE.
-            CALL CheckKeyWord( Name, TypeString, ReturnType )
+            CALL CheckKeyWord( Name, TypeString, CheckAbort, &
+                     FreeNames,Section,ReturnType )
             IF ( ReturnType ) THEN 
-               str = TRIM( TypeString ) // ' ' // str
-               GOTO 20
+              str = TRIM(TypeString) // ' ' // str
+              GOTO 20
             END IF
             CALL SyntaxError( Section, Name,str )
-
-          END IF
+          END SELECT
 !------------------------------------------------------------------------------
         END DO
-!------------------------------------------------------------------------------
-
-
-!------------------------------------------------------------------------------
-        IF ( .NOT. ScanOnly ) THEN
-           IF ( Section(1:9) == 'constants' ) THEN
-             Model % Constants => List
-           ELSE IF ( Section(1:10) == 'simulation' ) THEN
-             Model % Simulation => List
-           ELSE IF ( Section(1:18) == 'boundary condition' ) THEN
-             Model % BCs(Arrayn) % Values => List
-           ELSE IF ( Section(1:8) == 'boundary' ) THEN
-             Model % Boundaries(BoundaryIndex) % Values => List
-           ELSE IF ( Section(1:17) == 'initial condition' ) THEN
-             Model % ICs(Arrayn) % Values => List
-           ELSE IF ( Section(1:8) == 'material' ) THEN
-             Model % Materials(Arrayn) % Values => List
-           ELSE IF ( Section(1:10) == 'body force' ) THEN
-             Model % BodyForces(Arrayn) % Values => List
-           ELSE IF ( Section(1:8) == 'equation' ) THEN
-             Model % Equations(Arrayn) % Values  => List
-           ELSE IF ( Section(1:4) == 'body' ) THEN
-             Model % Bodies(Arrayn) % Values => List
-           ELSE IF ( Section(1:6) == 'solver' ) THEN
-             Model % Solvers(Arrayn) % Values => List
-           END IF
-        END IF
 !------------------------------------------------------------------------------
       END DO
 !------------------------------------------------------------------------------
@@ -1552,7 +1601,8 @@ type(valuelist_t), pointer :: lst
     ALLOCATE( Def_Dofs(6) )
     Def_Dofs = -1; Def_Dofs(1)=1
 
-    DO i=1,Model % NumberOfSolvers
+    i = 1
+    DO WHILE(i<=Model % NumberOFSolvers)
 
       Solver => Model % Solvers(i)
       Model % Solver => Solver
@@ -1561,8 +1611,11 @@ type(valuelist_t), pointer :: lst
       IF ( Found ) THEN
         InitProc = GetProcAddr( TRIM(Name)//'_Init0', abort=.FALSE. )
         IF ( InitProc /= 0 ) THEN
-          CALL ExecSolver( InitProc, CurrentModel, Solver, &
+          CALL ExecSolver( InitProc, Model, Solver, &
                   Solver % dt, Transient )
+
+          Solver => Model % Solvers(i)
+          Model % Solver => Solver
         END IF
       END IF
 
@@ -1652,6 +1705,8 @@ type(valuelist_t), pointer :: lst
         Solver % Def_Dofs(6) = l
         IF ( .NOT. GotMesh ) Def_Dofs(6) = MAX(Def_Dofs(6), l )
       END IF
+
+      i = i + 1
     END DO
 
     Name = ListGetString( Model % Simulation, 'Mesh', GotIt )
