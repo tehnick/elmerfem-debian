@@ -3,8 +3,9 @@ elmerfem (5.5.0.svn.4716.dfsg-1) unstable; urgency=low
   * New upstream revision, merged several Debian patches upstream.
   * Forward-ported all patches and refreshed with new quiltrc.
   * Bumped shared library version to 6.1.
+  * Bumped Standards-Version.
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 18 Oct 2010 20:35:17 -0400
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 18 Oct 2010 20:36:03 -0400
 
 elmerfem (5.5.0.svn.4499.dfsg-2) unstable; urgency=low
 
