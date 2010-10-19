@@ -166,7 +166,7 @@ stamp-build: patch
 	chmod -x debian/tmp/usr/share/elmerpost/lib/colormaps/*
 	chmod -x debian/tmp/usr/share/elmerpost/lib/images/*
 	chmod -x debian/tmp/usr/share/elmerpost/tcl/*
-	mv debian/tmp/usr/lib/elmersolver debian/tmp/usr/lib/elmersolver-6.0
+	mv debian/tmp/usr/lib/elmersolver debian/tmp/usr/lib/elmersolver-6.1
 	install -d debian/tmp/usr/share/applications
 	cp -a debian/*.desktop debian/tmp/usr/share/applications/
 	mv debian/tmp/usr/bin/ElmerGUI debian/tmp/usr/bin/ElmerGUI.real
