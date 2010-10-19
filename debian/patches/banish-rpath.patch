@@ -3,9 +3,11 @@ This removes rpath from the linking command.
 Of all of the patches in this package, this is the least likely to be adopted
 by upstream.
 
---- elmerfem-5.5.0.svn.4214.dfsg/fem/src/Makefile.am~	2009-06-25 20:42:26.000000000 -0400
-+++ elmerfem-5.5.0.svn.4214.dfsg/fem/src/Makefile.am	2009-06-26 19:15:23.000000000 -0400
-@@ -92,7 +92,7 @@
+Index: elmerfem/fem/src/Makefile.am
+===================================================================
+--- elmerfem.orig/fem/src/Makefile.am
++++ elmerfem/fem/src/Makefile.am
+@@ -77,7 +77,7 @@
  if IBM_AIX
  	$(SH_LD2) $(RPATH_ELMER) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o libelmersolver-$(VERSION)$(SHL_EXT) $(SOLVEROBJS) $(SOLVER_LIBS) -L. -Lbinio -lbinio
  else
@@ -14,7 +16,7 @@ by upstream.
  endif
  endif
  	$(LN) -s libelmersolver-$(VERSION)$(SHL_EXT) $@
-@@ -116,7 +116,7 @@
+@@ -101,7 +101,7 @@
  		   Solver$(OBJ_EXT) -L. -lelmersolver $(MPI_LIBS) $(EXTRA_LIBS)
  else
  ElmerSolver_mpi$(EXE_EXT): Solver$(OBJ_EXT) libelmersolver$(SHL_EXT)
@@ -23,8 +25,8 @@ by upstream.
  	      -o ElmerSolver_mpi$(EXE_EXT) Solver$(OBJ_EXT) \
  	      -L. -lelmersolver $(MPI_LIBS) $(EXTRA_LIBS)
  endif
-@@ -152,17 +152,17 @@
- # not windows - no resource files:
+@@ -110,7 +110,7 @@
+ 
  
  ElmerSolver$(EXE_EXT): Solver$(OBJ_EXT) libelmersolver$(SHL_EXT) mpi_stubs$(OBJ_EXT)
 -	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
@@ -32,11 +34,15 @@ by upstream.
  	      -o ElmerSolver$(EXE_EXT) Solver$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
  	      -L. -lelmersolver $(EXTRA_LIBS) 
  
- ViewFactors$(EXE_EXT): libelmersolver$(SHL_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT)
+@@ -120,13 +120,13 @@
+ 	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
+ 	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS) $(BLAS_LIBS)
+ else
 -	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
 +	$(FC) $(SH_LINKING_TO_FLAGS) $(B64FLAGS) $(LDFLAGS) \
  	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
  	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS) $(BLAS_LIBS) $(STDCXX_LIBS)
+ endif
  
  GebhardtFactors$(EXE_EXT): libelmersolver$(SHL_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT)
 -	$(FC) $(SH_LINKING_TO_FLAGS) $(RPATH_ELMER) $(B64FLAGS) $(LDFLAGS) \
@@ -44,7 +50,7 @@ by upstream.
  	      -o GebhardtFactors$(EXE_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
  	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
  
-@@ -176,7 +176,7 @@
+@@ -135,7 +135,7 @@
  if USE_WINDOWS_COMPILER
  else
  ResultToResult$(EXE_EXT): libelmersolver$(SHL_EXT) ResultToResult$(OBJ_EXT)

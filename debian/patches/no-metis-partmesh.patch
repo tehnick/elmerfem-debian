@@ -1,8 +1,10 @@
 Remove call to METIS_PartMesh*, and return an error if the user tries it.
 
---- elmerfem-5.4.1.dfsg/elmergrid/src/femelmer.c~	2008-02-29 03:11:41.000000000 -0500
-+++ elmerfem-5.4.1.dfsg/elmergrid/src/femelmer.c	2008-11-17 16:27:04.000000000 -0500
-@@ -2372,6 +2372,9 @@
+Index: elmerfem/elmergrid/src/femelmer.c
+===================================================================
+--- elmerfem.orig/elmergrid/src/femelmer.c
++++ elmerfem/elmergrid/src/femelmer.c
+@@ -2452,6 +2452,9 @@
    int *neededby,*metistopo;
    int *indxper,*inpart,*epart,*npart;
  
@@ -12,7 +14,7 @@ Remove call to METIS_PartMesh*, and return an error if the user tries it.
    if(info) printf("Making a Metis partitioning for %d elements in %d-dimensions.\n",
  		  data->noelements,data->dim);
  
-@@ -2476,16 +2479,18 @@
+@@ -2556,6 +2559,7 @@
  
    if(info) printf("Using %d nodes of %d possible nodes in the Metis graph\n",nn,noknots);
  
@@ -20,10 +22,7 @@ Remove call to METIS_PartMesh*, and return an error if the user tries it.
    if(dual) {
      if(info) printf("Starting graph partitioning METIS_PartMeshDual.\n");  
      METIS_PartMeshDual(&ne,&nn,metistopo,&etype,
- 		       &numflag,&nparts,&edgecut,epart,npart);
-   }
-   else {
-     if(info) printf("Starting graph partitioning METIS_PartMeshNodal.\n");  
+@@ -2566,6 +2570,7 @@
      METIS_PartMeshNodal(&ne,&nn,metistopo,&etype,
  			&numflag,&nparts,&edgecut,epart,npart);
    }

@@ -2,8 +2,8 @@ Add MUMPS linkage support in configure script and build system.
 
 Index: elmerfem/fem/acx_elmer.m4
 ===================================================================
---- elmerfem.orig/fem/acx_elmer.m4	2010-07-20 16:36:31.000000000 -0400
-+++ elmerfem/fem/acx_elmer.m4	2010-07-20 16:58:05.000000000 -0400
+--- elmerfem.orig/fem/acx_elmer.m4
++++ elmerfem/fem/acx_elmer.m4
 @@ -706,6 +706,94 @@
  fi
  ])dnl ACX_HYPRE
@@ -101,9 +101,9 @@ Index: elmerfem/fem/acx_elmer.m4
  dnl
 Index: elmerfem/fem/configure.in
 ===================================================================
---- elmerfem.orig/fem/configure.in	2010-07-20 16:36:31.000000000 -0400
-+++ elmerfem/fem/configure.in	2010-07-20 16:36:31.000000000 -0400
-@@ -104,6 +104,7 @@
+--- elmerfem.orig/fem/configure.in
++++ elmerfem/fem/configure.in
+@@ -102,6 +102,7 @@
  ACX_ARPACK([], [AC_MSG_ERROR([We need arpack!])])
  ACX_PARPACK([], [AC_MSG_WARN([No parallel arpack found.])])
  ACX_HYPRE([], [AC_MSG_WARN([HYPRE not found, some functionaly will be disabled.])])
@@ -111,7 +111,7 @@ Index: elmerfem/fem/configure.in
  ACX_UMFPACK([], [AC_MSG_WARN([UMFPACK not found, some functionaly will be disabled.])])
  ACX_MATC([], [AC_MSG_ERROR([libmatc $ELMER_LIBERRORMSG])])
  AC_CHECK_LIB(m,main,[UNIX_MATH_LIB="-lm"; LIBS="$LIBS -lm"],[UNIX_MATH_LIB=""])
-@@ -176,7 +177,7 @@
+@@ -174,7 +175,7 @@
    fi
  fi
  
@@ -120,7 +120,7 @@ Index: elmerfem/fem/configure.in
  
  dnl Host specific hacks.
  dnl
-@@ -339,6 +340,7 @@
+@@ -337,6 +338,7 @@
    BLAS                      $BLAS_LIBS
    LAPACK                    $LAPACK_LIBS
    HYPRE                     $HYPRE_LIBS

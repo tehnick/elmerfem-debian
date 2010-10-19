@@ -1,8 +1,10 @@
 Have ElmerGUI use PythonQt, build against Debian's default Python version, and
 update VTK version.
 
---- a/ElmerGUI/ElmerGUI.pri
-+++ b/ElmerGUI/ElmerGUI.pri
+Index: elmerfem/ElmerGUI/ElmerGUI.pri
+===================================================================
+--- elmerfem.orig/ElmerGUI/ElmerGUI.pri
++++ elmerfem/ElmerGUI/ElmerGUI.pri
 @@ -11,7 +11,7 @@
  DEFINES += EG_VTK      # Use VTK for postprocessing?
  DEFINES += EG_MATC     # Use MATC for internal operations in postprocessing?

@@ -1,8 +1,10 @@
 Signal node partitioning as default for Scotch compatibility (not element
 partitioning which only works with the real METIS).
 
---- elmerfem-5.5.0.svn.4214.dfsg/ElmerGUI/Application/src/parallel.cpp~	2009-02-18 09:44:30.000000000 -0500
-+++ elmerfem-5.5.0.svn.4214.dfsg/ElmerGUI/Application/src/parallel.cpp	2009-06-25 21:11:59.000000000 -0400
+Index: elmerfem/ElmerGUI/Application/src/parallel.cpp
+===================================================================
+--- elmerfem.orig/ElmerGUI/Application/src/parallel.cpp
++++ elmerfem/ElmerGUI/Application/src/parallel.cpp
 @@ -91,7 +91,7 @@
    ui.parallelArgsLineEdit->setText("-np %n ElmerSolver_mpi");
  #endif
