@@ -4,3 +4,4 @@ ElmerGUI-config.patch
 edf-extra.patch
 node-partition.patch
 mumps.patch
+arm-qt-casting.patch

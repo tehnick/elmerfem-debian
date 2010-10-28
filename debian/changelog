@@ -1,3 +1,10 @@
+elmerfem (5.5.0.svn.4716.dfsg-2) unstable; urgency=low
+
+  [ David Sugar <david.sugar@canonical.com> ]
+  * Casting patch for qreal (is not double on armel) (closes: #581023).
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Thu, 28 Oct 2010 13:46:20 -0400
+
 elmerfem (5.5.0.svn.4716.dfsg-1) unstable; urgency=low
 
   * New upstream revision, merged several Debian patches upstream.
