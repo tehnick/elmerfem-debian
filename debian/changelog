@@ -1,3 +1,9 @@
+elmerfem (5.5.0.svn.4716.dfsg-3) unstable; urgency=low
+
+  * Added another file to qreal casting patch (closes: #602395).
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Thu, 04 Nov 2010 09:41:59 -0400
+
 elmerfem (5.5.0.svn.4716.dfsg-2) unstable; urgency=low
 
   [ David Sugar <david.sugar@canonical.com> ]
