@@ -23,12 +23,119 @@ Index: elmerfem/ElmerGUI/Application/src/helpers.cpp
 ===================================================================
 --- elmerfem.orig/ElmerGUI/Application/src/helpers.cpp
 +++ elmerfem/ElmerGUI/Application/src/helpers.cpp
+@@ -57,7 +57,7 @@
+ //                             Normalize
+ //====================================================================
+ 
+-void Helpers::normalize(double *a)
++void Helpers::normalize(qreal *a)
+ {
+   double b;
+ 
+@@ -71,7 +71,7 @@
+ //                              Length
+ //====================================================================
+ 
+-double Helpers::vlen(double *a)
++qreal Helpers::vlen(qreal *a)
+ {
+   return sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+ }
+@@ -80,7 +80,7 @@
+ //                           Cross product
+ //====================================================================
+ 
+-void Helpers::crossProduct(double *a, double *b, double *c)
++void Helpers::crossProduct(qreal *a, qreal *b, qreal *c)
+ {
+   c[0] = a[1]*b[2] - a[2]*b[1];
+   c[1] = a[2]*b[0] - a[0]*b[2];
 @@ -90,7 +90,7 @@
  //====================================================================
  //            Invert 4x4 matrix (for visualiztion only)
  //====================================================================
 -void Helpers::invertMatrix(const double *a, double *inva)
-+void Helpers::invertMatrix(const qreal *a, double *inva)
++void Helpers::invertMatrix(const qreal *a, qreal *inva)
  {
    QMatrix4x4 matrix(a);
  
+Index: elmerfem/ElmerGUI/Application/src/glwidget.cpp
+===================================================================
+--- elmerfem.orig/ElmerGUI/Application/src/glwidget.cpp
++++ elmerfem/ElmerGUI/Application/src/glwidget.cpp
+@@ -53,6 +53,10 @@
+ #define MY_PI 3.14159265
+ #define ZSHIFT -5.0
+ 
++// Get qreal regardless of whether it's float or double
++static inline void glGetQrealv(GLenum e, GLfloat* data) { glGetFloatv(e,data); }
++static inline void glGetQrealv(GLenum e, GLdouble* data) { glGetDoublev(e,data); }
++
+ list_t::list_t()
+ {
+   nature = PDE_UNKNOWN;
+@@ -1011,7 +1015,7 @@
+ //-----------------------------------------------------------------------------
+ void GLWidget::getMatrix()
+ {
+-  glGetDoublev(GL_MODELVIEW_MATRIX, matrix);
++  glGetQrealv(GL_MODELVIEW_MATRIX, matrix);
+   helpers->invertMatrix(matrix, invmatrix);
+ }
+ 
+Index: elmerfem/ElmerGUI/Application/src/glwidget.h
+===================================================================
+--- elmerfem.orig/ElmerGUI/Application/src/glwidget.h
++++ elmerfem/ElmerGUI/Application/src/glwidget.h
+@@ -183,8 +183,8 @@
+ 
+   GLuint makeLists();
+   
+-  GLdouble matrix[16];
+-  GLdouble invmatrix[16];
++  qreal matrix[16];
++  qreal invmatrix[16];
+   void getMatrix();
+   
+   QPoint lastPos;
+Index: elmerfem/ElmerGUI/Application/src/helpers.h
+===================================================================
+--- elmerfem.orig/ElmerGUI/Application/src/helpers.h
++++ elmerfem/ElmerGUI/Application/src/helpers.h
+@@ -49,10 +49,10 @@
+   Helpers();
+   ~Helpers();
+ 
+-  void invertMatrix(const double *a, double *b);
+-  void crossProduct(double *a, double *b, double *c);
+-  double vlen(double *a);
+-  void normalize(double *a);
++  void invertMatrix(const qreal *a, qreal *b);
++  void crossProduct(qreal *a, qreal *b, qreal *c);
++  qreal vlen(qreal *a);
++  void normalize(qreal *a);
+ 
+  private:
+ 
+Index: elmerfem/ElmerGUI/Application/src/meshutils.cpp
+===================================================================
+--- elmerfem.orig/ElmerGUI/Application/src/meshutils.cpp
++++ elmerfem/ElmerGUI/Application/src/meshutils.cpp
+@@ -1062,7 +1062,7 @@
+ //-----------------------------------------------------------------------------
+ void Meshutils::findSharpPoints(mesh_t *mesh, double limit)
+ {
+-  double t0[3], t1[3];
++  qreal t0[3], t1[3];
+ 
+   cout << "Limit: " << limit << " degrees" << endl;
+   cout.flush();
+@@ -1569,7 +1569,7 @@
+ //-----------------------------------------------------------------------------
+ void Meshutils::findSurfaceElementNormals(mesh_t *mesh)
+ {
+-  static double a[3], b[3], c[3];
++  static qreal a[3], b[3], c[3];
+   double center_surface[3], center_element[3], center_difference[3];
+   Helpers *helpers = new Helpers;
+   int u, v, w, e0, e1, i0, i1, bigger;
