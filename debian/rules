@@ -74,8 +74,7 @@ clean:
 	  ElmerGUIlogger/ElmerGUIlogger.pro
 	rm -f stamp-*
 	if [ -d .pc ]; then \
-	  QUILT_PATCHES=debian/patches quilt pop -a; \
-	  rm -rf .pc; \
+	  QUILT_PATCHES=debian/patches quilt pop -a && rm -rf .pc; \
 	fi
 	dh_clean
 
