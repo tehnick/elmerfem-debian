@@ -1,3 +1,9 @@
+elmerfem (5.5.0.svn.4716.dfsg-5) unstable; urgency=low
+
+  * Final double -> qreal change, really! (closes: #602424).
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Sun, 07 Nov 2010 18:35:07 -0500
+
 elmerfem (5.5.0.svn.4716.dfsg-4) unstable; urgency=low
 
   * Significantly expanded qreal casting patch, I think I've got everything now
