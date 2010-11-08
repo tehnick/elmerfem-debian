@@ -6,3 +6,4 @@ node-partition.patch
 mumps.patch
 arm-qt-casting.patch
 gcc4.5.patch
+include-all-libs.patch
