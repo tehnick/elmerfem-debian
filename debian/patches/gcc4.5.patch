@@ -1,0 +1,15 @@
+Description: Fix FTBFS with GCC 4.5, passing non-POD data to printf.
+Author: Stefano Rivera <stefano@rivera.za.net>
+Bug-Debian: http://bugs.debian.org/564978
+Last-Update: 2010-11-08
+--- a/ElmerGUI/PythonQt/src/PythonQtImporter.cpp
++++ b/ElmerGUI/PythonQt/src/PythonQtImporter.cpp
+@@ -233,7 +233,7 @@
+   Py_DECREF(code);
+   if (Py_VerboseFlag)
+     PySys_WriteStderr("import %s # loaded from %s\n",
+-          fullname, modpath);
++          fullname, (char*)modpath.toLatin1().data());
+   return mod;
+ error:
+   Py_DECREF(code);

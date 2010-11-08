@@ -5,3 +5,4 @@ edf-extra.patch
 node-partition.patch
 mumps.patch
 arm-qt-casting.patch
+gcc4.5.patch

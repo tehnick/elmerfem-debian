@@ -1,3 +1,10 @@
+elmerfem (5.5.0.svn.4716.dfsg-6) unstable; urgency=low
+
+  [ Stefano Rivera <stefano@rivera.za.net> ]
+  * Fix for gcc 4.5 FTBFS (closes: #564978).
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 08 Nov 2010 13:58:53 -0500
+
 elmerfem (5.5.0.svn.4716.dfsg-5) unstable; urgency=low
 
   * Final double -> qreal change, really! (closes: #602424).
