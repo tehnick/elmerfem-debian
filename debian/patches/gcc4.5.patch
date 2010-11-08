@@ -2,8 +2,10 @@ Description: Fix FTBFS with GCC 4.5, passing non-POD data to printf.
 Author: Stefano Rivera <stefano@rivera.za.net>
 Bug-Debian: http://bugs.debian.org/564978
 Last-Update: 2010-11-08
---- a/ElmerGUI/PythonQt/src/PythonQtImporter.cpp
-+++ b/ElmerGUI/PythonQt/src/PythonQtImporter.cpp
+Index: elmerfem/ElmerGUI/PythonQt/src/PythonQtImporter.cpp
+===================================================================
+--- elmerfem.orig/ElmerGUI/PythonQt/src/PythonQtImporter.cpp
++++ elmerfem/ElmerGUI/PythonQt/src/PythonQtImporter.cpp
 @@ -233,7 +233,7 @@
    Py_DECREF(code);
    if (Py_VerboseFlag)
