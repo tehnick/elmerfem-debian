@@ -1,3 +1,9 @@
+elmerfem (5.5.0.svn.4844.dfsg-1) unstable; urgency=low
+
+  * New upstream, merged five Debian patches upstream.
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 24 Nov 2010 17:06:30 -0500
+
 elmerfem (5.5.0.svn.4716.dfsg-6) unstable; urgency=low
 
   [ Stefano Rivera <stefano@rivera.za.net> ]
