@@ -150,6 +150,7 @@ MKOCTFILE_DL_LDFLAGS = @MKOCTFILE_DL_LDFLAGS@
 MPI_F90 = @MPI_F90@
 MPI_INCLUDE_DIR = @MPI_INCLUDE_DIR@
 MPI_LIBS = @MPI_LIBS@
+MUMPS_LIBS = @MUMPS_LIBS@
 MV = @MV@
 NO_OCT_FILE_STRIP = @NO_OCT_FILE_STRIP@
 OBJEXT = @OBJEXT@
@@ -406,6 +407,7 @@ SOLVEROBJS = \
 		iso_varying_string$(OBJ_EXT)			\
 		umf4_f77wrapper$(OBJ_EXT)			\
 		VankaCreate$(OBJ_EXT)				\
+		ParticleUtils$(OBJ_EXT)				\
 		ElmerSolver$(OBJ_EXT)
 
 NORMAL_TARGETS = mpif libelmersolver$(SHL_EXT) ElmerSolver$(EXE_EXT) $(BINARIES) ViewFactors$(EXE_EXT) GebhardtFactors$(EXE_EXT)
@@ -500,7 +502,7 @@ EXTRA_DIST = \
 	NonphysicalMeshSolve.src \
 	NormalSolver.src \
 	ParallelEigenSolve.src \
-	ParallelUtils.src \
+	ParticleUtils.src \
 	PElementBase.src \
 	PElementMaps.src \
 	PoissonBEM.src \
@@ -996,7 +998,7 @@ Komega.$(OBJEXT): Komega.f90 DefUtils.$(OBJEXT) MaterialModels.$(OBJEXT)
 LevelSet.$(OBJEXT): LevelSet.f90 MaterialModels.$(OBJEXT) DefUtils.$(OBJEXT) Integration.$(OBJEXT) Lists.$(OBJEXT) ElementDescription.$(OBJEXT) Types.$(OBJEXT) SolverUtils.$(OBJEXT)
 LinearAlgebra.$(OBJEXT): LinearAlgebra.f90 Types.$(OBJEXT)
 ListMatrix.$(OBJEXT): ListMatrix.f90 CRSMatrix.$(OBJEXT) GeneralUtils.$(OBJEXT)
-Lists.$(OBJEXT): Lists.f90 GeneralUtils.$(OBJEXT) Messages.$(OBJEXT) PElementMaps.$(OBJEXT) CoordinateSystems.$(OBJEXT) CRSMatrix.$(OBJEXT) Types.$(OBJEXT) Interpolation.$(OBJEXT)
+Lists.$(OBJEXT): Lists.f90 GeneralUtils.$(OBJEXT) Messages.$(OBJEXT) PElementMaps.$(OBJEXT) CoordinateSystems.$(OBJEXT) CRSMatrix.$(OBJEXT) Types.$(OBJEXT) Interpolation.$(OBJEXT) SParIterComm.$(OBJEXT)
 LUDecomposition.$(OBJEXT): LUDecomposition.f90 Types.$(OBJEXT)
 MagneticSolve.$(OBJEXT): MagneticSolve.f90 MaxwellGeneral.$(OBJEXT) Maxwell.$(OBJEXT) Differentials.$(OBJEXT) DefUtils.$(OBJEXT) MaxwellAxiS.$(OBJEXT)
 MagneticW1Solve.$(OBJEXT): MagneticW1Solve.f90 Differentials.$(OBJEXT) DirectSolve.$(OBJEXT) ElementUtils.$(OBJEXT) Integration.$(OBJEXT) Lists.$(OBJEXT) BandwidthOptimize.$(OBJEXT) IterSolve.$(OBJEXT) FreeSurface.$(OBJEXT) ElementDescription.$(OBJEXT) CoordinateSystems.$(OBJEXT) TimeIntegrate.$(OBJEXT) Types.$(OBJEXT) SolverUtils.$(OBJEXT)
@@ -1020,6 +1022,7 @@ NonphysicalMeshSolve.$(OBJEXT): NonphysicalMeshSolve.f90 DefUtils.$(OBJEXT)
 NormalSolver.$(OBJEXT): NormalSolver.f90 DefUtils.$(OBJEXT) CoordinateSystems.$(OBJEXT)
 ParallelEigenSolve.$(OBJEXT): ParallelEigenSolve.f90 CRSMatrix.$(OBJEXT) IterSolve.$(OBJEXT) Multigrid.$(OBJEXT) ParallelUtils.$(OBJEXT)
 ParallelUtils.$(OBJEXT): ParallelUtils.f90 SParIterSolver.$(OBJEXT)
+ParticleUtils.$(OBJEXT): ParticleUtils.src DefUtils.$(OBJEXT)
 PElementBase.$(OBJEXT): PElementBase.f90 PElementMaps.$(OBJEXT) Messages.$(OBJEXT) Types.$(OBJEXT)
 PElementMaps.$(OBJEXT): PElementMaps.f90 Types.$(OBJEXT)
 PhaseChangeSolve.$(OBJEXT): PhaseChangeSolve.f90 DefUtils.$(OBJEXT) Lists.$(OBJEXT) ElementDescription.$(OBJEXT) Types.$(OBJEXT)
