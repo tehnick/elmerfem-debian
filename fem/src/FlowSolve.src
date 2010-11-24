@@ -549,6 +549,9 @@
              CASE( 'user defined' )
                CompressibilityModel = UserDefined1
 
+             CASE( 'pressure dependent' )
+               CompressibilityModel = UserDefined2
+
              CASE( 'artificial compressible' )
                CompressibilityModel = Incompressible 
                PseudoCompressible = .TRUE.
@@ -730,6 +733,10 @@
                END IF
              END IF
 
+           CASE( UserDefined2 )
+             Density(1:n) = GetReal( Material,'Density' )
+             Pressure(1:nd) = FlowSolution(NSDOFs*FlowPerm(Indexes(1:nd)))
+
            CASE( Thermal )
              Pressure(1:n) = FlowSolution(NSDOFs*FlowPerm(Indexes(1:nd)))
 
@@ -882,23 +889,17 @@
 !------------------------------------------------------------------------------
            SELECT CASE( CompressibilityModel )
 !------------------------------------------------------------------------------
-             CASE( Incompressible,PerfectGas1,UserDefined1,Thermal)
+             CASE( Incompressible,PerfectGas1,UserDefined1,UserDefined2,Thermal)
 !------------------------------------------------------------------------------
 ! Density needed for steady-state, also pressure for transient
 !------------------------------------------------------------------------------
-               CALL NavierStokesCompose( &
-                   MASS,STIFF,FORCE, LoadVector, &
-                   Viscosity,Density,U,V,W,MU,MV,MW, &
-                   ReferencePressure+Pressure(1:n), &
-                   LocalTemperature, Convect, StabilizeFlag, &
-                   CompressibilityModel == PerfectGas1,  &
-                   CompressibilityModel == Thermal  .OR. &
-                   CompressibilityModel == UserDefined1, &
-                   PseudoCompressible, PseudoCompressibility, GasConstant, Porous, Drag, & 
-                   PotentialForce, PotentialField, PotentialCoefficient, &
-                   MagneticForce, Rotating, AngularVelocity, &
-                   DivDiscretization, GradPDiscretization, NewtonLinearization, &
-                   Element,n,ElementNodes)
+               CALL NavierStokesCompose( MASS,STIFF,FORCE, LoadVector, &
+                   Viscosity,Density,U,V,W,MU,MV,MW,ReferencePressure+Pressure(1:n), &
+                   LocalTemperature, Convect, StabilizeFlag, CompressibilityModel, &
+                   PseudoCompressible, PseudoCompressibility, GasConstant, Porous, &
+                   Drag, PotentialForce, PotentialField, PotentialCoefficient,  &
+                   MagneticForce, Rotating, AngularVelocity, DivDiscretization, &
+                   GradPDiscretization, NewtonLinearization, Element,n,ElementNodes)
 !------------------------------------------------------------------------------
            END SELECT
 !------------------------------------------------------------------------------
@@ -976,7 +977,7 @@
 !------------------------------------------------------------------------------
 !     Neumann & Newton boundary conditions
 !------------------------------------------------------------------------------
-      DO t = 1,Solver % Mesh % NumberOfBoundaryElements
+      DO t = 1,GetNOFBoundaryElements()
 
         Element => GetBoundaryElement(t)
         IF ( .NOT. ActiveBoundaryElement() ) CYCLE
@@ -1090,8 +1091,8 @@
             ! * pointer to the Material structure is from the remains
             ! * of the last of the bulk elements.
             ! */
-            Density(1:n)   = GetReal( Material, 'Density' )
-            Viscosity(1:n) = GetReal( Material, 'Viscosity' )
+            Density(1:n)   = GetParentMatProp( 'Density' )
+            Viscosity(1:n) = GetParentMatProp( 'Viscosity' )
 
             LayerThickness(1:n) = GetReal( BC, 'Boundary Layer Thickness' )
             SurfaceRoughness(1:n) = GetReal( BC, 'Surface Roughness',GotIt )
@@ -1111,6 +1112,28 @@
             CALL NavierStokesWallLaw( STIFF,FORCE,     &
               LayerThickness,SurfaceRoughness,Viscosity,Density,U,V,W, &
                      Element,n, ElementNodes )
+          ELSE IF ( GetLogical( BC, 'VMS Wall', GotIt ) ) THEN
+            Density(1:n)   = GetParentMatProp( 'Density' )
+            Viscosity(1:n) = GetParentMatProp( 'Viscosity' )
+
+            LayerThickness(1:n) = GetReal( BC, 'Boundary Layer Thickness', GotIt )
+            SurfaceRoughness(1:n) = GetReal( BC, 'Surface Roughness',GotIt )
+
+            SELECT CASE( NSDOFs )
+              CASE(3)
+                U(1:n) = FlowSolution( NSDOFs*FlowPerm(NodeIndexes)-2 )
+                V(1:n) = FlowSolution( NSDOFs*FlowPerm(NodeIndexes)-1 )
+                W(1:n) = 0.0d0
+            
+              CASE(4)
+                U(1:n) = FlowSolution( NSDOFs*FlowPerm(NodeIndexes)-3 )
+                V(1:n) = FlowSolution( NSDOFs*FlowPerm(NodeIndexes)-2 )
+                W(1:n) = FlowSolution( NSDOFs*FlowPerm(NodeIndexes)-1 )
+            END SELECT
+            CALL VMSWalls( STIFF,FORCE,     &
+              LayerThickness,SurfaceRoughness,Viscosity,Density,U,V,W, &
+                     Element,n, ElementNodes )
+
           END IF
 !------------------------------------------------------------------------------
 

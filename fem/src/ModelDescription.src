@@ -781,10 +781,10 @@ CONTAINS
 
 CONTAINS
 
-    SUBROUTINE CheckKeyWord( Name,Type,CheckAbort,FreeNames,Section,ReturnType )
+    SUBROUTINE CheckKeyWord( Name,TYPE,CheckAbort,FreeNames,Section,ReturnType )
        USE HashTable
 
-       CHARACTER(LEN=*) :: Name,Type,Section
+       CHARACTER(LEN=*) :: Name,TYPE,Section
        INTEGER :: CheckAbort
        LOGICAL, OPTIONAL :: ReturnType,FreeNames
 
@@ -984,7 +984,7 @@ CONTAINS
       LOGICAL :: ReturnType, ScanOnly, String_literal,  SizeGiven, Cubic
 
       INTEGER(KIND=AddrInt) :: Proc
-      INTEGER :: i,j,k,l,n,slen, str_beg, str_end, n1,n2, type, abuflen=0
+      INTEGER :: i,j,k,l,n,slen, str_beg, str_end, n1,n2, TYPE, abuflen=0,maxbuflen=0
 
       ALLOCATE( ATt(1), ATx(1,1,1), IValues(1) )
 
@@ -1031,7 +1031,7 @@ CONTAINS
 
 20        CONTINUE
 
-          slen = len_trim(str)
+          slen = LEN_TRIM(str)
           j = slen
           DO i=1,slen
             IF ( str(i:i)==' ') EXIT
@@ -1140,7 +1140,7 @@ CONTAINS
                    AbufLen=0
                  ELSE
                    IF (ALLOCATED(ATt) ) DEALLOCATE(ATt,ATx)
-                   ALLOCATE( ATt(ABufLen), ATx(n1,n2,AbufLen) )
+                   ALLOCATE( ATt(MaxBufLen), ATx(n1,n2,MaxBufLen) )
                  END IF
  
                  Cubic = str(str_beg:str_beg+4)=='cubic'
@@ -1193,6 +1193,7 @@ CONTAINS
                                    ATx(1,1,1:n),CubicTable=Cubic )
                    END IF
                  END IF
+                 MaxBufLen = MAX(MaxBuflen, Abuflen)
                END SELECT
              END IF
              EXIT
@@ -1561,7 +1562,7 @@ CONTAINS
     INTEGER, ALLOCATABLE :: Def_Dofs(:)
     CHARACTER(LEN=MAX_NAME_LEN) :: Name,ElementDef
     CHARACTER(LEN=MAX_NAME_LEN) :: MeshDir,MeshName
-type(valuelist_t), pointer :: lst
+TYPE(valuelist_t), POINTER :: lst
 !------------------------------------------------------------------------------
 
     ALLOCATE( Model )
@@ -2227,7 +2228,7 @@ type(valuelist_t), pointer :: lst
             CALL BinWriteInt4( OutputUnit, nTime )
             CALL BinWriteDouble( OutputUnit, SimulationTime )
          ELSE
-            WRITE( OutputUnit,'(a,i7,i7,E20.12E3)' ) 'Time: ',SavesDone,nTime, &
+            WRITE( OutputUnit,'(a,i7,i7,E20.11E3)' ) 'Time: ',SavesDone,nTime, &
                                                    SimulationTime
          END IF
       END SUBROUTINE WriteTime
@@ -2392,7 +2393,8 @@ type(valuelist_t), pointer :: lst
         EXIT
       END IF
 
-      k = INDEX(Row,':')
+      k = INDEX(Row,']')+1
+      k = k+INDEX(Row(k:),':')-1
 
       NULLIFY(Solver)
       DO i = 1,CurrentModel % NumberOfSolvers
@@ -2408,7 +2410,12 @@ type(valuelist_t), pointer :: lst
         IF ( Row(k:k) == ' ' ) EXIT
       END DO
 
-      Var => VariableGet( Mesh % Variables, TRIM(Row(1:k-1)),.TRUE. )
+      j = INDEX(Row,'[')
+      IF ( j>0 ) THEN
+        Var => VariableGet( Mesh % Variables, TRIM(Row(1:j-1)),.TRUE. )
+      ELSE
+        Var => VariableGet( Mesh % Variables, TRIM(Row(1:k-1)),.TRUE. )
+      END IF
 
       IF ( .NOT.ASSOCIATED(Var) ) THEN
 
@@ -2601,7 +2608,7 @@ type(valuelist_t), pointer :: lst
           Var % Values => Temp
           DO i=1,Var % DOFs
             Comp => VariableGet(Mesh % Variables, &
-                  ComponentName(Var % Name,i),ThisOnly=.TRUE.)
+                  ComponentName(Var,i),ThisOnly=.TRUE.)
             Comp % Values => Var % Values(i::Var % DOFs)
           END DO
         END IF
@@ -3275,18 +3282,18 @@ CONTAINS
                k = Displacement % DOFs * (k-1)
                SELECT CASE( Displacement % DOFs )
                CASE(1)
-                  WRITE(PostFileUnit,'(3E20.12E3)') &
+                  WRITE(PostFileUnit,'(3E20.11E3)') &
                        Model % Nodes % x(i) - MeshScale*Displacement % Values(k+1), &
                        Model % Nodes % y(i), Model % Nodes % z(i)
                   
                CASE(2)
-                  WRITE(PostFileUnit,'(3E20.12E3)') &
+                  WRITE(PostFileUnit,'(3E20.11E3)') &
                        Model % Nodes % x(i) - MeshScale*Displacement % Values(k+1), &
                        Model % Nodes % y(i) - MeshScale*Displacement % Values(k+2), &
                        Model % Nodes % z(i)
                   
                CASE(3)
-                  WRITE(PostFileUnit,'(3E20.12E3)') &
+                  WRITE(PostFileUnit,'(3E20.11E3)') &
                        Model % Nodes % x(i) - MeshScale*Displacement % Values(k+1), &
                        Model % Nodes % y(i) - MeshScale*Displacement % Values(k+2), &
                        Model % Nodes % z(i) - MeshScale*Displacement % Values(k+3)
@@ -3296,28 +3303,28 @@ CONTAINS
                k = MeshUpdate % DOFs * (l-1)
                SELECT CASE( MeshUpdate % DOFs )
                CASE(1)
-                  WRITE(PostFileUnit,'(3E20.12E3)') &
+                  WRITE(PostFileUnit,'(3E20.11E3)') &
                        Model % Nodes % x(i) - MeshScale*MeshUpdate % Values(k+1), &
                        Model % Nodes % y(i), Model % Nodes % z(i)
                   
                CASE(2)
-                  WRITE(PostFileUnit,'(3E20.12E3)') &
+                  WRITE(PostFileUnit,'(3E20.11E3)') &
                        Model % Nodes % x(i) - MeshScale*MeshUpdate % Values(k+1), &
                        Model % Nodes % y(i) - MeshScale*MeshUpdate % Values(k+2), &
                        Model % Nodes % z(i)
                   
                CASE(3)
-                  WRITE(PostFileUnit,'(3E20.12E3)') &
+                  WRITE(PostFileUnit,'(3E20.11E3)') &
                        Model % Nodes % x(i) - MeshScale*MeshUpdate % Values(k+1), &
                        Model % Nodes % y(i) - MeshScale*MeshUpdate % Values(k+2), &
                        Model % Nodes % z(i) - MeshScale*MeshUpdate % Values(k+3)
                END SELECT
             ELSE
-               WRITE(PostFileUnit,'(3E20.12E3)') Model % Nodes % x(i),Model % Nodes % y(i), &
+               WRITE(PostFileUnit,'(3E20.11E3)') Model % Nodes % x(i),Model % Nodes % y(i), &
                     Model % Nodes % z(i)
             ENDIF
          ELSE
-            WRITE(PostFileUnit,'(3E20.12E3)') Model % Nodes % x(i),Model % Nodes % y(i), &
+            WRITE(PostFileUnit,'(3E20.11E3)') Model % Nodes % x(i),Model % Nodes % y(i), &
                  Model % Nodes % z(i)
          END IF
       END DO
@@ -3446,7 +3453,7 @@ CONTAINS
          READ( Row(7:),* ) SavedCount,Timestep,Time
       END IF
       
-      WRITE( PostFileUnit,'(a,i7,i7,E20.12E3)' ) '#time ',SavedCount,Timestep,Time
+      WRITE( PostFileUnit,'(a,i7,i7,E20.11E3)' ) '#time ',SavedCount,Timestep,Time
       
       IF ( .NOT.AppendFlag ) THEN
          DO i=1,DOFs
@@ -3500,11 +3507,11 @@ CONTAINS
                  IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
                  IF ( k > 0 ) THEN
                     DO j=1,Var % DOFs
-                       WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
+                       WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
                     END DO
-                    IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
+                    IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0D0
                  ELSE
-                    WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                    WRITE(PostFileUnit,'(4E20.11E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
                  END IF
               END IF
               
@@ -3517,21 +3524,21 @@ CONTAINS
               IF ( k > 0 ) THEN
                  IF (ASSOCIATED(Var % Cvalues)) THEN
                    DO j=1,Var % DOFs
-                     WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                     WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                          REAL(Var % Cvalues(Var % DOFs*(k-1)+j))
                    END DO
-                   IF (Var % DOFs<3) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
+                   IF (Var % DOFs<3) WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0d0
                    DO j=1,Var % DOFs
-                     WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                     WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                          AIMAG(Var % Cvalues(Var % DOFs*(k-1)+j))
                    END DO
-                   IF (Var % DOFs<3) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
+                   IF (Var % DOFs<3) WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0d0
                  ELSE
                    DO j=1,Var % DOFs
-                     WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                     WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                          Var % Values(Var % DOFs*(k-1)+j)
                    END DO
-                   IF (Var % DOFs<3) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
+                   IF (Var % DOFs<3) WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0d0
                  END IF
               ELSE
                  Var1 => Model % Variables
@@ -3544,16 +3551,16 @@ CONTAINS
                     IF ( ASSOCIATED(Var1 % Perm) ) k = Var1 % Perm(k)
                     IF ( k > 0 ) THEN
                        DO j=1,Var1 % DOFs
-                          WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO')  &
+                          WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO')  &
                                Var1 % Values(Var1 % DOFs*(k-1)+j)
                        END DO
                        IF ( Var1 % DOFs<3 ) &
-                            WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
+                            WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0D0
                     ELSE
-                       WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                       WRITE(PostFileUnit,'(4E20.11E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
                     END IF
                  ELSE
-                    WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                    WRITE(PostFileUnit,'(4E20.11E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
                  END IF
               END IF
               
@@ -3564,14 +3571,14 @@ CONTAINS
               IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
               IF ( k > 0 ) THEN
                  DO j=1,Var % DOFs-1
-                    WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
+                    WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
                  END DO
-                 IF ( Var % DOFs < 4 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
+                 IF ( Var % DOFs < 4 ) WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0D0
                  
-                 WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO')  &
+                 WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO')  &
                       Var % Values(Var % DOFs*(k-1)+Var % DOFs)
               ELSE
-                 WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0,0.0D0
+                 WRITE(PostFileUnit,'(4E20.11E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0,0.0D0
               END IF
               
            CASE( 'velocity 1','velocity 2','velocity 3','pressure' )
@@ -3581,11 +3588,11 @@ CONTAINS
               IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
               IF ( k > 0 ) THEN
                  DO j=1,Var % DOFs
-                    WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
+                    WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
                  END DO
-                 IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
+                 IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0D0
               ELSE
-                 WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                 WRITE(PostFileUnit,'(4E20.11E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
               END IF
               
            CASE( 'magnetic field 1','magnetic field 2','magnetic field 3')
@@ -3595,11 +3602,11 @@ CONTAINS
               IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
               IF ( k > 0 ) THEN
                  DO j=1,Var % DOFs
-                    WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
+                    WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
                  END DO
-                 IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
+                 IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0D0
               ELSE
-                 WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                 WRITE(PostFileUnit,'(4E20.11E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
               END IF
               
            CASE( 'electric current 1','electric current 2','electric current 3')
@@ -3611,11 +3618,11 @@ CONTAINS
               IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
               IF ( k > 0 ) THEN
                  DO j=1,Var % DOFs
-                    WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
+                    WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
                  END DO
-                 IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0D0
+                 IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0D0
               ELSE
-                 WRITE(PostFileUnit,'(4E20.12E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                 WRITE(PostFileUnit,'(4E20.11E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
               END IF
               
            CASE( 'magnetic flux density 1','magnetic flux density 2','magnetic flux density 3')
@@ -3627,15 +3634,15 @@ CONTAINS
                  IF ( ASSOCIATED(Var % Perm) ) k = Var % Perm(k)
                  IF ( k > 0 ) THEN
                     IF (ASSOCIATED(Var % Cvalues)) THEN
-                      WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                      WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                          REAL(Var % Cvalues(k))
-                      WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                      WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                          AIMAG(Var % Cvalues(k))
                     ELSE
-                      WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(k)
+                      WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') Var % Values(k)
                     END IF
                  ELSE
-                    WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
+                    WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0d0
                  END IF
               ELSE
                  l = INDEX( var % name, '[' )
@@ -3651,48 +3658,48 @@ CONTAINS
                           IF ( q==2 .OR. q==3 ) THEN
                             IF (ASSOCIATED(Var % Cvalues)) THEN
                                DO j=DOFs+1,DOFs+q
-                                  WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                                  WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                                      REAL(Var % Cvalues(Var % DOFs*(k-1)+j))
                                END DO
                                DO j=q+1,3
-                                 WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
+                                 WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0d0
                                END DO
                                DO j=DOFs+1,DOFs+q
-                                  WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                                  WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                                      AIMAG(Var % Cvalues(Var % DOFs*(k-1)+j))
                                END DO
                                DO j=q+1,3
-                                 WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
+                                 WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0d0
                                END DO
                             ELSE
                                DO j=DOFs+1,DOFs+q
-                                 WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                                 WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                                      Var % Values(Var % DOFs*(k-1)+j)
                                END DO
                                DO j=q+1,3
-                                 WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
+                                 WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0d0
                                END DO
                             END IF
                           ELSE
                             DO j=DOFs+1,DOFs+q
                               IF (ASSOCIATED(Var % Cvalues)) THEN
-                                WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                                WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                                    REAL(Var % Cvalues(Var % DOFs*(k-1)+j))
-                                WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                                WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                                    AIMAG(Var % Cvalues(Var % DOFs*(k-1)+j))
                               ELSE
-                                WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') &
+                                WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') &
                                    Var % Values(Var % DOFs*(k-1)+j)
                               END IF
                             END DO
                           END IF
                        ELSE
                           DO j=1,q
-                             WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
+                             WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0d0
                           END DO
                           IF ( q==2 .OR. q==3 ) THEN
                              DO j=q+1,3
-                                WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') 0.0d0
+                                WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') 0.0d0
                              END DO
                           END IF
                        END IF
@@ -3710,13 +3717,13 @@ CONTAINS
 
         IF ( FreeSurfaceFlag ) THEN
            Var => VariableGet( Model % Variables,'Coordinate 1' )
-           WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(i)
+           WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') Var % Values(i)
            
            Var => VariableGet( Model % Variables,'Coordinate 2' )
-           WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(i)
+           WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') Var % Values(i)
            
            Var => VariableGet( Model % Variables,'Coordinate 3' )
-           WRITE(PostFileUnit,'(E20.12E3)',ADVANCE='NO') Var % Values(i)
+           WRITE(PostFileUnit,'(E20.11E3)',ADVANCE='NO') Var % Values(i)
         END IF
         
         WRITE(PostFileUnit,'()')
