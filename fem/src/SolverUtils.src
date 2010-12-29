@@ -2878,10 +2878,10 @@ END FUNCTION SearchNodeL
           .NOT. ASSOCIATED( Solver % Variable % Values ) ) RETURN
 
      IF ( Solver % TimeOrder <= 0 ) RETURN
-
 !------------------------------------------------------------------------------
 
      Method = ListGetString( Solver % Values, 'Timestepping Method', GotIt )
+     IF ( Method == 'none' ) RETURN
     
      IF ( .NOT.GotIt ) THEN
 
@@ -3346,6 +3346,7 @@ END FUNCTION SearchNodeL
     TYPE(Variable_t), POINTER :: iterV, VeloVar, TimestepVar
     CHARACTER(LEN=MAX_NAME_LEN) :: SolverName, str
     LOGICAL :: Stat, ConvergenceAbsolute, Relax, RelaxBefore, DoIt, Skip
+    LOGICAL :: IsNAN
 
     TYPE(Matrix_t), POINTER :: MMatrix
     REAL(KIND=dp), POINTER :: Mx(:), Mb(:), Mr(:)
