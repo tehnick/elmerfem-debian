@@ -1,17 +1,14 @@
-elmerfem (5.5.0.svn.4844.dfsg-1) unstable; urgency=low
-
-  * New upstream, merged five Debian patches upstream.
-  * New ElmerClips utility in utils/ElmerClips.
-
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Sun, 28 Nov 2010 16:39:27 -0500
-
-elmerfem (5.5.0.svn.4716.dfsg-6) unstable; urgency=low
+elmerfem (5.5.0.svn.4876.dfsg-1) unstable; urgency=low
 
   [ Stefano Rivera <stefano@rivera.za.net> ]
   * Fix for gcc 4.5 FTBFS (closes: #564978).
   * Fix for FTBFS with binutils-gold (closes: #602835).
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 08 Nov 2010 14:15:04 -0500
+  [ Adam C. Powell, IV ]
+  * New upstream, merged five Debian patches upstream.
+  * New ElmerClips utility in utils/ElmerClips.
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 29 Dec 2010 11:44:42 -0500
 
 elmerfem (5.5.0.svn.4716.dfsg-5) unstable; urgency=low
 
