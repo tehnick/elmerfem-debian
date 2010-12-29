@@ -63,6 +63,9 @@ clean:
 	if [ -e ElmerGUIlogger/Makefile ]; then \
 	  make -C ElmerGUIlogger distclean; \
 	fi
+	if [ -e utils/ElmerClips/Makefile ]; then \
+	  make -C utils/ElmerClips distclean; \
+	fi 
 	for missingfile in $(MISSING_FILES); do rm -f $$missingfile; done
 	for backupfile in $(BACKUP_FILES); do \
 	  if [ -e $$backupfile.bak ]; then \
@@ -134,6 +137,8 @@ stamp-build: patch
 	    debian/tmp/usr/share/ElmerGUI/edf-extra/; \
 	done
 	cp ElmerGUIlogger/ElmerGUIlogger debian/tmp/usr/bin/
+	(cd utils/ElmerClips/ && qmake && make)
+	install utils/ElmerClips/ElmerClips debian/tmp/usr/bin/ElmerClips
 # Last shifts and cleanups
 	mv debian/tmp/usr/share/elmerpost/modules debian/tmp/usr/lib/elmerpost
 	ln -s ../../lib/elmerpost debian/tmp/usr/share/elmerpost/modules

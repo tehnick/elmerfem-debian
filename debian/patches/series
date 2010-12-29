@@ -2,3 +2,4 @@ banish-rpath.patch
 no-metis-partmesh.patch
 ElmerGUI-config.patch
 node-partition.patch
+no-avcore.patch
