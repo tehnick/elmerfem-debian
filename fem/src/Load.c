@@ -624,4 +624,24 @@ void STDCALLBULL FC_FUNC(execlocalassembly, EXECLOCALASSEMBLY )
 
 
 
+/*--------------------------------------------------------------------------
+  INTERNAL: execute complete localmatrix call
+  -------------------------------------------------------------------------*/
+static void DoMatVecSubr( void (STDCALLBULL *matvec)(),
+  void **SpMV,void *n,void *rows,void *cols,void *vals,void *u, void *v, void *reinit )
+{ 
+  (*matvec)( SpMV,n,rows,cols,vals,u,v,reinit);
+}
+
+/*--------------------------------------------------------------------------
+  This routine will call complete local matrix add-on
+  -------------------------------------------------------------------------*/
+void STDCALLBULL FC_FUNC(matvecsubr, MMATVECSUBR)
+     ( f_ptr matvec, void **SpMV, void *n, void *rows, void *cols, void *vals, void *u, void *v,void *reinit )
+{
+   DoMatVecSubr( (void (STDCALLBULL *)())*matvec,SpMV,n,rows,cols,vals,u,v,reinit);
+}
+
+
+
 
