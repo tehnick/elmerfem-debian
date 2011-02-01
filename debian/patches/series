@@ -3,3 +3,4 @@ no-metis-partmesh.patch
 ElmerGUI-config.patch
 node-partition.patch
 no-avcore.patch
+lib-link-order.patch

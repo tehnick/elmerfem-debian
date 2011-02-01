@@ -1,3 +1,10 @@
+elmerfem (5.5.0.svn.4897.dfsg-2) UNRELEASED; urgency=low
+
+  [ Stefano Rivera <stefano@rivera.za.net> ]
+  * Switch library order to fix FTBFS with binutils-gold (closes: #609874).
+
+ --
+
 elmerfem (5.5.0.svn.4897.dfsg-1) unstable; urgency=low
 
   [ Stefano Rivera <stefano@rivera.za.net> ]
