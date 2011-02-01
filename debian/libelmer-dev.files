@@ -1,3 +1,6 @@
+usr/bin/elmerf90
+usr/bin/elmerf90-nosh
+usr/bin/elmerld
 usr/lib/*.a
 usr/lib/libelmersolver.so
 usr/include/*

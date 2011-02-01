@@ -5,8 +5,9 @@ elmerfem (5.5.0.svn.4897.dfsg-2) UNRELEASED; urgency=low
 
   [ Adam C. Powell, IV ]
   * Build ElmerGUI without stripping it.
+  * Move some scripts to libelmer-dev.
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 31 Jan 2011 21:21:05 -0500
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 31 Jan 2011 21:44:29 -0500
 
 elmerfem (5.5.0.svn.4897.dfsg-1) unstable; urgency=low
 
