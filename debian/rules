@@ -200,7 +200,8 @@ binary-arch:
 	dh_installdebconf -a
 	dh_installdocs -a
 	dh_installchangelogs -a
-	dh_strip -a
+	dh_strip -pelmer --dbg-package=elmer-dbg
+	dh_strip -plibelmersolver-6.1 --dbg-package=libelmersolver-dbg
 	dh_makeshlibs -a
 	dh_compress -a
 	dh_fixperms -a

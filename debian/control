@@ -42,6 +42,26 @@ Description: finite element multiphysics suite - binaries
  This package provides the Elmer binaries, including the solver (single- and
  multi-processor versions), GUI, and post-processor.
 
+Package: elmer-dbg
+Architecture: any
+Section: debug
+Depends: elmer
+Description: finite element multiphysics suite - debugging symbols
+ The Elmer multiphysics simulation package includes physical models of
+ fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
+ acoustics, among others. These are described by partial differential equations
+ which Elmer solves by the Finite Element Method (FEM).
+ .
+ Elmer uses METIS (or its free counterpart Scotch) for mesh partitioning, and
+ (P)ARPACK, UMFPACK, BLAS/LAPACK, and hypre to solve the sparse linear systems
+ resulting from FEM discretization. It includes pre- and post-processors, and
+ several examples illustrating simulation of various physical phenomena.
+ .
+ Elmer's lead institution is CSC in collaboration with Finnish universities,
+ research institutes, and industry.
+ .
+ This package provides the debugging symbols for binaries in the elmer package.
+
 Package: elmer-common
 Architecture: all
 Section: science
@@ -85,6 +105,26 @@ Description: finite element multiphysics suite - library
  research institutes, and industry.
  .
  This package provides the Elmer solver shared library.
+
+Package: libelmersolver-dbg
+Architecture: any
+Section: debug
+Depends: libelmersolver-6.1 (= ${source:Version})
+Description: finite element multiphysics suite - library debugging symbols
+ The Elmer multiphysics simulation package includes physical models of
+ fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
+ acoustics, among others. These are described by partial differential equations
+ which Elmer solves by the Finite Element Method (FEM).
+ .
+ Elmer uses METIS (or its free counterpart Scotch) for mesh partitioning, and
+ (P)ARPACK, UMFPACK, BLAS/LAPACK, and hypre to solve the sparse linear systems
+ resulting from FEM discretization. It includes pre- and post-processors, and
+ several examples illustrating simulation of various physical phenomena.
+ .
+ Elmer's lead institution is CSC in collaboration with Finnish universities,
+ research institutes, and industry.
+ .
+ This package provides the Elmer solver shared library's debugging symbols.
 
 Package: libelmer-dev
 Architecture: any
