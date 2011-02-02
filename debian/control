@@ -45,7 +45,7 @@ Description: finite element multiphysics suite - binaries
 Package: elmer-dbg
 Architecture: any
 Section: debug
-Depends: elmer
+Depends: elmer (= ${binary:Version}), ${misc:Depends}
 Description: finite element multiphysics suite - debugging symbols
  The Elmer multiphysics simulation package includes physical models of
  fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
@@ -109,7 +109,7 @@ Description: finite element multiphysics suite - library
 Package: libelmersolver-dbg
 Architecture: any
 Section: debug
-Depends: libelmersolver-6.1 (= ${source:Version})
+Depends: libelmersolver-6.1 (= ${binary:Version}), ${misc:Depends}
 Description: finite element multiphysics suite - library debugging symbols
  The Elmer multiphysics simulation package includes physical models of
  fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
