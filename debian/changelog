@@ -13,7 +13,7 @@ elmerfem (5.5.0.svn.5100.dfsg-1) unstable; urgency=low
   * Move some scripts to libelmer-dev.
   * Update VTK to version 5.6 (closes: #614952).
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 09 Mar 2011 16:27:21 -0500
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 09 Mar 2011 16:31:26 -0500
 
 elmerfem (5.5.0.svn.4897.dfsg-1) unstable; urgency=low
 

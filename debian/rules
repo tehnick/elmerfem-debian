@@ -74,8 +74,7 @@ clean:
 	  fi; \
 	done
 	rm -rf elmergrid/src/metis post/src/fonts/TrueType
-	rm -rf ElmerGUI/PythonQt/lib ElmerGUI/matc/lib ElmerGUI/netgen/ngcore \
-	  ElmerGUIlogger/ElmerGUIlogger.pro
+	rm -rf ElmerGUI/PythonQt/lib ElmerGUI/matc/lib ElmerGUI/netgen/ngcore
 	rm -f stamp-*
 	if [ -d .pc ]; then \
 	  QUILT_PATCHES=debian/patches quilt pop -a && rm -rf .pc; \
