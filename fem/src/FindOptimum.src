@@ -95,7 +95,7 @@ SUBROUTINE FindOptimum( Model,Solver,dt,TransientSimulation )
   SAVE Param, MinParam, MaxParam, PrevParam, NoParam, &
       OptimizationsDone, Method, Direction, x, c, PrevCost, &
       FixedParam, NoFreeParam, MinCost, BestParam, NoValues, &
-      OptimalFinish, OptimalStart, InternalHistory
+      OptimalFinish, OptimalStart, InternalHistory, dParam
 
   !------------------------------------------------------------------------------
   ! In the 1st round perform initializations 
@@ -127,13 +127,7 @@ SUBROUTINE FindOptimum( Model,Solver,dt,TransientSimulation )
    
     NoFreeParam = 0
     DO i=1,NoParam
-      IF(i < 10) THEN
-        WRITE( ParamStr,'(A,I2)') 'Parameter',i
-      ELSE IF( i < 100 ) THEN
-        WRITE( ParamStr,'(A,I3)') 'Parameter',i 
-      ELSE IF( i < 1000 ) THEN
-        WRITE( ParamStr,'(A,I4)') 'Parameter',i
-      END IF
+      WRITE( ParamStr,'(A,I0)') 'Parameter ',i
 
       FixedParam(i) = ListGetLogical(Solver % Values,'Fixed '//TRIM(ParamStr),GotIt)
       Param(i) = ListGetConstReal(Solver % Values,'Initial '//TRIM(ParamStr),GotIt)
@@ -253,7 +247,7 @@ SUBROUTINE FindOptimum( Model,Solver,dt,TransientSimulation )
 
 
   CALL Info( 'FindOptimum', '-----------------------------------------', Level=4 )
-  WRITE( Message, '(A,I3,A,A)' ) 'Manipulating',NoFreeParam,' parameters using ',TRIM(Method) 
+  WRITE( Message, '(A,I0,A,A)' ) 'Manipulating ',NoFreeParam,' parameters using ',TRIM(Method) 
   CALL Info( 'FindOptimum', Message, Level=4 )
   IF(OptimizationsDone > 0) THEN
     WRITE( Message, '(A,ES15.6E3)' ) 'Last evaluated cost: ',Cost    
@@ -340,7 +334,7 @@ CONTAINS
     REAL(KIND=dp), ALLOCATABLE :: pars(:,:), vals(:) ,rnds(:)
     LOGICAL, ALLOCATABLE :: mask(:)
 
-    SAVE no, i0, pars, vals, mask, popsize, popcoeff, popcross
+    SAVE no, i0, pars, vals, rnds, mask, popsize, popcoeff, popcross
         
 
     no = no + 1
@@ -439,7 +433,7 @@ CONTAINS
       DO i=1,NoParam
         IF(.NOT. FixedParam(i)) EXIT
       END DO
-      WRITE(Message,'(A,I3)') 'Applying scanning to parameter',i
+      WRITE(Message,'(A,I0)') 'Applying scanning to parameter ',i
       CALL Info('FindOptimum',Message)
 
       maxno = NoValues 
@@ -470,7 +464,7 @@ CONTAINS
       DO j=1,NoParam
         IF(.NOT. FixedParam(j)) EXIT
       END DO
-      WRITE(Message,'(A,I3)') 'Applying bisection search to parameter',j
+      WRITE(Message,'(A,I0)') 'Applying bisection search to parameter ',j
       CALL Info('FindOptimum',Message)
     END IF
     
@@ -554,7 +548,7 @@ CONTAINS
       DO j=1,NoParam
         IF(.NOT. FixedParam(j)) EXIT
       END DO
-      WRITE(Message,'(A,I3)') 'Applying bisection search to parameter',j
+      WRITE(Message,'(A,I0)') 'Applying bisection search to parameter ',j
       CALL Info('FindOptimum',Message)
     END IF
     

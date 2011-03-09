@@ -79,6 +79,12 @@
         CALL Fatal('VortictySolver_init','Vorticity computation makes sense only in 2D and 3D')
       END IF
     END IF
+
+    IF( GetLogical( SolverParams,'Calculate Abs',GotIt) ) THEN
+      CALL ListAddString( SolverParams,&
+          NextFreeKeyword('Exported Variable',SolverParams),TRIM(VorName)//'_abs')        
+    END IF	
+
     CALL ListAddInteger( SolverParams, 'Time derivative order', 0 )
 
     ! Add linear system defaults: cg+ILU0
@@ -204,7 +210,7 @@ SUBROUTINE VorticitySolver( Model,Solver,dt,Transient )
 
   ! If vorticity has many components, compute them one-by-one
   IF(Dofs > 1) THEN
-    ALLOCATE(ForceVectors(Dofs-1,SIZE(Solver % Matrix % RHS)))  
+    ALLOCATE(ForceVectors(SIZE(Solver % Matrix % RHS),Dofs-1))  
     ForceVectors = 0.0_dp
     SaveRHS => Solver % Matrix % RHS
   END IF
@@ -219,11 +225,12 @@ SUBROUTINE VorticitySolver( Model,Solver,dt,Transient )
 !------------------------------------------------------------------------------     
 
   IF(Dofs > 1) THEN
+    TotNorm = 0._dp
     DO i=1,Dofs
       IF(i==1) THEN
         Solver % Matrix % RHS => SaveRHS
       ELSE
-        Solver % Matrix % RHS => ForceVectors(i-1,:)
+        Solver % Matrix % RHS => ForceVectors(:,i-1)
       END IF
       UNorm = DefaultSolve()
       TotNorm = TotNorm + Unorm ** 2
@@ -241,7 +248,8 @@ SUBROUTINE VorticitySolver( Model,Solver,dt,Transient )
     TotNorm = DefaultSolve()
   END IF
 !------------------------------------------------------------------------------     
-  
+
+
   at2 = RealTime()
   WRITE(Message,* ) 'Solution Time: ',at2-at1
   CALL Info( 'VorticitySolver', Message, Level=5 )
@@ -346,7 +354,7 @@ CONTAINS
 
       ! Assembly the 2nd and 3rd r.h.s. in 3D case
       DO i=2,Dofs
-        Solver % Matrix % RHS => ForceVectors(i-1,:)
+        Solver % Matrix % RHS => ForceVectors(:,i-1)
         CALL DefaultUpdateForce( FORCE(i,1:nd) )
       END DO
     END DO

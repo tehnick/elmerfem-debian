@@ -124,6 +124,9 @@ MODULE Lists
 
    TYPE(Varying_string), SAVE, PRIVATE :: Namespace
 
+   TYPE(ValueList_t), POINTER, SAVE, PRIVATE  :: TimerList => NULL()
+   LOGICAL, SAVE, PRIVATE :: TimerPassive, TimerResults
+
 CONTAINS
 
 !------------------------------------------------------------------------------
@@ -133,7 +136,7 @@ CONTAINS
      USE PElementMaps
      TYPE(Model_t)  :: Model
      TYPE(Mesh_t)   :: Mesh
-     TYPE(Solver_t) :: Solver
+     TYPE(Solver_t), TARGET :: Solver
      INTEGER :: Perm(:)
      INTEGER :: k
      CHARACTER(LEN=*) :: Equation
@@ -166,8 +169,8 @@ CONTAINS
              IF ( CheckElementEquation(Model,Element,Equation) ) THEN
                 FoundDG = FoundDG .OR. Element % DGDOFs > 0
                 DO j=1,Element % DGDOFs
-                   n = n + 1
-                   Indexes(n) = Element % DGIndexes(j)
+                  n = n + 1
+                  Indexes(n) = Element % DGIndexes(j)
                 END DO
              END IF
          END IF
@@ -177,8 +180,8 @@ CONTAINS
              IF ( CheckElementEquation(Model,Element,Equation) ) THEN
                 FoundDG = FoundDG .OR. Element % DGDOFs > 0
                 DO j=1,Element % DGDOFs
-                   n = n + 1
-                   Indexes(n) = Element % DGIndexes(j)
+                  n = n + 1
+                  Indexes(n) = Element % DGIndexes(j)
                 END DO
              END IF
          END IF
@@ -186,8 +189,8 @@ CONTAINS
          DO i=1,n
             j = Indexes(i)
             IF ( Perm(j) == 0 ) THEN
-                k = k + 1
-               Perm(j) = k
+               k = k + 1
+              Perm(j) = k
             END IF
          END DO
        END DO
@@ -231,7 +234,7 @@ CONTAINS
      END IF
 
 
-     IF ( Solver % Def_Dofs(6)>=0 ) THEN
+     IF ( ANY(Solver % Def_Dofs(:,6)>=0) ) THEN
        IF ( Mesh % NumberOFEdges>0 ) THEN
           ALLOCATE(EdgeDOFs(Mesh % NumberOfEdges))
           EdgeDOFs=0;
@@ -252,7 +255,7 @@ CONTAINS
          END DO
          IF ( t>n ) EXIT
 
-         Def_Dofs => Solver % Def_Dofs
+         Def_Dofs => Solver % Def_Dofs(Element % BodyId,:)
          IF ( ASSOCIATED(Element % EdgeIndexes) ) THEN
            DO i=1,Element % TYPE % NumberOfEdges
              j = Element % EdgeIndexes(i)
@@ -282,8 +285,7 @@ CONTAINS
 
        IF ( t > n ) EXIT
 
-       Def_Dofs => Solver % Def_Dofs
-
+       Def_Dofs => Solver % Def_Dofs(Element % BodyId,:)
        ndofs = Element % NDOFs
        IF ( Def_Dofs(1) >= 0 ) ndofs=Def_Dofs(1)*Element % TYPE % NumberOfNodes
        DO i=1,ndofs
@@ -301,7 +303,8 @@ CONTAINS
              IF ( Def_Dofs(2) >= 0) THEN
                ndofs = Def_Dofs(2)
              ELSE IF (Def_Dofs(6)>=0) THEN
-               ndofs = MAX(Edge % BDOFs,EdgeDOFs(Element % EdgeIndexes(i)))
+               ndofs = EdgeDOFs(Element % EdgeIndexes(i))
+               IF (Def_Dofs(6)==0) ndofs = MAX(Edge % BDOFs,ndofs)
              END IF
 
              DO e=1,ndofs
@@ -322,7 +325,7 @@ CONTAINS
                ndofs = Def_Dofs(3)
              ELSE IF (Def_Dofs(6)>=0) THEN
                ndofs = FaceDOFs(Element % FaceIndexes(i))
-               ndofs = MAX(Face % BDOFs,FaceDOFs(Element % FaceIndexes(i)))
+               IF ( Def_Dofs(6)==0 ) ndofs = MAX(Face % BDOFs,ndofs)
              END IF
              DO e=1,ndofs
                 j = Mesh % NumberOfNodes + EDOFs*Mesh % NumberOfEdges + &
@@ -335,12 +338,13 @@ CONTAINS
           END DO
        END IF
 
-       IF ( GB .AND. ASSOCIATED( Element % BubbleIndexes ) ) THEN
+       IF ( GB .AND. ASSOCIATED(Element % BubbleIndexes) ) THEN
          ndofs = 0
          IF ( Def_Dofs(5) >= 0) THEN
             ndofs = Def_Dofs(5)
          ELSE IF (Def_Dofs(6)>=0) THEN
-            ndofs = MAX(Element % BDOFs,GetBubbleDOFs(Element, Def_Dofs(6)))
+            ndofs = GetBubbleDOFs(Element, Def_Dofs(6))
+            IF ( Def_Dofs(6)==0 ) ndofs = MAX(Element % BDOFs,ndofs)
          END IF
 
          DO i=1,ndofs
@@ -463,14 +467,14 @@ CONTAINS
 
 !------------------------------------------------------------------------------
     SUBROUTINE VariableAdd( Variables,Mesh,Solver,Name,DOFs,Values,&
-      Perm,Output,Secondary, Type )
+      Perm,Output,Secondary, TYPE )
 !------------------------------------------------------------------------------
       TYPE(Variable_t), POINTER :: Variables
       TYPE(Mesh_t),   TARGET :: Mesh
       TYPE(Solver_t), TARGET :: Solver
       CHARACTER(LEN=*) :: Name
       INTEGER :: DOFs
-      INTEGER, OPTIONAL :: Type
+      INTEGER, OPTIONAL :: TYPE
       REAL(KIND=dp), POINTER :: Values(:)
       LOGICAL, OPTIONAL :: Output
       INTEGER, OPTIONAL, POINTER :: Perm(:)
@@ -538,7 +542,7 @@ CONTAINS
         ptr % Secondary = Secondary
       END IF
 
-      IF ( PRESENT( Type ) ) ptr % Type = Type
+      IF ( PRESENT( TYPE ) ) ptr % TYPE = TYPE
       IF ( PRESENT( Output ) ) ptr % Output = Output
 !------------------------------------------------------------------------------
     END SUBROUTINE VariableAdd
@@ -605,14 +609,14 @@ CONTAINS
        INTEGER :: i,j,k,l,nfound,n,ierr,nvars,npart,proc,status(MPI_STATUS_SIZE)
        REAL(KIND=dp) :: myBB(6), eps2, dn
        REAL(KIND=dp), POINTER :: store(:)
-       REAL(KIND=dp), ALLOCATABLE, TARGET :: vstore(:,:), BB(:,:), &
+       REAL(KIND=dp), ALLOCATABLE, TARGET :: astore(:),vstore(:,:), BB(:,:), &
              nodes_x(:),nodes_y(:),nodes_z(:), xpart(:), ypart(:), zpart(:)
 
        TYPE ProcRecv_t
          INTEGER :: n = 0
-         REAL(KIND=dp), POINTER :: nodes_x(:),nodes_y(:),nodes_z(:)
+         REAL(KIND=dp), ALLOCATABLE :: nodes_x(:),nodes_y(:),nodes_z(:)
        END TYPE ProcRecv_t
-       TYPE(ProcRecv_t),  ALLOCATABLE :: ProcRecv(:)
+       TYPE(ProcRecv_t),  ALLOCATABLE, TARGET :: ProcRecv(:)
 
        TYPE ProcSend_t
          INTEGER :: n = 0
@@ -898,7 +902,7 @@ CONTAINS
           CYCLE
         END IF
 
-        ALLOCATE(store(n),vperm(n))
+        ALLOCATE(astore(n),vperm(n))
 
         ! recv permutation (where in the original array the
         ! points the partition found are):
@@ -914,7 +918,7 @@ CONTAINS
           IF ( Var % DOFs==1 .AND. ASSOCIATED(Var % Perm) .AND..NOT.Var % Secondary ) THEN
 
             nvars=nvars+1
-            CALL MPI_RECV( store, n, MPI_DOUBLE_PRECISION, proc, &
+            CALL MPI_RECV( astore, n, MPI_DOUBLE_PRECISION, proc, &
                 2002+nvars, MPI_COMM_WORLD, status, ierr )
 
             Nvar => VariableGet( NewMesh % Variables,Var % Name,ThisOnly=.TRUE.)
@@ -923,21 +927,21 @@ CONTAINS
               DO j=1,n
                 k=perm(ProcSend(proc+1) % Perm(vperm(j)))
                 IF ( Nvar % perm(k)>0 ) &
-                  Nvar % Values(Nvar % Perm(k)) = store(j)
+                  Nvar % Values(Nvar % Perm(k)) = astore(j)
               END DO
             END IF
 
             IF ( ASSOCIATED(Var % PrevValues) ) THEN
               DO l=1,SIZE(Var % PrevValues,2)
                 nvars=nvars+1
-                CALL MPI_RECV( store, n, MPI_DOUBLE_PRECISION, proc, &
+                CALL MPI_RECV( astore, n, MPI_DOUBLE_PRECISION, proc, &
                     2002+nvars, MPI_COMM_WORLD, status, ierr )
 
                 IF ( ASSOCIATED(Nvar) ) THEN
                   DO j=1,n
                     k=perm(ProcSend(proc+1) % Perm(vperm(j)))
                     IF ( Nvar % perm(k)>0 ) &
-                      Nvar % PrevValues(Nvar % Perm(k),l) = store(j)
+                      Nvar % PrevValues(Nvar % Perm(k),l) = astore(j)
                   END DO
                 END IF
               END DO
@@ -945,7 +949,7 @@ CONTAINS
           END IF
           Var => Var % Next
         END DO
-        DEALLOCATE(store,vperm,ProcSend(proc+1) % perm)
+        DEALLOCATE(astore,vperm,ProcSend(proc+1) % perm)
       END DO
       IF ( ALLOCATED(Perm) ) DEALLOCATE(Perm,ProcSend)
 
@@ -1870,7 +1874,7 @@ CALL Info( 'VariableGet', Message, Level=7 )
      LOGICAL :: Found
      TYPE(ValueList_t), POINTER :: ptr, prev
 !------------------------------------------------------------------------------
-     NULLIFY( prev )
+     Prev => Null()
      Found = .FALSE.
 
      NEW => ListAllocate()
@@ -1948,32 +1952,33 @@ CALL Info( 'VariableGet', Message, Level=7 )
      TYPE(Varying_string) :: strn
      CHARACTER(LEN=LEN_TRIM(Name)) :: str
 !------------------------------------------------------------------------------
-     INTEGER :: k, n
+     INTEGER :: k, k1, n
 
      k = StringToLowerCase( str,Name,.TRUE. )
 
-     ptr => List
-     DO WHILE( ASSOCIATED(ptr) )
-       n = ptr % NameLen
-       IF ( n==k ) THEN
-         IF ( ptr % Name(1:n) == str(1:n) ) EXIT
-       END IF
-       ptr => ptr % Next
-     END DO
+     ptr => Null()
+     IF ( ListGetNamespace(strn) ) THEN
+       strn = strn //' '//str(1:k)
+       k1 = LEN(strn)
+       ptr => List
+       DO WHILE( ASSOCIATED(ptr) )
+          n = ptr % NameLen
+          IF ( n==k1 ) THEN
+            IF ( ptr % Name(1:n) == strn ) EXIT
+          END IF
+          ptr => ptr % Next
+       END DO
+     END IF
 
      IF ( .NOT. ASSOCIATED(ptr) ) THEN
-       IF ( ListGetNamespace(strn) ) THEN
-         strn = strn //' '//str(1:k)
-         k = LEN(strn)
-         ptr => List
-         DO WHILE( ASSOCIATED(ptr) )
-            n = ptr % NameLen
-            IF ( n==k ) THEN
-              IF ( ptr % Name(1:n) == strn ) EXIT
-            END IF
-            ptr => ptr % Next
-         END DO
-       END IF
+       Ptr => List
+       DO WHILE( ASSOCIATED(ptr) )
+         n = ptr % NameLen
+         IF ( n==k ) THEN
+           IF ( ptr % Name(1:n) == str(1:n) ) EXIT
+         END IF
+         ptr => ptr % Next
+       END DO
      END IF
 
      IF ( PRESENT(Found) ) THEN
@@ -2506,11 +2511,11 @@ CALL Info( 'VariableGet', Message, Level=7 )
        END IF
 
        k1 = ind
-       IF ( Variable % Type == Variable_on_nodes_on_elements ) THEN
+       IF ( Variable % TYPE == Variable_on_nodes_on_elements ) THEN
          Element => CurrentModel % CurrentElement
          IF ( ASSOCIATED(Element) ) THEN
            IF ( ASSOCIATED(Element % DGIndexes) ) THEN
-             n = Element % Type % NumberOfNodes
+             n = Element % TYPE % NumberOfNodes
              IF ( SIZE(Element % DGIndexes)==n ) THEN
                DO i=1,n
                  IF ( Element % NodeIndexes(i)==ind ) THEN
@@ -2650,7 +2655,7 @@ CALL Info( 'VariableGet', Message, Level=7 )
          CALL ListParseStrToValues( Ptr % DependName, Ptr % DepNameLen, k, Name, T, j)
          IF ( .NOT. ANY( T(1:j)==HUGE(1.0_dp) ) ) THEN
            DO l=1,j
-             WRITE( cmd, * ) 'tx('//trim(i2s(l-1))//')=', T(l)
+             WRITE( cmd, * ) 'tx('//TRIM(i2s(l-1))//')=', T(l)
              k1 = LEN_TRIM(cmd)
              CALL matc( cmd, tmp_str, k1 )
            END DO
@@ -2784,9 +2789,9 @@ CALL Info( 'VariableGet', Message, Level=7 )
          CALL ListParseStrToValues( Ptr % DependName, Ptr % DepNameLen, k, Name, T, j)
          IF ( ANY(T(1:j)==HUGE(1._dP)) ) CYCLE
 
-         IF ( ptr % Type==LIST_TYPE_VARIABLE_TENSOR_STR) THEN
+         IF ( ptr % TYPE==LIST_TYPE_VARIABLE_TENSOR_STR) THEN
            DO l=1,j
-             WRITE( cmd, '(a,g19.12)' ) 'tx('//trim(i2s(l-1))//')=', T(l)
+             WRITE( cmd, '(a,g19.12)' ) 'tx('//TRIM(i2s(l-1))//')=', T(l)
              k1 = LEN_TRIM(cmd)
              CALL matc( cmd, tmp_str, k1 )
            END DO
@@ -2880,21 +2885,371 @@ CALL Info( 'VariableGet', Message, Level=7 )
     INTEGER :: No
     
     DO No = 1, 9999
-      IF( No < 10) THEN
-        WRITE( Keyword,'(A,I2)') TRIM(Keyword0),No
-      ELSE IF( No < 100) THEN
-        WRITE( Keyword,'(A,I3)') TRIM(Keyword0),No
-      ELSE IF( No < 1000) THEN
-        WRITE( Keyword,'(A,I4)') TRIM(Keyword0),No
-      ELSE IF( No < 10000) THEN
-        WRITE( Keyword,'(A,I5)') TRIM(Keyword0),No
-      END IF
+      WRITE( Keyword,'(A,I0)') TRIM(Keyword0)//' ',No
       IF( .NOT. ListCheckPresent(List,Keyword)) EXIT
     END DO
 
 !------------------------------------------------------------------------------
   END FUNCTION NextFreeKeyword
 !------------------------------------------------------------------------------
+ 
+
+!------------------------------------------------------------------------------
+   FUNCTION ListCheckPresentAnyBC( Model, Name ) RESULT(Found)
+!------------------------------------------------------------------------------
+     TYPE(Model_t) :: Model
+     CHARACTER(LEN=*) :: Name
+     LOGICAL :: Found
+!------------------------------------------------------------------------------
+     INTEGER :: bc
+     
+     Found = .FALSE.
+     DO bc = 1,Model % NumberOfBCs
+       Found = ListCheckPresent( Model % BCs(bc) % Values, Name )
+       IF( Found ) EXIT
+     END DO
+!------------------------------------------------------------------------------
+   END FUNCTION ListCheckPresentAnyBC
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   FUNCTION ListCheckPresentAnyBodyForce( Model, Name ) RESULT(Found)
+!------------------------------------------------------------------------------
+     TYPE(Model_t) :: Model
+     CHARACTER(LEN=*) :: Name
+     LOGICAL :: Found
+!------------------------------------------------------------------------------
+     INTEGER :: bf
+     
+     Found = .FALSE.
+     DO bf = 1,Model % NumberOfBodyForces
+       Found = ListCheckPresent( Model % BodyForces(bf) % Values, Name )
+       IF( Found ) EXIT
+     END DO
+!------------------------------------------------------------------------------
+   END FUNCTION ListCheckPresentAnyBodyForce
+!------------------------------------------------------------------------------
+
+!------------------------------------------------------------------------------
+   FUNCTION ListCheckPresentAnyMaterial( Model, Name ) RESULT(Found)
+!------------------------------------------------------------------------------
+     TYPE(Model_t) :: Model
+     CHARACTER(LEN=*) :: Name
+     LOGICAL :: Found
+!------------------------------------------------------------------------------
+     INTEGER :: mat
+     
+     Found = .FALSE.
+     DO mat = 1,Model % NumberOfMaterials
+       Found = ListCheckPresent( Model % Materials(mat) % Values, Name )
+       IF( Found ) EXIT
+     END DO
+!------------------------------------------------------------------------------
+   END FUNCTION ListCheckPresentAnyMaterial
+!------------------------------------------------------------------------------
+
+
+
+
+
+
+!------------------------------------------------------------------------------
+! Elmer may include scalar and vector variables which may be known by their
+! original name or have an alias. For historical reasons they are introduced
+! by two quite separate ways. This subroutine tries to make the definition of
+! variables for saving more straight-forward.
+!------------------------------------------------------------------------------
+  SUBROUTINE CreateListForSaving( Model, List, ShowVariables, ClearList )
+!------------------------------------------------------------------------------
+    IMPLICIT NONE
+!------------------------------------------------------------------------------
+    TYPE(Model_t) :: Model
+    TYPE(ValueList_t),POINTER  :: List
+    LOGICAL :: ShowVariables
+    LOGICAL, OPTIONAL :: ClearList
+!------------------------------------------------------------------------------
+    INTEGER :: i,j,k,l,LoopDim, VarDim,DOFs,dim
+    TYPE(Variable_t), POINTER :: Variables, Var, Var1
+    CHARACTER(LEN=MAX_NAME_LEN) :: VarName, VarStr, VarStrComp, VarStrExt, str
+    LOGICAL :: IsVector, Set, GotIt, ComponentVector, ThisOnly
+    INTEGER :: Nvector, Nscalar
+    TYPE(ValueList_t), POINTER :: Params
+
+    Params => Model % Solver % Values
+    Variables => Model % Mesh % Variables
+
+!------------------------------------------------------------------------------
+! Sometimes the list must be cleared in order to use it for a different mesh
+!-----------------------------------------------------------------------------
+    IF( PRESENT( ClearList ) ) THEN
+      IF( ClearList ) THEN
+        DO i=1,99
+          WRITE(VarStr,'(A,I0)') 'Scalar Field ',i
+          IF( ListCheckPresent( List, VarStr ) ) THEN
+            CALL ListRemove( List, VarStr )
+          ELSE
+            EXIT
+          END IF
+        END DO
+
+        DO i=1,99
+          WRITE(VarStr,'(A,I0)') 'Vector Field ',i
+          IF( ListCheckPresent( List, VarStr ) ) THEN
+            CALL ListRemove( List, VarStr )
+          ELSE
+            EXIT
+          END IF
+
+          WRITE(VarStr,'(A,I0,A)') 'Vector Field ',i,' Component'
+          IF( ListCheckPresent( List, VarStr ) ) THEN
+            CALL ListRemove( List, VarStr )
+          END IF
+        END DO
+      END IF
+    END IF
+    
+    !-------------------------------------------------------------------
+    ! First check that there is a need to create the list i.e. it is not
+    ! already manually defined
+    !-------------------------------------------------------------------
+    IF( ListCheckPresent( List,'Scalar Field 1' ) ) RETURN
+    IF( ListCheckPresent( List,'Vector Field 1' ) ) RETURN
+
+    Nscalar = 0
+    Nvector = 0
+
+
+    ThisOnly = .NOT. ListGetLogical( Params,'Interpolate Fields',GotIt)
+    dim = Model % Mesh % MeshDim
+    
+    Var => Variables
+    DO WHILE( ASSOCIATED( Var ) )
+      
+      IF ( .NOT. Var % Output ) THEN
+        Var => Var % Next
+        CYCLE
+      END IF
+      
+      IF ( SIZE( Var % Values ) == Var % DOFs ) THEN
+        Var => Var % Next
+        CYCLE
+      END IF
+
+      VarDim = Var % Dofs
+      IsVector = (VarDim > 1)
+      Set = .FALSE.
+
+      WRITE(VarName,'(A)') TRIM(Var % Name)
+
+      SELECT CASE(Var % Name)
+
+      CASE( 'coordinate 1','coordinate 2','coordinate 3' )
+        ! These are treated separatetely as coordinates are not typically saved
+
+
+      CASE( 'mesh update' )
+        ! Mesh update is treated separately because its special connection to displacement
+
+        Var1 => Variables
+        DO WHILE( ASSOCIATED( Var1 ) )
+          IF ( TRIM(Var1 % Name) == 'displacement' ) EXIT
+          Var1 => Var1 % Next
+        END DO
+        IF ( .NOT. ASSOCIATED( Var1 ) ) THEN
+          Set = .TRUE.
+        END IF
+        
+      CASE('mesh update 1','mesh update 2', 'mesh update 3' )
+        
+      CASE( 'displacement' )
+        Set = .TRUE.
+        ! mesh update is by default the complement to displacement 
+        Var1 => Variables
+        DO WHILE( ASSOCIATED( Var1 ) )
+          IF ( TRIM(Var1 % Name) == 'mesh update' ) EXIT
+          Var1 => Var1 % Next
+        END DO
+        IF ( ASSOCIATED( Var1 ) ) THEN
+          WRITE(VarStrComp,'(A,I0,A)') 'Vector Field ',Nvector+1,' Complement'
+          CALL ListAddString( List ,TRIM(VarStrComp),'mesh update')
+        END IF
+        
+      CASE( 'displacement 1','displacement 2','displacement 3')
+        
+
+      CASE DEFAULT
+  
+        ! All vector variables are assumed to be saved using its components
+        ! rather than vector itself.
+
+        IF ( Var % DOFs == 1 ) THEN
+          Set = .TRUE. 
+          
+	  str =  ' '
+          j = LEN_TRIM(Var % Name)
+          DO i=1,j
+            str(i:i) = Var % Name(i:i)
+          END DO
+          
+          ! Check that there are exactly dim number of components
+          ! If so save the quantity as a vector, otherwise componentwise
+          IF( str(j:j) == '1') THEN
+            IF(dim == 2) THEN
+              Var1 => VariableGet(Variables,TRIM(str(1:j-2))//' 2',ThisOnly)		
+              IF( ASSOCIATED(Var1)) THEN
+                Var1 => VariableGet(Variables,TRIM(str(1:j-2))//' 3',ThisOnly)		
+                IsVector = .NOT. ASSOCIATED(Var1)
+              END IF
+            END IF
+            IF(dim == 3) THEN
+              Var1 => VariableGet(Variables,TRIM(str(1:j-2))//' 3',ThisOnly)		
+              IF( ASSOCIATED(Var1)) THEN
+                Var1 => VariableGet(Variables,TRIM(str(1:j-2))//' 4',ThisOnly)		
+                IsVector = .NOT. ASSOCIATED(Var1)
+              END IF
+            END IF
+	    IF( IsVector ) THEN
+              WRITE(VarName,'(A)') TRIM(str(1:j-2))
+              ! Loop over the 2nd (and 3rd) components as they are already accounted for
+	      DO k=2,dim
+                Var => Var % Next
+              END DO
+            END IF
+          END IF
+        END IF
+      END SELECT
+      
+      !---------------------------------------------------------------------------
+      ! Set the default variable names that have not been set
+      !------------------------------------------------------------------------
+      IF( Set ) THEN
+        IF( IsVector ) THEN
+          Nvector = Nvector + 1
+          WRITE(VarStr,'(A,I0)') 'Vector Field ',Nvector
+        ELSE 
+          Nscalar = Nscalar + 1
+          WRITE(VarStr,'(A,I0)') 'Scalar Field ',Nscalar
+        END IF
+        CALL ListAddString( List,TRIM(VarStr),TRIM(VarName) )
+      END IF
+
+      Var => Var % Next
+    END DO
+
+
+    IF( ShowVariables ) THEN
+      CALL Info('CreateListForSaving','Field Variables for Saving')
+      DO i=1,Nscalar
+        WRITE(VarStr,'(A,I0)') 'Scalar Field ',i
+        VarName = ListGetString( List, VarStr,GotIt )
+        IF( GotIt ) THEN
+          WRITE( Message,'(A)') TRIM(VarStr)//': '//TRIM(VarName)
+          CALL Info('CreateListForSaving',Message)
+        END IF
+      END DO
+
+      DO i=1,Nvector
+        WRITE(VarStr,'(A,I0)') 'Vector Field ',i
+        VarName = ListGetString( List, VarStr,GotIt )
+        IF( GotIt ) THEN
+          WRITE( Message,'(A)') TRIM(VarStr)//': '//TRIM(VarName)
+          CALL Info('CreateListForSaving',Message)
+        END IF
+      END DO
+
+      DO i=1,Nvector
+        WRITE(VarStr,'(A,I0,A)') 'Vector Field ',i,' Complement'
+        VarName = ListGetString( List, VarStr, GotIt )
+        IF( GotIt ) THEN
+          WRITE( Message,'(A)') TRIM(VarStr)//': '//TRIM(VarName)
+          CALL Info('CreateListForSaving',Message)
+        END IF
+      END DO
+    END IF
+
+
+  END SUBROUTINE CreateListForSaving
+  
+
+  SUBROUTINE ResetTimer(TimerName)
+    CHARACTER(*) :: TimerName
+    REAL(KIND=dp) :: ct, rt
+    REAL(KIND=dp) :: RealTime, CPUTime
+    LOGICAL :: Found,FirstTime=.TRUE.
+
+    IF( FirstTime ) THEN
+      FirstTime=.FALSE.
+      TimerPassive = ListGetLogical( CurrentModel % Simulation,'Timer Passive',Found)
+      TimerResults = ListGetLogical( CurrentModel % Simulation,'Timer Results',Found)      
+    END IF
+
+    IF( TimerPassive ) RETURN
+
+    ct = CPUTime()
+    rt = RealTime()
+    CALL ListAddConstReal( TimerList,TRIM(TimerName)//' cpu time',ct )
+    CALL ListAddConstReal( TimerList,TRIM(TimerName)//' real time',rt )
+
+  END SUBROUTINE ResetTimer
+
+  SUBROUTINE DeleteTimer(TimerName) 
+    CHARACTER(*) :: TimerName
+    
+    IF( TimerPassive ) RETURN
+
+    CALL ListRemove( TimerList, TRIM(TimerName)//' cpu time' ) 
+    CALL ListRemove( TimerList, TRIM(TimerName)//' real time' ) 
+
+  END SUBROUTINE DeleteTimer
+ 
+
+  SUBROUTINE CheckTimer(TimerName, Level, Delete, Reset) 
+    CHARACTER(*) :: TimerName
+    INTEGER, OPTIONAL :: Level
+    LOGICAL, OPTIONAL :: Reset, Delete
+    
+    REAL(KIND=dp) :: ct0,rt0,ct, rt
+    REAL(KIND=dp) :: RealTime, CPUTime
+    LOGICAL :: Found
+    
+    IF( TimerPassive ) RETURN
+
+    ct0 = ListGetConstReal( TimerList,TRIM(TimerName)//' cpu time',Found) 
+    IF( Found ) THEN
+      rt0 = ListGetConstReal( TimerList,TRIM(TimerName)//' real time')
+      ct = CPUTime() - ct0
+      rt = RealTime() - rt0 
+      
+      WRITE(Message,'(a,f8.2,f8.2,a)') 'Execution time (CPU,REAL) for '&
+          //TRIM(TimerName)//': ',ct,rt,' (s)'
+      CALL Info('CheckTimer',Message,Level=Level)          
+
+      IF( TimerResults ) THEN
+        CALL ListAddConstReal(CurrentModel % Simulation,&
+            'res: '//TRIM(TimerName)//' cpu time',ct)
+        CALL ListAddConstReal(CurrentModel % Simulation,&
+            'res: '//TRIM(TimerName)//' real time',ct)
+      END IF
+    ELSE
+      CALL Warn('CheckTimer',&
+          'Requesting time from non-existing timer: '//TRIM(TimerName) )
+    END IF
+
+    IF( PRESENT( Reset ) ) THEN
+      IF( Reset ) THEN
+        CALL ListAddConstReal( TimerList,TRIM(TimerName)//' cpu time',ct )
+        CALL ListAddConstReal( TimerList,TRIM(TimerName)//' real time',rt )
+      END IF
+    END IF
+
+    IF( PRESENT( Delete ) ) THEN
+      IF( Delete ) CALL DeleteTimer( TimerName )
+    END IF
+
+  END SUBROUTINE CheckTimer
+
+
 
 
 END MODULE Lists

@@ -42,7 +42,7 @@
    MODULE GlobMat
 !------------------------------------------------------------------------------
       USE Types
-      COMPLEX(KIND=dp), POINTER :: Matrix(:,:)
+      COMPLEX(KIND=dp), ALLOCATABLE :: Matrix(:,:)
 !------------------------------------------------------------------------------
    END MODULE GlobMat
 !------------------------------------------------------------------------------
@@ -97,7 +97,7 @@
 
      LOGICAL :: AllocationsDone = .FALSE., GotIt
  
-     COMPLEX(KIND=dp), POINTER :: Potential(:),ForceVector(:), &
+     COMPLEX(KIND=dp), POINTER CONTIG :: Potential(:),ForceVector(:), &
                Diagonal(:)
      INTEGER, POINTER :: PotentialPerm(:), BoundaryPerm(:)
 
@@ -185,19 +185,7 @@
 !------------------------------------------------------------------------------
 ! Figure out angular frequency:
 !------------------------------------------------------------------------------
-  AngularFrequency = 0.0d0
-
-  NodeIndexes => Solver % Mesh % Elements(1) % NodeIndexes
-
-  Work(1:1) = ListGetReal( Model % Simulation, &
-     'Angular Frequency', 1, NodeIndexes, GotIt )
-
-  AngularFrequency = Work(1)
-
-  IF ( .NOT. GotIt ) THEN
-     Work(1:1) = ListGetReal( Model % Simulation, 'Frequency', 1, NodeIndexes )
-     AngularFrequency = 2*PI*Work(1)
-  END IF
+     AngularFrequency = GetAngularFrequency()
 
 
 !------------------------------------------------------------------------------
@@ -705,13 +693,13 @@
           SUBROUTINE SolveLapack_cmplx( N,A,x )
              USE Types
              INTEGER N
-             COMPLEX(KIND=dp) :: a(n*n), x(n)
+             COMPLEX(KIND=dp) :: a(n,n), x(n)
            END SUBROUTINE SolveLapack_cmplx
         END INTERFACE
 !------------------------------------------------------------------------------
        INTEGER ::  N
  
-       COMPLEX(KIND=dp) ::  A(n*n),x(n),b(n)
+       COMPLEX(KIND=dp) CONTIG ::  A(:,:),x(:),b(:)
 !------------------------------------------------------------------------------
 
        SELECT CASE( ListGetString( Solver % Values, 'Linear System Solver' ) )
@@ -740,7 +728,7 @@
 !------------------------------------------------------------------------------
        TYPE(Solver_t) :: SolverParam
        INTEGER :: N
-       COMPLEX(KIND=dp), DIMENSION(N) :: x,b
+       COMPLEX(KIND=dp), DIMENSION(:) CONTIG :: x,b
 !------------------------------------------------------------------------------
        REAL(KIND=dp) :: dpar(50)
 

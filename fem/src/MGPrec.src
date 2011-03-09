@@ -47,7 +47,7 @@
     TYPE(Solver_t), POINTER :: PSolver
 
     TYPE(Matrix_t), POINTER :: A
-    REAL(KIND=dp), POINTER :: x(:),b(:)
+    REAL(KIND=dp), POINTER CONTIG :: x(:),b(:)
 
     PSolver => CurrentModel % Solver
 
@@ -76,6 +76,7 @@
     END IF
 
     DOFs =  PSolver % Variable % DOFs
+    x = b
     CALL MultiGridSolve( A, x, b, &
           DOFs,  PSolver, PSolver % MultiGridLevel, FirstCall)
 
