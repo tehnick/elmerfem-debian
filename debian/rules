@@ -37,7 +37,8 @@ BACKUP_FILES = eio/Makefile.in eio/configure eio/include/Makefile.in \
   post/src/elements/Makefile.in post/src/glaux/Makefile.in \
   post/src/graphics/Makefile.in post/src/modules/Makefile.in \
   post/src/objects/Makefile.in post/src/sico2elmer/Makefile.in \
-  post/src/tcl/Makefile.in post/src/tk/Makefile.in post/src/visuals/Makefile.in
+  post/src/tcl/Makefile.in post/src/tk/Makefile.in \
+  post/src/visuals/Makefile.in ElmerGUIlogger/ElmerGUIlogger.pro
 
 MISSING_FILES = eio/NEWS eio/README eio/AUTHORS eio/ChangeLog \
   matc/NEWS matc/README matc/AUTHORS matc/ChangeLog matc/COPYING \
@@ -92,7 +93,7 @@ build: stamp-build
 stamp-build: patch
 	dh_testdir
 	for backupfile in $(BACKUP_FILES); do \
-	  cp $$backupfile $$backupfile.bak; \
+	  cp -a $$backupfile $$backupfile.bak; \
 	done
 	mkdir elmergrid/src/metis
 	mkdir post/src/fonts/TrueType

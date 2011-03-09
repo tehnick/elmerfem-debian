@@ -1,4 +1,4 @@
-elmerfem (5.5.0.svn.4897.dfsg-2) UNRELEASED; urgency=low
+elmerfem (5.5.0.svn.5100.dfsg-1) unstable; urgency=low
 
   [ Stefano Rivera <stefano@rivera.za.net> ]
   * Switch library order to fix FTBFS with binutils-gold (closes: #609874).
@@ -7,12 +7,13 @@ elmerfem (5.5.0.svn.4897.dfsg-2) UNRELEASED; urgency=low
   * Fixes to cs.po (closes: #610077).
 
   [ Adam C. Powell, IV ]
+  * New upstream revision, added one file to rules BACKUP_FILES.
   * Build ElmerGUI without stripping it.
   * Debugging packages for elmer and libelmersolver (closes: #609848).
   * Move some scripts to libelmer-dev.
   * Update VTK to version 5.6 (closes: #614952).
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 09 Mar 2011 16:02:38 -0500
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 09 Mar 2011 16:27:21 -0500
 
 elmerfem (5.5.0.svn.4897.dfsg-1) unstable; urgency=low
 
