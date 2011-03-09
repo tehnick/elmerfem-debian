@@ -10,7 +10,10 @@ Simulation
   Timestep Sizes = 0.01
   Timestep Intervals = 10
   Output Intervals(1) = 1
-  Steady State Max Iterations = 2
+  Steady State Max Iterations = 1
+
+  Max Output Level = 3
+
 ! Post File   = "ptest.ep"
 ! Output File = "ptest.dat"
 End
@@ -36,6 +39,8 @@ Solver 1
   Procedure = "WaveEq" "WaveSolver"
 
   Linear System Solver = "Direct"
+  Linear System Direct Method = Umfpack
+
   Steady State Convergence Tolerance = 1e-09
 End
 

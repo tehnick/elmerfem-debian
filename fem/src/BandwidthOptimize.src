@@ -293,7 +293,7 @@ use spariterglobals
          END TYPE Stack_t
 
          INTEGER :: stackp
-         TYPE(Stack_t), POINTER :: stack(:), copystack(:)
+         TYPE(Stack_t), POINTER CONTIG :: stack(:), copystack(:)
 !-------------------------------------------------------------------------------
          n = nin
          Level=Levelin
@@ -305,7 +305,9 @@ use spariterglobals
          DO WHILE(ASSOCIATED(p))
            IF ( stackp>=SIZE(stack) ) THEN
              ALLOCATE( copystack(stackp*2) )
-             copystack(1:stackp) = stack(1:stackp)
+             DO j=1,stackp
+               copystack(j) = stack(j)
+             END DO
              DEALLOCATE(stack)
              stack => copystack
            END IF

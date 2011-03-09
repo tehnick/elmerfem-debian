@@ -117,7 +117,7 @@
 #endif
        IF ( ParEnv % PEs > 1 ) &
          CALL Info( 'MAIN', ' Running in parallel using ' // &
-          TRIM(IntegerToString(ParEnv % PEs)) // ' tasks.', Level=3 )
+          TRIM(i2s(ParEnv % PEs)) // ' tasks.', Level=3 )
 #ifdef HAVE_HYPRE
        CALL Info( 'MAIN', ' HYPRE library linked in.', Level=3 )
 #endif
@@ -349,6 +349,7 @@
        IF ( FirstLoad ) CALL SetInitialConditions
 
        TotalTimesteps = 0
+       LastSaved = .TRUE.
        DO interval=1,TimeIntervals
          DO timestep = 1,Timesteps(interval)
            IF( OutputIntervals(Interval) == 0 ) CYCLE
@@ -976,8 +977,8 @@
            CALL Info( 'MAIN', '-------------------------------------', Level=3 )
 
            IF ( Transient .OR. Scanning ) THEN
-             WRITE( Message, * ) 'Time: ',TRIM(IntegerToString(cum_Timestep)),'/', &
-                   TRIM(IntegerToString(stepcount)), sTime(1)
+             WRITE( Message, * ) 'Time: ',TRIM(i2s(cum_Timestep)),'/', &
+                   TRIM(i2s(stepcount)), sTime(1)
              CALL Info( 'MAIN', Message, Level=3 )
 
              newtime= RealTime()
@@ -991,13 +992,13 @@
                  timeleft = NINT((stepcount-(cum_Timestep-1))*(newtime-prevtime)/60._dp);
                  IF (timeleft > 120) THEN
                    WRITE( Message, *) 'Estimated time left: ', &
-                     TRIM(IntegerToString(timeleft/60)),' hours.'
+                     TRIM(i2s(timeleft/60)),' hours.'
                  ELSE IF(timeleft > 60) THEN
                    WRITE( Message, *) 'Estimated time left: 1 hour ', &
-                     TRIM(IntegerToSTring(MOD(timeleft,60))), ' minutes.'
+                     TRIM(i2s(MOD(timeleft,60))), ' minutes.'
                  ELSE IF(timeleft >= 1) THEN
                    WRITE( Message, *) 'Estimated time left: ', &
-                     TRIM(IntegerToString(timeleft)),' minutes.'
+                     TRIM(i2s(timeleft)),' minutes.'
                  ELSE
                    WRITE( Message, *) 'Estimated time left: less than a minute.'
                  END IF
@@ -1392,12 +1393,16 @@
 
           IF ( Mesh % OutputActive ) THEN
              nlen = LEN_TRIM(Mesh % Name)
-             IF ( nlen  > 0 )  THEN
-                OutputName = Mesh % Name(1:nlen) // '/' // TRIM(OutputFile)
-                Postname   = Mesh % Name(1:nlen) // '/' // TRIM(PostFile)
-             ELSE
-                PostName   = PostFile
+             IF ( nlen==0 .OR. FileNameQualified(OutputFile) ) THEN
                 OutputName = OutputFile
+             ELSE
+                OutputName = Mesh % Name(1:nlen)//'/'//TRIM(OutputFile)
+             END IF
+
+             IF ( nlen==0 .OR. FileNameQualified(PostFile) ) THEN
+                PostName = PostFile
+             ELSE
+                Postname = Mesh % Name(1:nlen)//'/'//TRIM(PostFile)
              END IF
 
             IF ( ListGetLogical( CurrentModel % Simulation,'Filename Numbering',&
@@ -1563,7 +1568,7 @@
 !------------------------------------------------------------------------------
     CALL FreeValueList(Solver % Values)
     CALL FreeMatrix(Solver % Matrix)
-    IF (ASSOCIATED(Solver % Def_Dofs)) DEALLOCATE(Solver % Def_Dofs)
+    IF (ALLOCATED(Solver % Def_Dofs)) DEALLOCATE(Solver % Def_Dofs)
     IF (ASSOCIATED(Solver % ActiveElements)) DEALLOCATE(Solver % ActiveElements)
 !------------------------------------------------------------------------------
   END SUBROUTINE FreeSolver

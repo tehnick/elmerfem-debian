@@ -224,6 +224,11 @@ END MODULE PorousMaterials
     
     CALL ListAddString( Params,NextFreeKeyword('Exported Variable',Params), &
             'Matric Suction' )
+
+    ! The sign of total head is different that the default convention of diffusion equations
+    IF( .NOT. ListCheckPresent( Params, 'Limiter Load Sign Negative') ) THEN
+      CALL ListAddLogical( Params,'Limiter Load Sign Negative',.TRUE.) 	
+    END IF
     
   END SUBROUTINE RichardsSolver_Init
 
@@ -261,7 +266,7 @@ END MODULE PorousMaterials
     TYPE(Mesh_t), POINTER :: Mesh
     INTEGER, POINTER :: TotalHeadPerm(:)
 
-    LOGICAL :: SubroutineVisited = .FALSE.,InitSolution, ResetRelax, IsBoundaryReview
+    LOGICAL :: SubroutineVisited = .FALSE.,InitSolution, ResetRelax
     INTEGER :: i,j,n, nd, t, istat, iter, dim, Active, NonlinearIterMax, &
         ActiveCoordinate
     REAL(KIND=dp) :: at,st,totst,totat,CPUTime
@@ -300,7 +305,6 @@ END MODULE PorousMaterials
     SolverParams => GetSolverParams()
     
     Bubbles = GetLogical( SolverParams, 'Bubbles', Found )
-    IsBoundaryReview = .FALSE.
     
     ActiveCoordinate = GetInteger( SolverParams,'Active Coordinate',Found)
     IF(.NOT. Found) ActiveCoordinate = DIM
@@ -348,6 +352,7 @@ END MODULE PorousMaterials
     !       non-linear system iteration loop
     !------------------------------------------------------------------------------
     
+    totst = 0; totat = 0;
     DO iter=1,NonlinearIterMax
       
       at  = CPUTime()
@@ -419,7 +424,7 @@ END MODULE PorousMaterials
           CALL Condensate( N, STIFF, FORCE, TimeForce )
         END IF
         
-        CALL DefaultUpdateEquations( STIFF, FORCE, BulkUpdate = IsBoundaryReview )
+        CALL DefaultUpdateEquations( STIFF, FORCE )
       END DO
 
       
@@ -558,6 +563,7 @@ END MODULE PorousMaterials
        SAVE Nodes
 !------------------------------------------------------------------------------
        dim = CoordinateSystemDimension()
+       CoordSys = CurrentCoordinateSystem()
 !------------------------------------------------------------------------------
        FORCE = 0.0d0
        STIFF = 0.0d0
@@ -642,6 +648,7 @@ END MODULE PorousMaterials
        SAVE Nodes
 !------------------------------------------------------------------------------
        dim = CoordinateSystemDimension()
+       CoordSys = CurrentCoordinateSystem()
 !------------------------------------------------------------------------------
        FORCE = 0.0d0
        STIFF = 0.0d0
@@ -821,7 +828,7 @@ SUBROUTINE RichardsPostprocess( Model,Solver,dt,Transient )
   END IF
 
   ! We need DIM r.h.s. vectors, allocated DIM-1 additional ones  
-  ALLOCATE(ForceVector(Dofs-1,SIZE(Solver % Matrix % RHS)))  
+  ALLOCATE(ForceVector(SIZE(Solver % Matrix % RHS),Dofs-1))  
   ForceVector = 0.0_dp
   SaveRHS => Solver % Matrix % RHS
   
@@ -839,7 +846,7 @@ SUBROUTINE RichardsPostprocess( Model,Solver,dt,Transient )
     IF(i==1) THEN
       Solver % Matrix % RHS => SaveRHS
     ELSE
-      Solver % Matrix % RHS => ForceVector(i-1,:)
+      Solver % Matrix % RHS => ForceVector(:,i-1)
     END IF
     UNorm = DefaultSolve()
     TotNorm = TotNorm + Unorm ** 2
@@ -951,7 +958,7 @@ CONTAINS
       END IF
 
       DO i=2,Dofs
-        Solver % Matrix % RHS => ForceVector(i-1,:)
+        Solver % Matrix % RHS => ForceVector(:,i-1)
         CALL DefaultUpdateForce( FORCE(i,1:nd) )
       END DO
     END DO

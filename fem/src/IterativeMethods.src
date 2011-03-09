@@ -118,11 +118,12 @@ CONTAINS
  !------------------------------------------------------------------------------
       TYPE(Matrix_t), POINTER :: A
       INTEGER :: Rounds
+      INTEGER :: i,j,k,n
       REAL(KIND=dp) :: x(n),b(n)
       REAL(KIND=dp) :: Omega
-      INTEGER :: i,j,k,n
       INTEGER, POINTER :: Cols(:),Rows(:)
-      REAL(KIND=dp), POINTER :: Values(:), R(:)
+      REAL(KIND=dp), POINTER :: Values(:)
+      REAL(KIND=dp), ALLOCATABLE :: R(:)
       LOGICAL :: Converged, Diverged
       INTEGER :: OutputInterval
       REAL(KIND=dp) :: MinTolerance, MaxTolerance, Residual, bnorm,rnorm,w,s
@@ -232,9 +233,9 @@ CONTAINS
       REAL(KIND=dp) :: MinTolerance, MaxTolerance, Residual
       INTEGER :: OutputInterval
       REAL(KIND=dp) :: bnorm,rnorm
-      REAL(KIND=dp), POINTER :: R(:)
+      REAL(KIND=dp), ALLOCATABLE :: R(:)
 !------------------------------------------------------------------------------
-      INTEGER :: i,n
+      INTEGER :: i,j,n
 !------------------------------------------------------------------------------
       
       Converged = .FALSE.
@@ -254,7 +255,9 @@ CONTAINS
       IF( Converged .OR. Diverged) RETURN
       
       DO i=1,Rounds
-        x(1:n) = x(1:n) + r(1:n) / A % Values(A % diag(1:n))
+        DO j=1,n
+          x(j) = x(j) + r(j) / A % Values(A % diag(j))
+        END DO
         CALL matvecsubr( x, r, ipar )
         
         r(1:n) = b(1:n) - r(1:n)
@@ -350,7 +353,7 @@ CONTAINS
           IluOrder
       REAL(KIND=dp) :: work(n,3+2*(l+1)), rwork(l+1,3+2*(l+1)), &
           alpha, beta, omega, rho0, rho1, sigma, ddot, varrho, hatgamma
-      LOGICAL rcmp, xpdt, GotIt, BackwardError  
+      LOGICAL rcmp, xpdt, GotIt, BackwardError, EarlyExit
       CHARACTER(LEN=MAX_NAME_LEN) :: str
 !------------------------------------------------------------------------------
     
@@ -390,6 +393,8 @@ CONTAINS
       Diverged = (errorind > MaxTol)
 
       IF( Converged .OR. Diverged) RETURN
+
+      EarlyExit = .FALSE.
 
       work(1:n,rr) = work(1:n,r) 
       work(1:n,bp) = work(1:n,r)
@@ -437,7 +442,21 @@ CONTAINS
           rnrm = normfun(n, work(1:n,r), 1 )
           mxnrmx = MAX (mxnrmx, rnrm)
           mxnrmr = MAX (mxnrmr, rnrm)
-        ENDDO
+
+          !----------------------------------------------------------------------
+          ! In some simple cases, a few BiCG updates may already be enough to
+          ! obtain the solution. The following is for handling this special case. 
+          !----------------------------------------------------------------------
+          errorind = rnrm / bnrm
+          Converged = (errorind < Tol) 
+          IF (Converged) THEN
+             EarlyExit = .TRUE.
+             EXIT
+          END IF
+
+        END DO
+
+        IF (EarlyExit) EXIT
 
         !--------------------------------------
         ! --- The convex polynomial part ---
@@ -535,8 +554,8 @@ CONTAINS
       
         errorind = rnrm / bnrm
         IF( MOD(Round,OutputInterval) == 0) THEN
-          WRITE (Message, '(I8, 2E11.4)') Round, rnrm, errorind
-          CALL Info( '', Message, Level=6 )
+          WRITE (*, '(I8, 2E11.4)') Round, rnrm, errorind
+!         CALL Info( '', Message, Level=4 )
         END IF
     
         Converged = (errorind < Tol) 
@@ -545,8 +564,8 @@ CONTAINS
       END DO
 
       IF(OutputInterval/=HUGE(OutputInterval)) THEN
-        WRITE (Message, '(I8, 2E11.4)') Round, rnrm, errorind
-        CALL Info( '', Message, Level=6 )
+        WRITE (*, '(I8, 2E11.4)') Round, rnrm, errorind
+!       CALL Info( '', Message, Level=4 )
       END IF
     
       !------------------------------------------------------------
@@ -618,7 +637,7 @@ CONTAINS
       REAL(KIND=dp) :: MinTolerance, MaxTolerance, Residual
       INTEGER :: n, OutputInterval, m
       REAL(KIND=dp) :: bnorm,rnorm
-      REAL(KIND=dp), POINTER :: R(:)
+      REAL(KIND=dp), ALLOCATABLE :: R(:)
 
       REAL(KIND=dp), ALLOCATABLE :: S(:,:), V(:,:), T1(:), T2(:)
 
@@ -637,8 +656,6 @@ CONTAINS
          S(1:n,1:m-1) = 0.0d0
       end if	
       
-      x(1:n) = b(1:n)
-
       CALL matvecsubr( x, r, ipar )
       r(1:n) = b(1:n) - r(1:n)
       
@@ -792,7 +809,7 @@ CONTAINS
       REAL(KIND=dp) :: MinTolerance, MaxTolerance, Residual
       INTEGER :: n, OutputInterval, m
       REAL(KIND=dp) :: bnorm,rnorm
-      COMPLEX(KIND=dp), POINTER :: R(:)
+      COMPLEX(KIND=dp), ALLOCATABLE :: R(:)
 
       COMPLEX(KIND=dp), ALLOCATABLE :: S(:,:), V(:,:), T1(:), T2(:)
 
@@ -812,8 +829,6 @@ CONTAINS
          S(1:n,1:m-1) = CMPLX( 0.0d0, 0.0d0, kind=dp)
       end if	
       
-      x(1:n) = b(1:n)
-
       CALL matvecsubr( x, r, ipar )
       r(1:n) = b(1:n) - r(1:n)
       
@@ -979,17 +994,17 @@ CONTAINS
       INTEGER :: i, j, rr, r, u, xp, bp, z, zz, y0, yl, y, k, iwork(l-1), stat, Round
       COMPLEX(KIND=dp) :: work(n,3+2*(l+1)), rwork(l+1,3+2*(l+1)), &
            alpha, beta, omega, rho0, rho1, sigma, zdotc, varrho, hatgamma
-      LOGICAL rcmp, xpdt
+      LOGICAL rcmp, xpdt, EarlyExit
       !------------------------------------------------------------------------------
 
       IF ( l < 2) CALL Fatal( 'RealBiCGStabl', 'Polynomial degree < 2' )
 
       IF ( ALL(x == CMPLX(0.0d0,0.0d0,kind=dp)) ) x = b
 
-      zzero = dcmplx( 0.0d0,0.0d0)
-      zone =  dcmplx( 1.0d0,0.0d0)
-      work = dcmplx( 0.0d0, 0.0d0 )
-      rwork = dcmplx( 0.0d0, 0.0d0 )
+      zzero = cmplx( 0.0d0,0.0d0, KIND=dp)
+      zone =  cmplx( 1.0d0,0.0d0, KIND=dp)
+      work = cmplx( 0.0d0, 0.0d0, KIND=dp )
+      rwork = cmplx( 0.0d0, 0.0d0, KIND=dp )
 
       rr = 1
       r = rr+1
@@ -1016,6 +1031,7 @@ CONTAINS
       Diverged = (errorind > MaxTol)
 
       IF( Converged .OR. Diverged) RETURN
+      EarlyExit = .FALSE.
 
       work(1:n,rr) = work(1:n,r) 
       work(1:n,bp) = work(1:n,r)
@@ -1063,7 +1079,21 @@ CONTAINS
             rnrm = normfun(n, work(1:n,r), 1)
             mxnrmx = MAX (mxnrmx, rnrm)
             mxnrmr = MAX (mxnrmr, rnrm)
+
+            !----------------------------------------------------------------------
+            ! In some simple cases, a few BiCG updates may already be enough to
+            ! obtain the solution. The following is for handling this special case. 
+            !----------------------------------------------------------------------
+            errorind = rnrm / bnrm
+            Converged = (errorind < Tol) 
+            IF (Converged) THEN
+               EarlyExit = .TRUE.
+               EXIT
+            END IF
+
          ENDDO
+         
+         IF (EarlyExit) EXIT        
 
          !--------------------------------------
          ! --- The convex polynomial part ---
@@ -1100,15 +1130,15 @@ CONTAINS
 
          CALL zhemv ('u', l+1, zone, rwork(1:l+1,z:z+l), l+1, &
               rwork(1:l+1,y0), 1, zzero, rwork(1:l+1,y), 1)
-         kappa0 = SQRT( ZABS(zdotc(l+1, rwork(1:l+1,y0), 1, rwork(1:l+1,y), 1)) ) ! replace zdotc
+         kappa0 = SQRT( ABS(zdotc(l+1, rwork(1:l+1,y0), 1, rwork(1:l+1,y), 1)) ) ! replace zdotc
          CALL zhemv ('u', l+1, zone, rwork(1:l+1,z:z+l), l+1, &
               rwork(1:l+1,yl), 1, zzero, rwork(1:l+1,y), 1)
-         kappal = SQRT( ZABS(zdotc(l+1, rwork(1:l+1,yl), 1, rwork(1:l+1,y), 1)) )  ! replace zdotc
+         kappal = SQRT( ABS(zdotc(l+1, rwork(1:l+1,yl), 1, rwork(1:l+1,y), 1)) )  ! replace zdotc
          CALL zhemv ('u', l+1, zone, rwork(1:l+1,z:z+l), l+1, &
               rwork(1:l+1,y0), 1, zzero, rwork(1:l+1,y), 1)
          varrho = zdotc(l+1, rwork(1:l+1,yl), 1, rwork(1:l+1,y), 1) / &            ! replace zdotc
               (kappa0*kappal)
-         hatgamma = varrho/ZABS(varrho) * MAX(ZABS(varrho),7d-1) * &
+         hatgamma = varrho/ABS(varrho) * MAX(ABS(varrho),7d-1) * &
               kappa0/kappal
          rwork(1:l+1,y0) = rwork(1:l+1,y0) - hatgamma * rwork(1:l+1,yl)
 
@@ -1123,7 +1153,7 @@ CONTAINS
 
          CALL zhemv ('u', l+1, zone, rwork(1:l+1,z:z+l), l+1, &
               rwork(1:l+1,y0), 1, zzero, rwork(1:l+1,y), 1)
-         rnrm = SQRT( ZABS(zdotc(l+1, rwork(1:l+1,y0), 1, rwork(1:l+1,y), 1)) )
+         rnrm = SQRT( ABS(zdotc(l+1, rwork(1:l+1,y0), 1, rwork(1:l+1,y), 1)) )
 
          !---------------------------------------
          !  --- The reliable update part ---
@@ -1168,6 +1198,10 @@ CONTAINS
          Diverged = (errorind > MaxTol)     
          IF( Converged .OR. Diverged) EXIT    
       END DO
+
+      IF( EarlyExit .AND. (OutputInterval/=HUGE(OutputInterval)) ) THEN
+         WRITE (*, '(I8, E11.4)') Round, errorind         
+      END IF
 
       !------------------------------------------------------------
       ! We have solved z = P*x, so finally solve the true unknown x
