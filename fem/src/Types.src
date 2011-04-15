@@ -109,7 +109,7 @@ MODULE Types
 
     REAL(KIND=dp), POINTER :: RHS(:),BulkRHS(:),RHS_im(:),Force(:,:)
 
-    REAL(KIND=dp),  POINTER :: Values(:),ILUValues(:)
+    REAL(KIND=dp),  POINTER :: Values(:),ILUValues(:), DiagScaling(:)
     REAL(KIND=dp),  POINTER :: MassValues(:),DampValues(:),BulkValues(:)
 
 #ifdef HAVE_MUMPS
@@ -124,6 +124,9 @@ MODULE Types
 #endif
 #ifdef HAVE_UMFPACK
     INTEGER(KIND=AddrInt) :: UMFPack_Numeric=0
+#endif
+#ifdef HAVE_CHOLMOD
+    INTEGER(KIND=AddrInt) :: Cholmod=0
 #endif
     INTEGER(KIND=AddrInt) :: SpMV=0
 
@@ -203,6 +206,7 @@ MODULE Types
 
      TYPE (VecIndicesT), DIMENSION(:), POINTER :: VecIndices
      TYPE (IfVecT), DIMENSION(:), POINTER :: IfVecs
+     TYPE (IfLColsT), DIMENSION(:), POINTER :: IfORows
      TYPE (IfLColsT), DIMENSION(:), POINTER :: IfLCols
      TYPE (GlueTableT), POINTER :: GlueTable
      TYPE (RHST), DIMENSION(:), POINTER :: RHS
