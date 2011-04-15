@@ -1,3 +1,11 @@
+elmerfem (5.5.0.svn.5159.dfsg-1) unstable; urgency=low
+
+  * New upstream release.
+  * Copyright file elmergrid/LICENSE includes a linking exception for Scotch
+    (closes: #618696).
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Fri, 15 Apr 2011 17:56:10 -0400
+
 elmerfem (5.5.0.svn.5100.dfsg-1) unstable; urgency=low
 
   [ Stefano Rivera <stefano@rivera.za.net> ]
