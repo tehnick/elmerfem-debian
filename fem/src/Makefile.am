@@ -196,6 +196,7 @@ EXTRA_DIST = \
 	ArtificialCompressibility.src \
 	BandMatrix.src \
 	BandwidthOptimize.src \
+        cholmod.c	      \
 	ClusteringMethods.src \
 	CoordinateSystems.src \
 	CPUTime.c \
@@ -224,6 +225,7 @@ EXTRA_DIST = \
 	ExchangeCorrelations.src \
 	fft.c \
 	FDiffusion.src \
+	Feti.src \
 	FindOptimum.src \
 	FlowSolve.src \
 	FluidicForce.src \
