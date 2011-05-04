@@ -3,8 +3,10 @@ elmerfem (5.5.0.svn.5159.dfsg-1) unstable; urgency=low
   * New upstream release.
   * Copyright file elmergrid/LICENSE includes a linking exception for Scotch
     (closes: #618696).
+  * Removed file elmergrid/acx_metis.m4 .
+  * Updated debian/copyright file to reflect these changes.
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Fri, 15 Apr 2011 17:56:10 -0400
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 04 May 2011 14:33:10 -0400
 
 elmerfem (5.5.0.svn.5100.dfsg-1) unstable; urgency=low
 
