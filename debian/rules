@@ -95,7 +95,7 @@ stamp-build: patch
 	  cp -a $$backupfile $$backupfile.bak; \
 	done
 	mkdir elmergrid/src/metis
-	mkdir post/src/fonts/TrueType
+	install -d post/src/fonts/TrueType
 	for missingfile in $(MISSING_FILES); do touch $$missingfile; done
 	for aclocaldir in eio matc elmerparam hutiter meshgen2d fem front elmergrid post; do \
 	  echo Running aclocal/automake in module $$aclocaldir; \
