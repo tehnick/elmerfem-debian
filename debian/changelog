@@ -5,8 +5,9 @@ elmerfem (5.5.0.svn.5185.dfsg-1) unstable; urgency=low
     (closes: #618696).
   * Removed file elmergrid/acx_metis.m4 .
   * Updated debian/copyright file to reflect these changes.
+  * Patched fem/acx_elmer.m4 to set revision for diagnostics.
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 04 May 2011 14:44:46 -0400
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 04 May 2011 17:12:25 -0400
 
 elmerfem (5.5.0.svn.5100.dfsg-1) unstable; urgency=low
 
