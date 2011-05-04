@@ -324,7 +324,7 @@ SUBROUTINE WhitneyAVSolver_Init0(Model,Solver,dt,Transient)
   REAL(KIND=dp) :: dt
   LOGICAL :: Transient
 !------------------------------------------------------------------------------
-  LOGICAL :: Found
+  LOGICAL :: Found, FixJ
   TYPE(ValueList_t), POINTER :: SolverParams
 
   SolverParams => GetSolverParams()
@@ -332,7 +332,12 @@ SUBROUTINE WhitneyAVSolver_Init0(Model,Solver,dt,Transient)
     IF ( Transient ) THEN
       CALL ListAddString( SolverParams, "Element", "n:1 e:1" )
     ELSE
-      IF ( GetLogical( SolverParams, "Fix Input Current Density", Found ) ) THEN
+      FixJ=GetLogical( SolverParams,'Fix input Current Density',Found)
+      IF (.NOT.Found.AND..NOT.Transient) FixJ=.TRUE.
+      IF(FixJ) CALL ListAddString( SolverParams, &
+              "Exported Variable 1", "-nooutput Jfix" )
+
+      IF (Transient.OR.FixJ) THEN
         CALL ListAddString( SolverParams, "Element", "n:1 e:1" )
       ELSE
         CALL ListAddString( SolverParams, "Element", "n:0 e:1" )
@@ -435,7 +440,9 @@ SUBROUTINE WhitneyAVSolver( Model,Solver,dt,Transient )
 
   SkipAssembly = DoneAssembly.AND.(ConstantBulk.OR.ConstantSystem)
 
-  FixJ = GetLogical( GetSolverParams(), 'Fix Input Current Density', Found )
+  FixJ=GetLogical(GetSolverParams(),'Fix input Current Density', Found)
+  IF (.NOT. Found.AND..NOT.Transient ) FixJ=.TRUE.
+  IF (FixJ) CALL JfixPotentialSolver(Model,Solver,dt,Transient)
 
   ! 
   ! Use vec.pot. dofs only for convergence:
@@ -458,6 +465,8 @@ CONTAINS
 !------------------------------------------------------------------------------
   LOGICAL FUNCTION DoSolve() RESULT(Converged)
 !------------------------------------------------------------------------------
+   CHARACTER(LEN=MAX_NAME_LEN) :: potname
+   INTEGER :: i,j,t,n,nd
 
   !System assembly:
   !----------------
@@ -556,9 +565,28 @@ CONTAINS
   IF ( Transient ) CALL Default1stOrderTimeGlobal()
   CALL DefaultFinishAssembly()
 
-  ! And finally, solve:
-  !--------------------
-  
+
+  ! Check that the auxliary potential fixed somehow,
+  ! if not disable the variable (set to zero)
+  ! ------------------------------------------------
+  IF  (FixJ) THEN
+    Found = .FALSE.
+    potname = Solver % Variable % Name(1:Solver % Variable % NameLen)
+    DO i=1,Model % NumberOfBCs
+      IF (ListCheckPresent(Model % BCs(i) % Values,potname) ) THEN
+        Found = .TRUE.; EXIT
+      END IF
+    END DO
+    IF (.NOT. Found ) THEN
+      DO i=1,Mesh % NumberOfNodes
+        J = Solver % Variable % Perm(i)
+        CALL ZeroRow(A,j)
+        CALL SetMatrixElement(A,j,j,1._dp)
+        A % RHS(j)=0._dp
+      END DO
+    END IF
+  END IF
+
   !
   ! Dirichlet BCs in terms of vector potential A:
   ! ---------------------------------------------
@@ -972,8 +1000,8 @@ CONTAINS
     TYPE(Element_t), POINTER :: Element
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: Aloc(nd), JAC(nd,nd), mu, muder, B_ip(3), Babs
-    REAL(KIND=dp) :: Basis(n),dBasisdx(n,3),DetJ, L(3), G(3), M(3)
     REAL(KIND=dp) :: WBasis(nd,3), RotWBasis(nd,3), A, C, Acoefder(n)
+    REAL(KIND=dp) :: Basis(n),dBasisdx(n,3),DetJ, L(3), G(3), M(3), FixJPot(nd)
     LOGICAL :: Stat, Found, Newton, Cubic
     INTEGER :: t, i, j, p, q, np, siz
     TYPE(GaussIntegrationPoints_t) :: IP
@@ -989,6 +1017,9 @@ CONTAINS
 
     JAC = 0._dp
     Newton = .FALSE.
+
+    FixJpot = 0._dp
+    IF (FixJ) CALL GetScalarLocalSolution(FixJPot,'Jfix')
 
     CALL GetConstRealArray( Material, HB, 'H-B curve', Found )
     IF ( ASSOCIATED(HB) ) THEN
@@ -1018,6 +1049,7 @@ CONTAINS
 
        M = MATMUL( LOAD(4:6,1:n), Basis(1:n) )
        L = MATMUL( LOAD(1:3,1:n), Basis(1:n) )
+       L = L-MATMUL(FixJPot(1:n), dBasisdx(1:n,:))
        L = L-C*MATMUL(LOAD(7,1:n), dBasisdx(1:n,:))
 
        IF ( ASSOCIATED(HB) ) THEN
@@ -1057,20 +1089,27 @@ CONTAINS
                  SUM(WBasis(j,:)*dBasisdx(i,:))*detJ*IP % s(t)
            END DO
          END DO
-       ELSE IF ( FixJ ) THEN
-         DO i=1,np
-           p = i
-           DO j=1,np
-             q = j
-             STIFF(p,q) = STIFF(p,q) + &
-               SUM(dBasisdx(i,:)*dBasisdx(j,:))*detJ*IP % s(t)
+       ELSE
+         !
+         ! There is free slot here for a scalar equation, so just setup an
+         ! auxliary laplace solver here, and add its gradient to first eq.,
+         ! "Electric Conductivity" may be used to scale the gradient:
+         ! ------------------------------------------------------------------
+         IF (FixJ) THEN
+           DO i=1,np
+             p = i
+             DO j=1,np
+               q = j
+               STIFF(p,q) = STIFF(p,q) + &
+                   SUM(dBasisdx(i,:)*dBasisdx(j,:))*detJ*IP % s(t)
+             END DO
+             DO j=1,nd-np
+               q = j+np
+               STIFF(q,p) = STIFF(q,p) + C * &
+                     SUM(WBasis(j,:)*dBasisdx(i,:))*detJ*IP % s(t)
+             END DO
            END DO
-           DO j=1,nd-np
-             q = j+np
-             STIFF(q,p) = STIFF(q,p) + &
-                 SUM(WBasis(j,:)*dBasisdx(i,:))*detJ*IP % s(t)
-           END DO
-         END DO
+         END IF
        END IF
 
        !
@@ -1093,12 +1132,8 @@ CONTAINS
                   SUM(WBasis(i,:)*WBasis(j,:))*detJ*IP % s(t)
          END DO
        END DO
-       IF ( FixJ ) THEN
-         DO p=1,np
-           FORCE(p) = FORCE(p) + SUM(L*dBasisdx(p,:))*detJ*IP % s(t)
-         END DO
-       END IF
     END DO
+
     IF ( Newton ) THEN
       STIFF(1:nd,1:nd) = STIFF(1:nd,1:nd) + JAC
       FORCE(1:nd) = FORCE(1:nd) + MATMUL(JAC,Aloc)
@@ -1566,117 +1601,276 @@ CONTAINS
   END FUNCTION FloodFill
 !------------------------------------------------------------------------------
 
-
-
-!------------------------------------------------------------------------------
-   SUBROUTINE WriteResults
-!------------------------------------------------------------------------------
-     REAL(KIND=dp) :: u,v,w,WBasis(12,3), &
-     RotWBasis(12,3), Basis(16), dBasisdx(16,3), Rot(3),detJ
-
-     INTEGER :: Active, Indexes(12), i,j,k,l,m,n,nd,np,p,q
-     TYPE(Variable_t), POINTER :: Var
-     TYPE(Element_t), POINTER :: Parent
-     TYPE(Nodes_t), SAVE :: Nodes, pNodes
-
-     OPEN(unit=10, file='solution.ep')
-
-!    Active = GetNOFBoundaryElements()
-     Active = GetNOFActive()
-j = 0
-do i=1,active
- element => getactiveelement(i)
- if ( element % bodyid /= 2 ) cycle
-  j = j + 1
-end do
-
-     t = j * (CoordinateSystemDimension()+1) ! nurkkasolmujen lukumäärä
-     write(10,'(4i10,A)') t, j, 3, 1,' vector: RotU'
-
-     !  Write the nodal coordinates
-     !  -------------------------------
-     DO i = 1, Active
-!      Element => GetBoundaryElement(i)
-       Element => GetActiveElement(i)
-if ( element % bodyid /= 2 ) cycle
-       n = GetElementNOFNodes(Element)
-       DO j = 1,n
-         k = Element % NodeIndexes(j)
-         write(10,*) Model % Mesh % Nodes % x(k), &
-             Model % Mesh % Nodes % y(k), Model % Mesh % Nodes % z(k)
-       END DO
-     END DO
-
-     !  Write the elements:
-     !  -----------------------
-     WRITE(10,'(a)') '#group all'
-     j = 0
-     DO i = 1, Active
-!      Element => GetBoundaryElement(i)
-       Element => GetActiveElement(i)
-if ( element % bodyid /= 2 ) cycle
-       j = j + 1
-       SELECT CASE( GetElementFamily(Element))
-       CASE(3)
-         WRITE(10,*) 'body1   303', 3*(j-1)+0,3*(j-1)+1,3*(j-1)+2
-       CASE(5)
-         WRITE(10,*) 'body1   504', 4*(j-1)+0,4*(j-1)+1,4*(j-1)+2,4*(j-1)+3
-       END SELECT
-     END DO
-     WRITE(10,'(a)') '#endgroup all'
-
-     ! Write the results:
-     ! ----------------------
-     Var => Solver % Variable
-     WRITE(10,'(a)') '#time 1   1  1  1.0'
-     DO i = 1, Active
-!      Element => GetBoundaryElement(i)
-!      k=GetBoundaryFaceIndex(Element); Element=>Mesh % Faces(k)
-element => getactiveelement(i)
-if ( element % bodyid /= 2 ) cycle
-       n = GetElementNOFNodes(Element)
-!      np = n*Solver % Def_dofs(1)
-       CALL GetElementNodes(Nodes, Element)
-
-!      Parent => Element % Boundaryinfo % Left
-!      CALL GetElementNodes(pNodes, Parent )
-!      nd = GetElementDOFs(Indexes,Parent )
-    nd = GetElementDOFs(Indexes)
-
-       ! Loop over cornernodes:
-       ! ---------------------------
-       DO j = 1,n
-         u = Element % Type % NodeU(j)
-         v = Element % Type % NodeV(j)
-         w = Element % Type % NodeW(j)
-
-         stat=ElementInfo(Element,Nodes,u,v,w,detJ,Basis,dBasisdx)
-
-!        CALL GetParentUVW(Element,n,Parent,4,u,v,w,Basis)
-!        stat=ElementInfo(parent,pNodes,u,v,w,detJ,Basis,dBasisdx)
-!        CALL EdgeBasis(Parent,WBasis,RotWBasis,Basis,dBasisdx)
-         CALL EdgeBasis(Element,WBasis,RotWBasis,Basis,dBasisdx)
-
-         Rot = 0.0_dp
-         DO k = 1,nd-np
-           q = k+np
-           m = Var % Perm(Indexes(q))
-           IF ( m>0 ) Rot = Rot + rotWBasis(k,:)*Var % Values(m)
-         END DO
-         WRITE(10,*) rot
-       END DO
-     END DO
-
-     CLOSE(10)
-!------------------------------------------------------------------------
-  END SUBROUTINE WriteResults
-!------------------------------------------------------------------------
-
 !------------------------------------------------------------------------------
  END SUBROUTINE WhitneyAVSolver
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
+SUBROUTINE JfixPotentialSolver( Model,Solver,dt,Transient )
+!------------------------------------------------------------------------------
+
+  USE DefUtils
+
+  IMPLICIT NONE
+
+  TYPE(Model_t)  :: Model
+  TYPE(Solver_t) :: Solver
+  REAL(KIND=dp) :: dt
+  LOGICAL ::  Transient
+!------------------------------------------------------------------------------
+!    Local variables
+!------------------------------------------------------------------------------
+  TYPE(ValueList_t),POINTER :: SolverParams
+  INTEGER :: i,j,dim,dofs
+  TYPE(Mesh_t), POINTER :: Mesh
+  TYPE(Matrix_t), POINTER :: A
+  REAL(KIND=dp) :: Norm
+  LOGICAL:: Found
+  REAL(KIND=dp), POINTER :: fixpot(:)
+  TYPE(Variable_t), POINTER :: fixJpot, svar
+  
+  dim = CoordinateSystemDimension()
+  Mesh => GetMesh()
+  A => GetMatrix()
+  SolverParams => GetSolverParams()
+
+  dofs = Solver % Variable % DOFs
+
+  fixJpot => VariableGet( Mesh % Variables, 'Jfix')
+  IF (.NOT.ASSOCIATED(fixJPot)) THEN
+    ALLOCATE(fixpot(SIZE(Solver % Variable % Values)))
+    CALL VariableAddVector( Mesh % Variables, Mesh, &
+          Solver,'Jfix',dofs,fixpot,Solver % Variable % Perm,Output=.FALSE. )
+    fixJpot => VariableGet(Mesh % Variables, 'Jfix')
+  END IF
+
+  svar => Solver % Variable
+  Solver % Variable => fixJpot
+
+  CALL ListSetNameSpace('jfix:')
+  IF (.NOT.ListCheckPresent(SolverParams,'Jfix: Linear System Preconditioning')) &
+    CALL ListAddString(SolverParams,'Jfix: Linear System Preconditioning', 'Ilu')
+
+  IF (.NOT.ListCheckPresent(SolverParams,'Jfix: Linear System Convergence Tolerance')) &
+    CALL ListAddConstReal(SolverParams,'Jfix: Linear System Convergence Tolerance', &
+      0.01_dp*GetCReal(SolverParams,'Linear System Convergence Tolerance', Found))
+
+  CALL DefaultInitialize()
+  CALL BulkAssembly()
+  CALL DefaultFinishAssembly()
+  CALL DefaultDirichletBCs()
+
+  Norm = DefaultSolve()
+  Solver % Variable => svar
+  CALL ListSetNameSpace('')
+  
+CONTAINS
+
+!------------------------------------------------------------------------------
+  SUBROUTINE BulkAssembly()
+!------------------------------------------------------------------------------
+       
+    COMPLEX(KIND=dp), ALLOCATABLE :: STIFF_C(:,:), FORCE_C(:)
+    REAL(KIND=dp), ALLOCATABLE :: STIFF_R(:,:), FORCE_R(:)
+    INTEGER :: elem,t,i,j,k,p,q,n,nd, Rank
+    TYPE(GaussIntegrationPoints_t), TARGET :: IntegStuff
+    TYPE(Nodes_t) :: Nodes
+    LOGICAL :: Found
+    TYPE(Element_t), POINTER :: Element, P1,P2
+    TYPE(ValueList_t), POINTER ::  BodyForce
+
+    REAL(KIND=dp) :: weight,detJ,Source,L_R(3),Nrm(3), Jfluxeps
+    REAL(KIND=dp), ALLOCATABLE :: Load_R(:,:)
+
+    COMPLEX(KIND=dp) :: L_C(3)
+    COMPLEX(KIND=dp), ALLOCATABLE :: Load_C(:,:)
+
+    REAL(KIND=dp), ALLOCATABLE :: Basis(:), dBasisdx(:,:)
+    
+    SAVE Nodes
+    
+    n = MAX(Solver % Mesh % MaxElementDOFs, Solver % Mesh % MaxElementNodes)
+    IF (A % Complex) THEN
+      ALLOCATE( Load_c(3,n), STIFF_C(n,n), FORCE_C(n) )
+    ELSE
+      ALLOCATE( Load_r(3,n), STIFF_R(n,n), FORCE_R(n) )
+    END IF
+    ALLOCATE( Basis(n), dBasisdx(n,3) )
+
+    DO elem = 1,GetNOFActive()
+      ! Element information
+      ! ---------------------
+      Element => GetActiveElement(elem)
+      CALL GetElementNodes( Nodes )
+      nd = GetElementNOFDOFs()
+      n  = GetElementNOFNodes()
+
+      IF (A % Complex ) THEN
+        Load_C =0._dp
+        STIFF_C=0._dp
+        FORCE_C=0._dp
+      ELSE
+        Load_R =0._dp
+        STIFF_R=0._dp
+        FORCE_R=0._dp
+      END IF
+
+      BodyForce => GetBodyForce()
+      IF (ASSOCIATED(BodyForce)) THEN
+        IF (A % Complex ) THEN
+          Load_C(1,1:n) = GetReal( BodyForce, 'Current Density 1', Found )
+          Load_C(1,1:n) = CMPLX( REAL(Load_C(1,1:n)), &
+            GetReal( BodyForce, 'Current Density im 1', Found ),KIND=dp)
+
+          Load_C(2,1:n) = GetReal( BodyForce, 'Current Density 2', Found )
+          Load_C(2,1:n) = CMPLX( REAL(Load_C(2,1:n)), & 
+            GetReal( BodyForce, 'Current Density im 2', Found), KIND=dp)
+
+          Load_C(3,1:n) = GetReal( BodyForce, 'Current Density 3', Found )
+          Load_C(3,1:n) = CMPLX( REAL(Load_C(3,1:n)), &
+            GetReal( BodyForce, 'Current Density im 3', Found), KIND=dp)
+        ELSE
+          Load_R(1,1:n) = GetReal(BodyForce, 'Current Density 1', Found)
+          Load_R(2,1:n) = GetReal(BodyForce, 'Current Density 2', Found)
+          Load_R(3,1:n) = GetReal(BodyForce, 'Current Density 3', Found)
+        END IF
+      END IF
+
+      IntegStuff = GaussPoints( Element )
+      DO t=1,IntegStuff % n
+        Found = ElementInfo( Element, Nodes, IntegStuff % u(t), &
+                IntegStuff % v(t), IntegStuff % w(t), detJ, Basis, dBasisdx )
+        
+        Weight = IntegStuff % s(t) * detJ
+        IF (A % Complex) THEN
+          DO p=1,n
+            DO q=1,n
+              STIFF_C(p,q) = STIFF_C(p,q) + Weight * SUM(dBasisdx(q,:)*dBasisdx(p,:))
+            END DO
+          END DO
+          L_C = MATMUL( Load_C(:,1:n), Basis(1:n) )
+          FORCE_C(1:n) = FORCE_C(1:n) + MATMUL(dBasisdx(1:n,:),L_C)*Weight
+        ELSE
+          DO p=1,n
+            DO q=1,n
+              STIFF_R(p,q) = STIFF_R(p,q) + Weight * SUM(dBasisdx(q,:)*dBasisdx(p,:))
+            END DO
+          END DO
+          L_R = MATMUL( Load_R(:,1:n), Basis(1:n) )
+          FORCE_R(1:n) = FORCE_R(1:n) + MATMUL(dBasisdx(1:n,:),L_R)*Weight
+        END IF
+      END DO
+
+      IF (A % Complex) THEN
+        DO i=n+1,nd
+          STIFF_C(i,i)=1._dp
+        END DO
+        CALL DefaultUpdateEquations(STIFF_C, FORCE_C)
+      ELSE
+        DO i=n+1,nd
+          STIFF_R(i,i)=1._dp
+        END DO
+        CALL DefaultUpdateEquations(STIFF_R, FORCE_R)
+      END IF
+    END DO
+
+    Jfluxeps = GetCReal(GetSolverParams(), 'J normal eps', Found)
+    IF (.NOT. Found) Jfluxeps = 1.0d-2
+
+    ! At outer boundaries, if J has component normal to the
+    ! surface, set Fix_pot=0:
+    ! ------------------------------------------------------
+    DO i=1,GetNOFBoundaryElements()
+     Element => GetBoundaryElement(i)
+     n = GetElementNOFNodes()
+     IF (.NOT.ActiveBoundaryElement()) CYCLE
+
+
+     P1 => Element % BoundaryInfo % Left
+     P2 => Element % BoundaryInfo % Right
+     IF(ASSOCIATED(P1).AND.ASSOCIATED(P2)) THEN
+       IF (ALL(Solver % Variable % Perm(P1 % NodeIndexes)>0).AND.&
+           ALL(Solver % Variable % Perm(P2 % NodeIndexes)>0)) CYCLE
+     ELSE IF (.NOT.ASSOCIATED(P1).AND..NOT.ASSOCIATED(P2)) THEN
+       CYCLE
+     END IF
+ 
+     IF (ASSOCIATED(P1)) THEN
+       BodyForce => GetBodyForce(P1)
+       IF (Element % Type % Dimension<P1 % Type % Dimension-1) CYCLE
+     ELSE
+       BodyForce => GetBodyForce(P2)
+       IF (Element % Type % Dimension<P2 % Type % Dimension-1) CYCLE
+     END IF
+     IF (.NOT. ASSOCIATED(BodyForce)) CYCLE
+
+     CALL GetElementNodes(Nodes)
+     Nrm = NormalVector(Element,Nodes,0._dp,0._dp)
+
+     IF (A % Complex ) THEN
+       Load_C(1,1:n) = GetReal( BodyForce, 'Current Density 1', Found )
+       Load_C(1,1:n) = CMPLX( REAL(Load_C(1,1:n)), &
+         GetReal( BodyForce, 'Current Density im 1', Found ),KIND=dp)
+
+       Load_C(2,1:n) = GetReal( BodyForce, 'Current Density 2', Found )
+       Load_C(2,1:n) = CMPLX( REAL(Load_C(2,1:n)), & 
+         GetReal( BodyForce, 'Current Density im 2', Found), KIND=dp)
+
+       Load_C(3,1:n) = GetReal( BodyForce, 'Current Density 3', Found )
+       Load_C(3,1:n) = CMPLX( REAL(Load_C(3,1:n)), &
+         GetReal( BodyForce, 'Current Density im 3', Found), KIND=dp)
+
+       L_C(1) = SUM(Load_C(1,1:n))/n
+       L_C(2) = SUM(Load_C(2,1:n))/n
+       L_C(3) = SUM(Load_C(3,1:n))/n
+
+       L_R = REAL(L_C)
+       L_R = L_R / SQRT(SUM(L_R**2))
+       IF (ABS(SUM(L_R*Nrm))<Jfluxeps) THEN
+         L_R = AIMAG(L_C)
+         L_R = L_R / SQRT(SUM(L_R**2))
+         IF (ABS(SUM(L_R*Nrm))<Jfluxeps) CYCLE
+       END IF
+     ELSE
+       Load_R(1,1:n) = GetReal(BodyForce, 'Current Density 1', Found)
+       Load_R(2,1:n) = GetReal(BodyForce, 'Current Density 2', Found)
+       Load_R(3,1:n) = GetReal(BodyForce, 'Current Density 3', Found)
+
+       L_R(1) = SUM(Load_R(1,1:n))/n
+       L_R(2) = SUM(Load_R(2,1:n))/n
+       L_R(3) = SUM(Load_R(3,1:n))/n
+       L_R = L_R / SQRT(SUM(L_R**2))
+       IF (ABS(SUM(L_R*Nrm))<Jfluxeps) CYCLE
+     END IF
+
+     DO j=1,dofs
+       DO k=1,n
+         p = Element % NodeIndexes(k) 
+         p = dofs*(Solver % Variable % Perm(p)-1)+j
+
+         ! In parallel apply forcing to zero out the potential as
+         ! there might be single nodes on boundaries in some other
+         ! partitions.
+         ! -------------------------------------------------------
+         IF (Parenv % PEs>1) THEN
+           A % RHS(p)=0._dp
+           A % Values(A % Diag(p)) = SUM(ABS(A % Values( &
+                 A % Rows(p):A % Rows(p+1)-1)))*1d10
+         ELSE
+           CALL CRS_SetSymmDirichlet(A,A % RHS,p,1._dp)
+         END IF
+       END DO
+     END DO
+    END DO
+!------------------------------------------------------------------------------
+  END SUBROUTINE BulkAssembly
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+END SUBROUTINE JfixPotentialSolver
+!------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
@@ -1698,6 +1892,8 @@ SUBROUTINE WhitneyAVHarmonicSolver_Init0(Model,Solver,dt,Transient)
   IF ( .NOT.ListCheckPresent(SolverParams, "Element") ) THEN
     CALL ListAddString( SolverParams, "Element", "n:1 e:1" )
   END IF
+  CALL ListAddString( SolverParams, "Exported Variable 1", &
+               "-dofs 2 -nooutput Jfix" )
 !------------------------------------------------------------------------------
 END SUBROUTINE WhitneyAVHarmonicSolver_Init0
 !------------------------------------------------------------------------------
@@ -1754,7 +1950,10 @@ SUBROUTINE WhitneyAVHarmonicSolver( Model,Solver,dt,Transient )
   COMPLEX(KIND=dp), ALLOCATABLE :: LOAD(:,:), Acoef(:), Tcoef(:)
   COMPLEX(KIND=dp), ALLOCATABLE :: STIFF(:,:), MASS(:,:), FORCE(:)
 
-  LOGICAL :: Stat, EigenAnalysis, TG
+  REAL(KIND=dp), POINTER :: sValues(:), fixpot(:)
+  TYPE(Variable_t), POINTER :: fixJpot
+
+  LOGICAL :: Stat, EigenAnalysis, TG, FixJ
   INTEGER, POINTER :: Perm(:)
   INTEGER, ALLOCATABLE :: FluxMap(:)
   LOGICAL, ALLOCATABLE :: TreeEdges(:)
@@ -1786,6 +1985,10 @@ SUBROUTINE WhitneyAVHarmonicSolver( Model,Solver,dt,Transient )
   
   Omega = GetAngularFrequency()
 
+  FixJ=GetLogical(GetSolverParams(),'Fix input Current Density', Found)
+  IF (.NOT. Found ) FixJ=.TRUE.
+  IF (FixJ) CALL JfixPotentialSolver(Model,Solver,dt,Transient)
+
   ! System assembly:
   !-----------------
   CALL DefaultInitialize()
@@ -1809,7 +2012,6 @@ SUBROUTINE WhitneyAVHarmonicSolver( Model,Solver,dt,Transient )
         Load(3,1:n) = GetReal( BodyForce, 'Current Density 3', Found )
         Load(3,1:n) = CMPLX( REAL(Load(3,1:n)), &
           GetReal( BodyForce, 'Current Density im 3', Found), KIND=dp)
-
 
         Load(4,1:n) = GetReal( BodyForce, 'Magnetization 1', Found )
         Load(4,1:n) = CMPLX( REAL(Load(4,1:n)), &
@@ -2290,8 +2492,8 @@ CONTAINS
     TYPE(Element_t), POINTER :: Element
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: WBasis(nd,3), RotWBasis(nd,3)
-    COMPLEX(KIND=dp) :: A, C, L(3), G(3), M(3)
-    REAL(KIND=dp) :: Basis(n),dBasisdx(n,3),DetJ
+    COMPLEX(KIND=dp) :: A, C, L(3), G(3), M(3), FixJPotC(n)
+    REAL(KIND=dp) :: Basis(n),dBasisdx(n,3),DetJ,FixJPot(2,nd)
     LOGICAL :: Stat
     INTEGER :: t, i, j, p, q, np
     TYPE(GaussIntegrationPoints_t) :: IP
@@ -2304,11 +2506,17 @@ CONTAINS
     FORCE = 0.0_dp
     MASS  = 0.0_dp
 
+    FixJpotC=0._dp
+    IF (FixJ) THEN
+      CALL GetVectorLocalSolution( FixJPot, 'Jfix')
+      FixJPotC = CMPLX(FixJPot(1,1:n),FixJPot(2,1:n),dp)
+    END IF
+
     !Numerical integration:
     !----------------------
     IP = GaussPoints( Element )
-
     np = n*Solver % Def_Dofs(Element % BodyId,1)
+
     DO t=1,IP % n
        stat = ElementInfo( Element, Nodes, IP % U(t), IP % V(t), &
                   IP % W(t), detJ, Basis, dBasisdx )
@@ -2320,8 +2528,8 @@ CONTAINS
 
        M = MATMUL( LOAD(4:6,1:n), Basis(1:n) )
        L = MATMUL( LOAD(1:3,1:n), Basis(1:n) )
-       L = L-C*MATMUL(LOAD(7,1:n), dBasisdx(1:n,:))
-
+       L = L - MATMUL(FixJPotC, dBasisdx(1:n,:))
+       L = L-MATMUL(LOAD(7,1:n), dBasisdx(1:n,:)) 
        ! Compute element stiffness matrix and force vector:
        ! --------------------------------------------------
 
@@ -2334,17 +2542,20 @@ CONTAINS
          DO j=1,np
            q = j
            IF ( C /= 0._dp ) THEN
-             STIFF(p,q) = STIFF(p,q) - im*C/Omega * &
+             STIFF(p,q) = STIFF(p,q) - im * C / Omega * &
                SUM(dBasisdx(i,:)*dBasisdx(j,:))*detJ*IP % s(t)
            ELSE
              STIFF(p,q) = STIFF(p,q) + &
                     Basis(q) * Basis(p)*detJ*IP % s(t)
+!            STIFF(p,q) = STIFF(p,q) + &
+!              SUM(dBasisdx(i,:)*dBasisdx(j,:))*detJ*IP % s(t)
            END IF
          END DO
          DO j=1,nd-np
            q = j+np
            STIFF(p,q) = STIFF(p,q) + C * &
                SUM(dBasisdx(i,:)*Wbasis(j,:))*detJ*IP % s(t)
+
            STIFF(q,p) = STIFF(q,p) + C * &
                SUM(WBasis(j,:)*dBasisdx(i,:))*detJ*IP % s(t)
          END DO
@@ -2868,9 +3079,10 @@ SUBROUTINE MagnetoDynamicsCalcFields_Init0(Model,Solver,dt,Transient)
   REAL(KIND=dp) :: dt
   LOGICAL :: Transient
 !------------------------------------------------------------------------------
+  CHARACTER(LEN=MAX_NAME_LEN) :: sname,pname
   LOGICAL :: Found
   INTEGER, POINTER :: Active(:)
-  INTEGER :: mysolver,i,n,m
+  INTEGER :: mysolver,i,j,k,l,n,m,vDOFs
   TYPE(ValueList_t), POINTER :: SolverParams
   TYPE(Solver_t), POINTER :: Solvers(:), PSolver
 
@@ -2889,6 +3101,26 @@ SUBROUTINE MagnetoDynamicsCalcFields_Init0(Model,Solver,dt,Transient)
            'Active Solvers', m+1, [Active, n+1] )
   END DO
 
+  pname = GetString(GetSolverParams(), 'Potential variable', Found)
+  vdofs = 0
+  DO i=1,Model % NumberOfSolvers
+    sname = GetString(Model % Solvers(i) % Values, 'Variable', Found)
+    J=index(sname,'[')-1
+    IF ( j<=0 ) j=LEN_TRIM(sname)
+    IF ( sname(1:j) == pname(1:j) )THEN
+      k = 0
+      vDofs = 0
+      j=INDEX(sname,':')
+      DO WHILE(j>0)
+        Vdofs=Vdofs+ICHAR(sname(j+k+1:j+k+1))-ICHAR('0')
+        k = k+j
+        IF(k<LEN(sname)) j=INDEX(sname(k+1:),':')
+      END DO
+      EXIT
+    END IF
+  END DO
+  IF ( Vdofs==0 ) Vdofs=1
+
   ALLOCATE(Solvers(n+1))
   Solvers(1:n) = Model % Solvers
   SolverParams => Null()
@@ -2897,6 +3129,7 @@ SUBROUTINE MagnetoDynamicsCalcFields_Init0(Model,Solver,dt,Transient)
   Solvers(n+1) % Procedure = 0
   Solvers(n+1) % ActiveElements => Null()
   CALL ListAddString( SolverParams, 'Exec Solver', 'never' )
+  CALL ListAddLogical( SolverParams, 'No Matrix',.TRUE.)
   CALL ListAddString( SolverParams, 'Equation', 'never' )
   CALL ListAddString( SolverParams, 'Procedure', &
               'MagnetoDynamics MagnetoDynamics_Dummy',.FALSE. )
@@ -2904,38 +3137,64 @@ SUBROUTINE MagnetoDynamicsCalcFields_Init0(Model,Solver,dt,Transient)
 
 
   i = 1
-  CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
-           "Magnetic Flux Density E[Magnetic Flux Density E:3]" )
+
+  IF ( Vdofs==1 ) THEN
+    CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+         "Magnetic Flux Density E[Magnetic Flux Density E:3]" )
+  ELSE
+    CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+         "Magnetic Flux Density E[Magnetic Flux Density re E:3 Magnetic Flux Density im E:3]" )
+  END IF
 
   IF (GetLogical(Solver % Values,'Calculate Magnetic Field Strength',Found)) THEN
     i = i + 1
-    CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+    IF ( vdofs==1 ) THEN
+      CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
             "Magnetic Field Strength E[Magnetic Field Strength E:3]" )
+    ELSE
+      CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+            "Magnetic Field Strength E[Magnetic Field Strength re E:3 Magnetic Field Strength im E:3]" )
+    END IF
   END IF
 
   IF ( GetLogical( Solver % Values, 'Calculate Maxwell Stress', Found ) ) THEN
     i = i + 1
-    CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
-         "Maxwell Stress E[Maxwell Stress E:6]" )
+    IF ( Vdofs==1 ) THEN
+      CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+           "Maxwell Stress E[Maxwell Stress E:6]" )
+    ELSE
+      CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+           "Maxwell Stress E[Maxwell Stress re E:6 Maxwell Stress im E:6]" )
+    END IF
   END IF
 
-  IF ( Transient ) THEN
+  IF ( Transient .OR. Vdofs>1 ) THEN
     IF ( GetLogical( Solver % Values, 'Calculate Electric Field', Found ) ) THEN
       i = i + 1
-      CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
-             "Electric Field E[Electric Field E:3]" )
+      IF ( vdofs==1 ) THEN
+        CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+               "Electric Field E[Electric Field E:3]" )
+      ELSE
+        CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+               "Electric Field E[Electric Field re E:3 Electric Field im E:3]" )
+      END IF
     END IF
 
     IF ( GetLogical( Solver % Values, 'Calculate Current Density', Found ) ) THEN
       i = i + 1
-      CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
-             "Current Density E[Current Density E:3]" )
+      IF ( Vdofs==1 ) THEN
+        CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+               "Current Density E[Current Density E:3]" )
+      ELSE
+        CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
+               "Current Density E[Current Density re E:3 Current Density im E:3]" )
+      END IF
     END IF
 
     IF ( GetLogical( Solver % Values, 'Calculate Joule Heating', Found ) ) THEN
       i = i + 1
       CALL ListAddString( SolverParams, "Exported Variable "//TRIM(i2s(i)), &
-               "Joule Field E" )
+                "Joule Field E" )
     END IF
   END IF
 
@@ -3096,7 +3355,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    TYPE(Variable_t), POINTER :: Var, MFD, MFS, CD, EF, MST, JH
    TYPE(Variable_t), POINTER :: EL_MFD, EL_MFS, EL_CD, EL_EF, EL_MST, EL_JH
 
-   INTEGER :: Active, Indexes(12), i,j,k,l,m,n,nd,np,p,q,DOFs,vDOFs
+   INTEGER :: Active, Indexes(12), i,j,k,l,m,n,nd,np,p,q,DOFs,vDOFs,dim
 
    TYPE(Solver_t), POINTER :: pSolver
    CHARACTER(LEN=MAX_NAME_LEN) :: Pname
@@ -3208,89 +3467,128 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
        CALL GetReluctivity(Material,R,n)
      END IF
 
+      dim = CoordinateSystemDimension()
+
      ! Calculate on nodes on elements fields:
      ! --------------------------------------
-     IF ( vDOFs==1 ) THEN
+     DO j=1,n
+       u = Element % Type % NodeU(j)
+       v = Element % Type % NodeV(j)
+       w = Element % Type % NodeW(j)
 
-! TODO add harmonic case...
-! --------------------------
-       DO j=1,n
-         u = Element % Type % NodeU(j)
-         v = Element % Type % NodeV(j)
-         w = Element % Type % NodeW(j)
+       stat=ElementInfo(Element,Nodes,u,v,w,detJ,Basis,dBasisdx)
+       CALL EdgeBasis(Element,WBasis,RotWBasis,Basis,dBasisdx)
 
-         stat=ElementInfo(Element,Nodes,u,v,w,detJ,Basis,dBasisdx)
-         CALL EdgeBasis(Element,WBasis,RotWBasis,Basis,dBasisdx)
+       DO k=1,vDOFs
+         B(k,:) = MATMUL( SOL(k,np+1:nd), RotWBasis(1:nd-np,:) )
+       END DO
 
-         B(1,:) = MATMUL( SOL(1,np+1:nd), RotWBasis(1:nd-np,:) )
+       IF ( Transient ) THEN
+         E(1,:) = -MATMUL(PSOL(np+1:nd), Wbasis(1:nd-np,:)) - &
+                   MATMUL(SOL(1,1:np), dBasisdx(1:np,:))
+       ELSE
+         DO k=1,vDOFs
+           E(k,:) = -im*Omega*MATMUL(SOL(k,np+1:nd),WBasis(1:nd-np,:)) - &
+                     MATMUL(SOL(k,1:np), dBasisdx(1:np,:))
+         END DO
+       END IF
 
-         IF ( Transient ) THEN
-           E(1,:) = -MATMUL(PSOL(np+1:nd), Wbasis(1:nd-np,:)) - &
-                     MATMUL(SOL(1,1:np), dBasisdx(1:np,:))
-           C_ip  = SUM( Basis(1:n)*C(1:n) )
-         END IF
+       C_ip  = SUM( Basis(1:n)*C(1:n) )
+       PR_ip = SUM( Basis(1:n)*PR(1:n) )
 
-         PR_ip = SUM( Basis(1:n)*PR(1:n) )
-
-         DO k=1,EL_MFD % DOFs
+       DO l=1,vDOFs
+         DO k=1,dim
            EL_MFD % Values( EL_MFD % DOFs*(EL_MFD % Perm( &
-                 Element % DGIndexes(j))-1)+k) = B(1,k)
+                 Element % DGIndexes(j))-1)+dim*(l-1)+k) = B(l,k)
+         END DO
+       END DO
+
+       IF ( ASSOCIATED(MFS) ) THEN
+         DO k=l,dim
+           MG_ip(l) = SUM( Magnetization(l,1:n)*Basis(1:n) )
          END DO
 
-         IF ( ASSOCIATED(MFS) ) THEN
-           DO l=1,3
-             MG_ip(l) = SUM( Magnetization(l,1:n)*Basis(1:n) )
-           END DO
+         IF ( ASSOCIATED(HB) ) THEN
+           Babs=SQRT(SUM(B(1,:)**2))
+             R_ip = InterpolateCurve(HB(:,1),HB(:,2),Babs,CubicCoeff)/Babs
+         ELSE
+           R_ip = SUM( Basis(1:n)*R(1:n) )
+         END IF
 
-           IF ( ASSOCIATED(HB) ) THEN
-             Babs=SQRT(SUM(B(1,:)**2))
-               R_ip = InterpolateCurve(HB(:,1),HB(:,2),Babs,CubicCoeff)/Babs
-           ELSE
-             R_ip = SUM( Basis(1:n)*R(1:n) )
-           END IF
+         DO k=1,dim
+           EL_MFS % Values( EL_MFS % DOFs*(EL_MFS % Perm( &
+                 Element % DGIndexes(j))-1)+k) = R_ip*B(1,k)-MG_ip(k)
+         END DO
 
-           DO k=1,EL_MFS % DOFs
+         IF ( Vdofs>1 ) THEN
+           DO k=1,dim
              EL_MFS % Values( EL_MFS % DOFs*(EL_MFS % Perm( &
-                   Element % DGIndexes(j))-1)+k) = R_ip*B(1,k)-MG_ip(k)
+                   Element % DGIndexes(j))-1)+dim+k) = R_ip*B(2,k)-AIMAG(MG_ip(k))
            END DO
          END IF
+       END IF
 
-         IF ( ASSOCIATED(EF)) THEN
-           DO k=1,EL_EF % DOFs
+       IF ( ASSOCIATED(EF)) THEN
+         DO l=1,Vdofs
+           DO k=1,dim
              EL_EF % Values( EL_EF % DOFs*(EL_EF % Perm( &
-                   Element % DGIndexes(j))-1)+k) = E(1,k)
+                   Element % DGIndexes(j))-1)+dim*(l-1)+k) = E(l,k)
            END DO
-         END IF
+         END DO
+       END IF
 
-         IF ( ASSOCIATED(CD)) THEN
-           DO k=1,EL_CD % DOFs
+       IF ( ASSOCIATED(CD)) THEN
+         DO l=1,Vdofs
+           DO k=1,dim
              EL_CD % Values( EL_CD % DOFs*(EL_CD % Perm( &
-                   Element % DGIndexes(j))-1)+k) = C_ip*E(1,k)
+                   Element % DGIndexes(j))-1)+dim*(l-1)+k) = C_ip*E(l,k)
            END DO
-         END IF
+         END DO
+       END IF
 
-         IF ( ASSOCIATED(JH) ) THEN
-           DO k=1,EL_JH % DOFs
-             EL_JH % Values( EL_JH % DOFs*(EL_JH % Perm( &
-                   Element % DGIndexes(j))-1)+k) = SUM(E(1,:)**2)
-           END DO
-         END IF
+       IF ( ASSOCIATED(JH) ) THEN
+         DO k=1,EL_JH % DOFs
+           EL_JH % Values( EL_JH % DOFs*(EL_JH % Perm( &
+                 Element % DGIndexes(j))-1)+k) = SUM(E(1,:)**2)
+         END DO
+       END IF
 
-         IF ( ASSOCIATED(MST)) THEN
+       IF ( ASSOCIATED(MST)) THEN
+         IF ( vDOFS==1) THEN
            DO l=1,3
              DO m=l,3
                ST(l,m)=PR_ip*E(1,l)*E(1,m)+R_ip*B(1,l)*B(1,m)
              END DO
              ST(l,l)=ST(l,l)-(PR_ip*SUM(E(1,:)**2)+R_ip*SUM(B(1,:)**2))/2
            END DO
-           DO k=1,EL_JH % DOFs
+           DO k=1,EL_MST % DOFs
              EL_MST % Values( EL_MST % DOFs*(EL_MST % Perm( &
                    Element % DGIndexes(j))-1)+k) = ST(ind1(l),ind2(l))
            END DO
+         ELSE
+           DO l=1,3
+             DO m=l,3
+               CST(l,m) = PR_ip*CMPLX(E(1,l),E(2,l),KIND=dp) * &
+                                CMPLX(E(1,m),E(2,m),KIND=dp)
+               CST(l,m) = CST(l,m) + &
+                           R_ip*CMPLX(B(1,l),B(2,l),KIND=dp) * &
+                                CMPLX(B(1,m),B(2,m),KIND=dp)
+             END DO
+             CST(l,l) = CST(l,l) - &
+                    (PR_ip*SUM(ABS(CMPLX(E(1,:),E(2,:)))**2)+ &
+                      R_ip*SUM(ABS(CMPLX(B(1,:),B(2,:)))**2))/2
+           END DO
+           DO l=1,6
+             EL_MST % Values( EL_MST % DOFs*(EL_MST % Perm( &
+                   Element % DGIndexes(j))-1)+l) = REAL(CST(ind1(l),ind2(l)))
+           END DO
+           DO l=1,6
+             EL_MST % Values( EL_MST % DOFs*(EL_MST % Perm( &
+                   Element % DGIndexes(j))-1)+l+6) = AIMAG(CST(ind1(l),ind2(l)))
+           END DO
          END IF
-       END DO
-     END IF
-
+       END IF
+     END DO
 
      ! Calculate nodal fields:
      ! -----------------------

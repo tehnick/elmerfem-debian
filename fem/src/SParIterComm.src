@@ -1054,8 +1054,10 @@ real(kind=dp) :: realtime,tt
     ! --------------------------------------------------
     DO i=1,Mesh % NumberOfBulkElements+Mesh % NumberOfBoundaryElements
       Element => Mesh % Elements(i)
-      j = Element % Type % NumberOfEdges
-      Element % EdgeIndexes(1:j)=grevorder(Element % EdgeIndexes(1:j))
+      IF (ASSOCIATED(Element % EdgeIndexes)) THEN
+        j = Element % Type % NumberOfEdges
+        Element % EdgeIndexes(1:j)=grevorder(Element % EdgeIndexes(1:j))
+      END IF
     END DO
 
     DO i=1,Mesh % NumberOfFaces
