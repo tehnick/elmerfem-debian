@@ -9,7 +9,7 @@ Index: elmerfem/fem/acx_elmer.m4
  dnl check for svn revision
  dnl
 -acx_revision=`svnversion src`
-+acx_revision=5185
++acx_revision=5210
  AC_DEFINE_UNQUOTED(REVISION,"$acx_revision",[svn revision])
  
  

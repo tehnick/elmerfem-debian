@@ -1,4 +1,4 @@
-elmerfem (5.5.0.svn.5185.dfsg-1) unstable; urgency=low
+elmerfem (5.5.0.svn.5210.dfsg-1) unstable; urgency=low
 
   * New upstream revision.
   * Copyright file elmergrid/LICENSE includes a linking exception for Scotch
@@ -7,7 +7,7 @@ elmerfem (5.5.0.svn.5185.dfsg-1) unstable; urgency=low
   * Updated debian/copyright file to reflect these changes.
   * Patched fem/acx_elmer.m4 to set revision for diagnostics.
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 04 May 2011 17:12:25 -0400
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Wed, 25 May 2011 07:25:17 -0400
 
 elmerfem (5.5.0.svn.5100.dfsg-1) unstable; urgency=low
 
