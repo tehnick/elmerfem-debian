@@ -59,31 +59,142 @@ CONTAINS
 !------------------------------------------------------------------------
    SUBROUTINE EdgeBasis( Element, WBasis, RotWBasis, Basis, dBasisdx )
 !------------------------------------------------------------------------
-     TYPE(Element_t) :: Element
+     TYPE(Element_t),TARGET :: Element
      REAL(KIND=dp) :: WBasis(:,:), RotWBasis(:,:), Basis(:), dBasisdx(:,:)
 !------------------------------------------------------------------------
+     TYPE(Element_t),POINTER :: Edge
      TYPE(Mesh_t), POINTER :: Mesh
-     LOGICAL :: Parallel
-     INTEGER :: i,j,k,nj,nk
+     TYPE(Nodes_t), SAVE :: Nodes
+     REAL(KIND=dp) :: u,v,w,dudx(3,3),du(3),Base,dBase(3),tBase(3), &
+                rBase(3),triBase(3),dtriBase(3,3)
+     LOGICAL :: Parallel,stat
+     INTEGER :: i,j,k,n,nj,nk,i1,i2
      INTEGER, POINTER :: EdgeMap(:,:)
 !------------------------------------------------------------------------
      Mesh => GetMesh()
      Parallel = ParEnv % PEs>1
 
+     SELECT CASE(GetElementFamily(Element))
+     CASE(4,7,8)
+       n = Element % Type % NumberOfNodes
+       u = SUM(Basis(1:n)*Element % Type % NodeU(1:n))
+       v = SUM(Basis(1:n)*Element % Type % NodeV(1:n))
+       w = SUM(Basis(1:n)*Element % Type % NodeW(1:n))
+
+       dudx(1,:) = MATMUL(Element % Type % NodeU(1:n),dBasisdx(1:n,:))
+       dudx(2,:) = MATMUL(Element % Type % NodeV(1:n),dBasisdx(1:n,:))
+       dudx(3,:) = MATMUL(Element % Type % NodeW(1:n),dBasisdx(1:n,:))
+
+       triBase(1) = 1-u-v
+       triBase(2) = u
+       triBase(3) = v
+
+       dtriBase(1,:) = -dudx(1,:)-dudx(2,:) 
+       dtriBase(2,:) =  dudx(1,:)
+       dtriBase(3,:) =  dudx(2,:)
+     END SELECT
+
      EdgeMap => GetEdgeMap(GetElementFamily(Element))
      DO i=1,SIZE(Edgemap,1)
        j = EdgeMap(i,1); k = EdgeMap(i,2)
 
-       WBasis(i,:) = Basis(j)*dBasisdx(k,:) - Basis(k)*dBasisdx(j,:)
 
-       RotWBasis(i,1) = 2.0_dp * ( dBasisdx(j,2) * dBasisdx(k,3) - &
-                     dBasisdx(j,3) * dBasisdx(k,2) )
+       SELECT CASE(GetElementFamily(Element))
+       CASE(3,5)
+         WBasis(i,:) = Basis(j)*dBasisdx(k,:) - Basis(k)*dBasisdx(j,:)
 
-       RotWBasis(i,2) = 2.0_dp * ( dBasisdx(j,3) * dBasisdx(k,1) - &
-                     dBasisdx(j,1) * dBasisdx(k,3) )
+         RotWBasis(i,1) = 2.0_dp * ( dBasisdx(j,2) * dBasisdx(k,3) - &
+                       dBasisdx(j,3) * dBasisdx(k,2) )
+         RotWBasis(i,2) = 2.0_dp * ( dBasisdx(j,3) * dBasisdx(k,1) - &
+                       dBasisdx(j,1) * dBasisdx(k,3) )
+         RotWBasis(i,3) = 2.0_dp * ( dBasisdx(j,1) * dBasisdx(k,2) - &
+                       dBasisdx(j,2) * dBasisdx(k,1) )
+       CASE(7)
+         SELECT CASE(i)
+          CASE(1)
+            j=1;k=2; Base=1-w; dBase=-dudx(3,:)
+          CASE(2)
+            j=2;k=3; Base=1-w; dBase=-dudx(3,:)
+          CASE(3)
+            j=3;k=1; Base=1-w; dBase=-dudx(3,:)
+          CASE(4)
+            j=1;k=2; Base=1+w; dBase= dudx(3,:)
+          CASE(5)
+            j=2;k=3; Base=1+w; dBase= dudx(3,:)
+          CASE(6)
+            j=3;k=1; Base=1+w; dBase= dudx(3,:)
+          CASE(7)
+            Base=triBase(1); dBase=dtriBase(1,:); du=dudx(3,:)
+          CASE(8)
+            Base=triBase(2); dBase=dtriBase(2,:); du=dudx(3,:)
+          CASE(9)
+            Base=triBase(3); dBase=dtriBase(3,:); du=dudx(3,:)
+         END SELECT
 
-       RotWBasis(i,3) = 2.0_dp * ( dBasisdx(j,1) * dBasisdx(k,2) - &
-                     dBasisdx(j,2) * dBasisdx(k,1) )
+         IF(i<=6) THEN
+            tBase = (triBase(j)*dtriBase(k,:)-triBase(k)*dtriBase(j,:))
+            rBase(1) = 2*Base*(dtriBase(j,2)*dtriBase(k,3)-dtriBase(k,2)*dtriBase(j,3)) + &
+                              dBase(2)*tBase(3) - dBase(3)*tBase(2)
+
+            rBase(2) = 2*Base*(dtriBase(j,3)*dtriBase(k,1)-dtriBase(k,3)*dtriBase(j,1)) + &
+                              dBase(3)*tBase(1) - dBase(1)*tBase(3)
+
+            rBase(3) = 2*Base*(dtriBase(j,1)*dtriBase(k,2)-dtriBase(k,1)*dtriBase(j,2)) + &
+                              dBase(1)*tBase(2) - dBase(2)*tBase(1)
+
+            RotWBasis(i,:)=rBase
+            WBasis(i,:)=tBase*Base
+         ELSE
+            WBasis(i,:)=Base*du/2
+            RotWBasis(i,1)=(dBase(2)*du(3) - dBase(3)*du(2))/2
+            RotWBasis(i,2)=(dBase(3)*du(1) - dBase(1)*du(3))/2
+            RotWBasis(i,3)=(dBase(1)*du(2) - dBase(2)*du(1))/2
+         END IF
+       CASE(4,8)
+         SELECT CASE(i)
+          CASE(1)
+             du=dudx(1,:); Base=(1-v)*(1-w)
+             dBase(:)=-dudx(2,:)*(1-w)-(1-v)*dudx(3,:)
+          CASE(3)
+             du=dudx(1,:); Base=(1+v)*(1-w)
+             dBase(:)=dudx(2,:)*(1-w)-(1+v)*dudx(3,:)
+          CASE(5)
+             du=dudx(1,:); Base=(1-v)*(1+w)
+             dBase(:)=-dudx(2,:)*(1+w)+(1-v)*dudx(3,:)
+          CASE(7)
+             du=dudx(1,:); Base=(1+v)*(1+w)
+             dBase(:)=dudx(2,:)*(1+w)+(1+v)*dudx(3,:)
+          CASE(2)
+             du=dudx(2,:); Base=(1+u)*(1-w)
+             dBase(:)=dudx(1,:)*(1-w)-(1+u)*dudx(3,:)
+          CASE(4)
+             du=dudx(2,:); Base=(1-u)*(1-w)
+             dBase(:)=-dudx(1,:)*(1-w)-(1-u)*dudx(3,:)
+          CASE(6)
+             du=dudx(2,:); Base=(1+u)*(1+w)
+             dBase(:)=dudx(1,:)*(1+w)+(1+u)*dudx(3,:)
+          CASE(8)
+             du=dudx(2,:); Base=(1-u)*(1+w)
+             dBase(:)=-dudx(1,:)*(1+w)+(1-u)*dudx(3,:)
+          CASE(9)
+             du=dudx(3,:); Base=(1-u)*(1-v)
+             dBase(:)=-dudx(1,:)*(1-v)-(1-u)*dudx(2,:)
+          CASE(10)
+             du=dudx(3,:); Base=(1+u)*(1-v)
+             dBase(:)=dudx(1,:)*(1-v)-(1+u)*dudx(2,:)
+          CASE(11)
+             du=dudx(3,:); Base=(1+u)*(1+v)
+             dBase(:)=dudx(1,:)*(1+v)+(1+u)*dudx(2,:)
+          CASE(12)
+             du=dudx(3,:); Base=(1-u)*(1+v)
+             dBase(:)=-dudx(1,:)*(1+v)+(1-u)*dudx(2,:)
+         END SELECT
+
+         wBasis(i,:)=Base*du/n
+         RotWBasis(i,1)=(dBase(2)*du(3) - dBase(3)*du(2))/n
+         RotWBasis(i,2)=(dBase(3)*du(1) - dBase(1)*du(3))/n
+         RotWBasis(i,3)=(dBase(1)*du(2) - dBase(2)*du(1))/n
+       END SELECT
 
        nj = Element % Nodeindexes(j)
        IF (Parallel) nj=Mesh % ParallelInfo % GlobalDOFs(nj)
@@ -1035,7 +1146,7 @@ CONTAINS
 
     !Numerical integration:
     !----------------------
-    IP = GaussPoints( Element )
+    IP = GaussPoints(Element)
     np = n*Solver % Def_Dofs(Element % BodyId,1)
     DO t=1,IP % n
        stat = ElementInfo( Element, Nodes, IP % U(t), IP % V(t), &
@@ -3342,10 +3453,10 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 !------------------------------------------------------------------------------
   
 !------------------------------------------------------------------------------
-   REAL(KIND=dp) :: s,u,v,w,WBasis(16,3), SOL(2,16), PSOL(16), R(16), C(16), Norm
-   REAL(KIND=dp) :: RotWBasis(16,3), Basis(16), dBasisdx(16,3), B(2,3), E(2,3)
+   REAL(KIND=dp) :: s,u,v,w,WBasis(32,3), SOL(2,32), PSOL(32), R(32), C(32), Norm
+   REAL(KIND=dp) :: RotWBasis(32,3), Basis(32), dBasisdx(32,3), B(2,3), E(2,3)
    REAL(KIND=dp) ::  detJ, C_ip, R_ip, PR_ip, PR(16), ST(3,3), Omega, Power,Energy
-   COMPLEX(KIND=dp) ::  Magnetization(3,16), MG_ip(3)
+   COMPLEX(KIND=dp) ::  Magnetization(3,32), MG_ip(3)
 
    COMPLEX(KIND=dp) :: CST(3,3)
 
@@ -3355,7 +3466,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    TYPE(Variable_t), POINTER :: Var, MFD, MFS, CD, EF, MST, JH
    TYPE(Variable_t), POINTER :: EL_MFD, EL_MFS, EL_CD, EL_EF, EL_MST, EL_JH
 
-   INTEGER :: Active, Indexes(12), i,j,k,l,m,n,nd,np,p,q,DOFs,vDOFs,dim
+   INTEGER :: Active,i,j,k,l,m,n,nd,np,p,q,DOFs,vDOFs,dim
 
    TYPE(Solver_t), POINTER :: pSolver
    CHARACTER(LEN=MAX_NAME_LEN) :: Pname
@@ -3416,7 +3527,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    ALLOCATE( MASS(n,n), FORCE(n,DOFs) ) 
    SOL = 0._dp; PSOL=0._dp
 
-   Omega = GetAngularFrequency()
+   Omega = GetAngularFrequency(Found=Found)
 
    C = 0._dp; R=0._dp; PR=0._dp
    Magnetization = 0._dp
@@ -3469,8 +3580,8 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
       dim = CoordinateSystemDimension()
 
-     ! Calculate on nodes on elements fields:
-     ! --------------------------------------
+     ! Calculate "on nodes on elements" fields:
+     ! ----------------------------------------
      DO j=1,n
        u = Element % Type % NodeU(j)
        v = Element % Type % NodeV(j)
