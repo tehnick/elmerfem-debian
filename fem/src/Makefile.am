@@ -275,6 +275,7 @@ EXTRA_DIST = \
 	NonphysicalMeshSolve.src \
 	NormalSolver.src \
 	ParallelEigenSolve.src \
+	ParticleAdvector.src \
 	ParticleUtils.src \
 	PElementBase.src \
 	PElementMaps.src \
@@ -296,6 +297,7 @@ EXTRA_DIST = \
 	SaveData.src \
 	SaveGridData.src \
 	ScalarPotentialSolver.src \
+	ShearrateSolver.src \
 	ShellSolve.src \
 	Smitc.src \
 	Smoothers.src \
