@@ -6,23 +6,120 @@ MODULE ParticleUtils
   USE MeshUtils
   
   IMPLICIT NONE
-  
+
+  TYPE Particle_t
+    INTEGER :: Dim, NumberOfParticles=0, MaxNumberOfParticles=0, TimeOrder=0
+    TYPE(ParticleVariable_t), POINTER :: Variables => Null()	
+    
+    REAL(KIND=dp) :: dtime
+    
+    REAL(KIND=dp), POINTER :: Coordinate(:,:) => Null()
+    REAL(KIND=dp), POINTER :: PrevCoordinate(:,:) => Null()
+    REAL(KIND=dp), POINTER :: Distance(:) => Null()
+    REAL(KIND=dp), POINTER :: Velocity(:,:) => Null()
+    REAL(KIND=dp), POINTER :: PrevVelocity(:,:) => Null()
+    REAL(KIND=dp), POINTER :: Force(:,:) => Null()
+    REAL(KIND=dp), POINTER :: Dt(:) => Null()     
+    REAL(KIND=dp), POINTER :: uvw(:,:) => Null()
+    
+    INTEGER, POINTER :: FaceIndex(:) => Null()
+    INTEGER, POINTER :: Status(:) => Null()
+    INTEGER, POINTER :: ElementIndex(:) => Null()
+    INTEGER, POINTER :: NodeIndex(:) => NULL()
+    
+    ! Data structure for the particle-particle interaction 
+    INTEGER :: MaxClosestParticles
+    LOGICAL :: NeighbourTable = .FALSE.   
+    INTEGER, POINTER :: ClosestNode(:) => Null()
+    INTEGER, POINTER :: ClosestParticle(:) => Null()
+    INTEGER, POINTER :: NoClosestParticle(:) => Null()
+    INTEGER, POINTER :: CumClosestParticle(:) => Null()
+    
+    ! Mark the internal elements without any interface nodes
+    LOGICAL, POINTER :: InternalElements(:) => Null()
+    
+    ! Local and global bounding boxes
+    REAL(KIND=dp) :: LocalMinCoord(3), LocalMaxCoord(3)
+    REAL(KIND=dp) :: GlobalMinCoord(3), GlobalMaxCoord(3)
+    
+  END TYPE Particle_t
+
+  TYPE ParticleVariable_t
+    TYPE(ParticleVariable_t), POINTER   :: Next => Null()
+    INTEGER :: NameLen
+    CHARACTER(LEN=MAX_NAME_LEN) :: Name
+    LOGICAL :: Valid, Output
+    TYPE(Particle_t), POINTER :: Particles
+    LOGICAL :: ValuesChanged
+    INTEGER :: DOFs
+    INTEGER :: Category
+    REAL(KIND=dp) :: Norm=0, PrevNorm=0
+    REAL(KIND=dp), POINTER :: Values(:), PrevValues(:,:)
+  END TYPE ParticleVariable_t
+ 
+
   INTEGER, PARAMETER :: &
       PARTICLE_ALLOCATED = 1, &
       PARTICLE_WAITING = 2, &
       PARTICLE_INITIATED = 3, &
       PARTICLE_LOCATED = 4, &
       PARTICLE_FACEBOUNDARY = 5, &
-      PARTICLE_WALLBOUNDARY = 6, &
-      PARTICLE_PARTBOUNDARY = 7, &
-      PARTICLE_HIT = 8, & 
-      PARTICLE_READY = 9, &
-      PARTICLE_FIXEDCOORD = 10, &
-      PARTICLE_FIXEDVELO = 11, &
+      PARTICLE_PARTBOUNDARY = 6, &
+      PARTICLE_HIT = 7, & 
+      PARTICLE_READY = 8, &
+      PARTICLE_FIXEDCOORD = 9, &
+      PARTICLE_FIXEDVELO = 10, &
+      PARTICLE_WALLBOUNDARY = 11, &
       PARTICLE_LOST = 12, &
       PARTICLE_GHOST = 13
 
+
+  TYPE(Particle_t), TARGET, SAVE :: GlobalParticles
+ 
+  
+
 CONTAINS
+
+
+
+  SUBROUTINE ParticleStatusCount(Particles)
+    
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: i,j,NoParticles
+    INTEGER :: StatusCount(PARTICLE_GHOST)
+!    CHARACTER (len=12), PARAMETER :: StatusString(13) = [CHARACTER(len=12) :: &
+    CHARACTER (len=12), PARAMETER :: StatusString(13) = [ &
+        "Allocated   ", &
+ 	"Waiting     ", &
+	"Initiated   ", &
+	"Located     ", &
+	"FaceBoundary", &
+        "PartBoundary", &
+	"Hit         ", &
+	"Ready       ", &
+	"FixedCoord  ", &
+	"FixedVelo   ", &
+	"WallBoundary", &
+        "Lost        ", &
+	"Ghost       "]
+
+    StatusCount = 0
+    NoParticles = Particles % NumberOfParticles
+    DO i=1,NoParticles
+      j = Particles % Status(i)
+      StatusCount( j ) = StatusCount( j ) + 1
+    END DO
+      
+    CALL Info('ParticleStatusCount','Information on particle status:')
+    WRITE(Message,'(A,T18,I0)') 'Total: ',NoParticles
+    CALL Info('ParticleStatusCount',Message)
+    DO i=1,PARTICLE_GHOST
+      j = StatusCount(i)
+      IF( j == 0 ) CYCLE
+      WRITE(Message,'(A,T18,I0)') TRIM(StatusString(i))//': ',j
+      CALL Info('ParticleStatusCount',Message)
+    END DO
+  END SUBROUTINE ParticleStatusCount
 
 
 
@@ -31,47 +128,91 @@ CONTAINS
   ! transparent in the user subrouines and thereby make
   ! them more recilient to time.
   !---------------------------------------------------------
-  FUNCTION GetParticleCoord(Particles,No,DerOrder) RESULT ( Coord )
-    TYPE(Particle_t) :: Particles
-    INTEGER :: No, DerOrder
+  FUNCTION GetParticleCoord(Particles,No) RESULT ( Coord )
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
     REAL(KIND=dp) :: Coord(3) 
     
     INTEGER :: dim
     
     Coord(3) = 0.0_dp
     dim = Particles % dim
-    
-    IF( DerOrder == 0 ) THEN
-      Coord(1:dim) = Particles % Coordinate(no,:)
-    ELSE IF( DerOrder == 1 ) THEN
-      Coord(1:dim) = Particles % Velocity(no,:)
-    ELSE IF( DerOrder == 2 ) THEN
-      Coord(1:dim) = Particles % Force(no,:)
-    END IF
+    Coord(1:dim) = Particles % Coordinate(no,:)
   END FUNCTION GetParticleCoord
-  
 
-  SUBROUTINE SetParticleCoord(Particles,No,DerOrder,Coord)
-    TYPE(Particle_t) :: Particles
-    INTEGER :: No, DerOrder
+  FUNCTION GetParticleVelo(Particles,No) RESULT ( Coord )
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
     REAL(KIND=dp) :: Coord(3) 
     
     INTEGER :: dim
     
+    Coord(3) = 0.0_dp
     dim = Particles % dim
+    Coord(1:dim) = Particles % Velocity(no,:)
+  END FUNCTION GetParticleVelo
+
+  FUNCTION GetParticleForce(Particles,No) RESULT ( Coord )
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
+    REAL(KIND=dp) :: Coord(3) 
     
-    IF( DerOrder == 0 ) THEN
-      Particles % Coordinate(no,:) = Coord(1:dim)
-    ELSE IF( DerOrder == 1 ) THEN
-      Particles % Velocity(no,:) = Coord(1:dim)
-    ELSE IF( DerOrder == 2 ) THEN
-      Particles % Force(no,:) = Coord(1:dim)
-    END IF
+    INTEGER :: dim
+    
+    Coord(3) = 0.0_dp
+    dim = Particles % dim
+    Coord(1:dim) = Particles % Force(no,:)
+  END FUNCTION GetParticleForce
+
+
+  SUBROUTINE SetParticleCoord(Particles,No,Coord)
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
+    REAL(KIND=dp) :: Coord(3)     
+    INTEGER :: dim
+    
+    dim = Particles % dim    
+    Particles % Coordinate(no,:) = Coord(1:dim)
   END SUBROUTINE SetParticleCoord
-  
+
+  SUBROUTINE SetParticleVelo(Particles,No,Coord)
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
+    REAL(KIND=dp) :: Coord(3)     
+    INTEGER :: dim
+    
+    dim = Particles % dim    
+    Particles % Velocity(no,:) = Coord(1:dim)
+  END SUBROUTINE SetParticleVelo
+
+  SUBROUTINE SetParticleForce(Particles,No,Coord)
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
+    REAL(KIND=dp) :: Coord(3)     
+    INTEGER :: dim
+    
+    dim = Particles % dim    
+    Particles % Force(no,:) = Coord(1:dim)
+  END SUBROUTINE SetParticleForce
+
+
+  FUNCTION GetParticlePrevCoord(Particles,No) RESULT ( Coord )
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
+    REAL(KIND=dp) :: Coord(3) 
+    
+    INTEGER :: dim
+    
+    Coord(3) = 0.0_dp
+    dim = Particles % dim
+
+    Coord(1:dim) = Particles % PrevCoordinate(no,:)
+
+  END FUNCTION GetParticlePrevCoord
+ 
 
   SUBROUTINE GetParticleUVW(Particles,No, u, v, w )
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER :: No
     REAL(KIND=dp) :: u,v
     REAL(KIND=dp), OPTIONAL :: w
@@ -92,7 +233,7 @@ CONTAINS
   
 
   SUBROUTINE SetParticleUVW(Particles,No,u,v,w)
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER :: No
     REAL(KIND=dp) :: u,v
     REAL(KIND=dp), OPTIONAL :: w
@@ -112,32 +253,41 @@ CONTAINS
 
 
   
-  SUBROUTINE AddParticleCoord(Particles,No,DerOrder,Coord)
-    TYPE(Particle_t) :: Particles
+  SUBROUTINE AddParticleCoord(Particles,No,Coord)
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER :: No, DerOrder
-    REAL(KIND=dp) :: Coord(3) 
-    
-    INTEGER :: dim
-    
-    dim = Particles % dim
-    
-    IF( DerOrder == 0 ) THEN
-      Particles % Coordinate(no,:) = &
-          Particles % Coordinate(no,:) + Coord(1:dim)
-    ELSE IF( DerOrder == 1 ) THEN
-      Particles % Velocity(no,:) = &
-          Particles % Velocity(no,:) + Coord(1:dim)
-    ELSE IF( DerOrder == 2 ) THEN
-      Particles % Force(no,:) = &
-          Particles % Force(no,:) + Coord(1:dim)
-    END IF
+    REAL(KIND=dp) :: Coord(3)     
+    INTEGER :: dim    
+    dim = Particles % dim    
+    Particles % Coordinate(no,:) = &
+        Particles % Coordinate(no,:) + Coord(1:dim)
   END SUBROUTINE AddParticleCoord
   
-  
+  SUBROUTINE AddParticleVelo(Particles,No,Coord)
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No, DerOrder
+    REAL(KIND=dp) :: Coord(3)     
+    INTEGER :: dim    
+    dim = Particles % dim
+    Particles % Velocity(no,:) = &
+        Particles % Velocity(no,:) + Coord(1:dim)
+  END SUBROUTINE AddParticleVelo
+ 
+
+   SUBROUTINE AddParticleForce(Particles,No,Coord)
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No, DerOrder
+    REAL(KIND=dp) :: Coord(3)     
+    INTEGER :: dim    
+    dim = Particles % dim   
+    Particles % Force(no,:) = &
+        Particles % Force(no,:) + Coord(1:dim)
+  END SUBROUTINE AddParticleForce
+
   
   FUNCTION GetParticleStatus(Particles,No) RESULT ( Status )
-    TYPE(Particle_t) :: Particles
-    INTEGER :: No, DerOrder
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
     INTEGER :: Status
     
     Status = Particles % Status(No)
@@ -145,8 +295,8 @@ CONTAINS
   
   
   SUBROUTINE SetParticleStatus(Particles,No,Status )
-    TYPE(Particle_t) :: Particles
-    INTEGER :: No, DerOrder
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
     INTEGER :: Status
     
     Particles % Status(No) = Status
@@ -154,8 +304,8 @@ CONTAINS
   
   
   FUNCTION GetParticleElement(Particles,No) RESULT ( Index ) 
-    TYPE(Particle_t) :: Particles
-    INTEGER :: No, DerOrder
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
     INTEGER :: Index
     
     Index = Particles % ElementIndex(No)
@@ -163,14 +313,30 @@ CONTAINS
   
   
   SUBROUTINE SetParticleElement(Particles,No,Index )
-    TYPE(Particle_t) :: Particles
-    INTEGER :: No, DerOrder
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
     INTEGER :: Index
     
     Particles % ElementIndex(No) = Index
   END SUBROUTINE SetParticleElement
   
-
+  FUNCTION GetParticleNode(Particles,No) RESULT ( Index ) 
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
+    INTEGER :: Index
+    
+    Index = Particles % NodeIndex(No)
+  END FUNCTION GetParticleNode
+  
+  
+  SUBROUTINE SetParticleNode(Particles,No,Index )
+    TYPE(Particle_t), POINTER :: Particles
+    INTEGER :: No
+    INTEGER :: Index
+    
+    Particles % NodeIndex(No) = Index
+  END SUBROUTINE SetParticleNode
+ 
 
   !---------------------------------------------------------
   ! The subroutine marks the elements which are not on the 
@@ -180,7 +346,7 @@ CONTAINS
   !---------------------------------------------------------
   SUBROUTINE MarkInternalElements( Particles )
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     TYPE(Element_t), POINTER :: BulkElement, BulkElement2, BoundaryElement
     TYPE(Mesh_t), POINTER :: Mesh
     TYPE(ValueList_t), POINTER :: Body, Body2
@@ -294,7 +460,7 @@ CONTAINS
   !---------------------------------------------------------
   SUBROUTINE SetParticlePreliminaries(Particles,dim,TimeOrder)
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER, OPTIONAL :: dim
     INTEGER, OPTIONAL :: TimeOrder
     
@@ -372,12 +538,12 @@ CONTAINS
   !---------------------------------------------------------
   SUBROUTINE AllocateParticles(Particles,NoParticles)
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER :: NoParticles
     
     REAL(KIND=dp), POINTER :: Velocity(:,:), Force(:,:), &
-        Coordinate(:,:), Distance(:),Dt(:)
-    INTEGER, POINTER :: Status(:), ElementIndex(:), FaceIndex(:), Closest(:)
+        Coordinate(:,:), PrevCoordinate(:,:), PrevVelocity(:,:),Distance(:),Dt(:)
+    INTEGER, POINTER :: Status(:), ElementIndex(:), FaceIndex(:), NodeIndex(:), Closest(:)
     INTEGER :: PrevNoParticles, dofs, No, n, dim, TimeOrder
     
     IF( NoParticles <= Particles % MaxNumberOfParticles ) THEN
@@ -411,6 +577,12 @@ CONTAINS
       
       ALLOCATE( Particles % Force(NoParticles,dofs) )
       Particles % Force = 0.0_dp
+
+      ALLOCATE( Particles % PrevCoordinate(NoParticles,dofs) )
+      Particles % PrevCoordinate = 0.0_dp
+
+      ALLOCATE( Particles % PrevVelocity(NoParticles,dofs) )
+      Particles % PrevVelocity = 0.0_dp
       
       ALLOCATE( Particles % FaceIndex(NoParticles))
       Particles % FaceIndex = 0
@@ -418,14 +590,16 @@ CONTAINS
       PrevNoParticles = Particles % NumberOfParticles 
       
       Coordinate => Particles % Coordinate
+      PrevCoordinate => Particles % PrevCoordinate
+      PrevVelocity => Particles % PrevVelocity
       Velocity => Particles % Velocity
       Force => Particles % Force
       Distance => Particles % Distance
       Status => Particles % Status
       Dt => Particles % Dt
-      Closest => Particles % ClosestNode
       FaceIndex => Particles % FaceIndex
       ElementIndex => Particles % ElementIndex
+      NodeIndex => Particles % NodeIndex
       
       ALLOCATE( Particles % Coordinate(NoParticles,dofs) )
       IF ( ASSOCIATED(Velocity) ) &
@@ -433,10 +607,22 @@ CONTAINS
       
       IF ( ASSOCIATED(Force) ) &
           ALLOCATE( Particles % Force(NoParticles,dofs) )
+
+      IF ( ASSOCIATED(PrevCoordinate) ) &
+          ALLOCATE( Particles % PrevCoordinate(NoParticles,dofs) )
+
+      IF ( ASSOCIATED(PrevVelocity) ) &
+          ALLOCATE( Particles % PrevVelocity(NoParticles,dofs) )
+
+      IF( Particles % NeighbourTable ) THEN
+        Closest => Particles % ClosestNode        
+        ALLOCATE( Particles % ClosestNode(NoParticles) )
+      END IF 	
+
       
-      IF ( ASSOCIATED(Closest) ) &
-          ALLOCATE( Particles % ClosestNode(NoParticles) )
-      
+      IF( ASSOCIATED( NodeIndex ) ) &
+          ALLOCATE( Particles % NodeIndex(NoParticles) )
+
       ALLOCATE( Particles % Distance(NoParticles) )
       ALLOCATE( Particles % Status(NoParticles) )
       ALLOCATE( Particles % Dt(NoParticles) )
@@ -452,7 +638,12 @@ CONTAINS
         Particles % Coordinate(n,:) = Coordinate(No,:)
         IF ( ASSOCIATED(Velocity) ) Particles % Velocity(n,:)=Velocity(No,:)
         IF ( ASSOCIATED(Force) ) Particles % Force(n,:)=Force(No,:)
-        IF ( ASSOCIATED(Closest) ) Particles % ClosestNode(n)=Closest(No)
+        IF ( ASSOCIATED(PrevCoordinate) ) Particles % PrevCoordinate(n,:)=PrevCoordinate(No,:)
+        IF ( ASSOCIATED(PrevVelocity) ) Particles % PrevVelocity(n,:)=PrevVelocity(No,:)
+        IF ( ASSOCIATED(NodeIndex) ) Particles % NodeIndex(n)=NodeIndex(No)
+        IF( Particles % NeighbourTable ) THEN
+          Particles % ClosestNode(n)=Closest(No)
+        END IF
         Particles % Distance(n) = Distance(No)
         Particles % Status(n) = Status(No)
         Particles % Dt(n) = Dt(No)
@@ -464,7 +655,9 @@ CONTAINS
       
       IF ( ASSOCIATED(Force) ) DEALLOCATE(Force)
       IF ( ASSOCIATED(Velocity) ) DEALLOCATE(Velocity)
-      IF ( ASSOCIATED(Closest) ) DEALLOCATE(Closest)
+      IF( Particles % NeighbourTable ) THEN
+        DEALLOCATE(Closest)
+      END IF
       DEALLOCATE(Coordinate, Distance, Status, ElementIndex, Dt, FaceIndex )
       
       IF ( ASSOCIATED(Particles % Velocity) ) & 
@@ -472,10 +665,20 @@ CONTAINS
       
       IF ( ASSOCIATED(Particles % Force) ) &
           Particles % Force(PrevNoParticles+1:NoParticles,:) = 0.0_dp
-      
-      IF ( ASSOCIATED(Particles % ClosestNode) ) &
-          Particles % ClosestNode(PrevNoParticles+1:NoParticles) = 0
-      
+
+      IF ( ASSOCIATED(Particles % PrevCoordinate) ) &
+          Particles % PrevCoordinate(PrevNoParticles+1:NoParticles,:) = 0.0_dp
+
+     IF ( ASSOCIATED(Particles % PrevVelocity) ) &
+          Particles % PrevVelocity(PrevNoParticles+1:NoParticles,:) = 0.0_dp
+
+      IF( Particles % NeighbourTable ) THEN
+        Particles % ClosestNode(PrevNoParticles+1:NoParticles) = 0
+      END IF
+
+      IF( ASSOCIATED( Particles % NodeIndex) ) &
+          Particles % NodeIndex( PrevNoParticles+1:NoParticles) = 0
+
       Particles % Coordinate(PrevNoParticles+1:NoParticles,:) = 0.0_dp
       Particles % Dt(PrevNoParticles+1:NoParticles) = 0.0_dp
       Particles % Distance(PrevNoParticles+1:NoParticles) = 0.0_dp
@@ -491,7 +694,7 @@ CONTAINS
   ! Delete lost particles:
   !----------------------------------------------------
   SUBROUTINE DeleteLostParticles(Particles)
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     
     INTEGER :: No, n, PrevNoParticles
     
@@ -506,11 +709,18 @@ CONTAINS
       
       Particles % Coordinate(n,:) = Particles % Coordinate(No,:)
       IF ( ASSOCIATED(Particles % Velocity) ) &
-          Particles % Velocity(n,:)=Particles % Velocity(No,:)
+          Particles % Velocity(n,:) = Particles % Velocity(No,:)
       IF ( ASSOCIATED(Particles % Force) ) &
-          Particles % Force(n,:)=Particles % Force(No,:)
-      IF ( ASSOCIATED(Particles % ClosestNode) ) &
-          Particles % ClosestNode(n)=Particles % ClosestNode(No)
+          Particles % Force(n,:) = Particles % Force(No,:)
+      IF ( ASSOCIATED(Particles % PrevCoordinate) ) &
+          Particles % PrevCoordinate(n,:) = Particles % PrevCoordinate(No,:)
+      IF ( ASSOCIATED(Particles % PrevVelocity) ) &
+          Particles % PrevVelocity(n,:) = Particles % PrevVelocity(No,:)
+      IF( Particles % NeighbourTable ) THEN
+        Particles % ClosestNode(n) = Particles % ClosestNode(No)
+      END IF
+      IF ( ASSOCIATED(Particles % NodeIndex) ) &
+          Particles % NodeIndex(n) = Particles % NodeIndex(No)
       Particles % Distance(n) = Particles % Distance(No)
       Particles % Status(n) = Particles % Status(No)
       Particles % Dt(n) = Particles % Dt(No)
@@ -525,9 +735,19 @@ CONTAINS
       
       IF ( ASSOCIATED(Particles % Force) ) &
           Particles % Force(n+1:PrevNoParticles,:) = 0._dp
+
+      IF ( ASSOCIATED(Particles % PrevCoordinate) ) &
+          Particles % PrevCoordinate(n+1:PrevNoParticles,:) = 0._dp
       
-      IF ( ASSOCIATED(Particles % ClosestNode) ) &
-          Particles % ClosestNode(n+1:PrevNoParticles) = 0
+      IF ( ASSOCIATED(Particles % PrevVelocity) ) &
+          Particles % PrevVelocity(n+1:PrevNoParticles,:) = 0._dp
+      
+      IF( Particles % NeighbourTable ) THEN
+        Particles % ClosestNode(n+1:PrevNoParticles) = 0
+      END IF
+
+      IF ( ASSOCIATED(Particles % NodeIndex) ) &
+          Particles % NodeIndex(n+1:PrevNoParticles) = 0
       
       Particles % Coordinate(n+1:PrevNoParticles,:) = 0._dp
       Particles % Dt(n+1:PrevNoParticles) = 0._dp
@@ -545,7 +765,7 @@ CONTAINS
   !----------------------------------------------------
   SUBROUTINE EliminateExitingParticles( Particles )
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER :: NoParticles, No, DeletedParticles, dim, CumDeleted = 0, LimDeleted
     TYPE(Mesh_t), POINTER :: Mesh
     TYPE(Element_t), POINTER :: BoundaryElement
@@ -556,6 +776,8 @@ CONTAINS
     LOGICAL :: Stat, Visited = .FALSE.
     
     SAVE Visited, CumDeleted, BoundaryNodes, Basis
+
+RETURN
     
     NoParticles = Particles % NumberOfParticles
     dim = Particles % dim
@@ -607,7 +829,7 @@ CONTAINS
   !----------------------------------------------------
   SUBROUTINE IncreaseParticles(Particles,NoParticles)
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER :: NoParticles
     
     INTEGER :: Maxn
@@ -627,13 +849,22 @@ CONTAINS
   
 
   SUBROUTINE DestroyParticles(Particles) 
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     
     IF ( ASSOCIATED(Particles % Velocity) ) &
         DEALLOCATE( Particles % Velocity ) 
     
     IF ( ASSOCIATED(Particles % Force) ) &
         DEALLOCATE( Particles % Force )
+
+    IF ( ASSOCIATED(Particles % PrevCoordinate) ) &
+        DEALLOCATE( Particles % PrevCoordinate )
+
+    IF ( ASSOCIATED(Particles % PrevVelocity) ) &
+        DEALLOCATE( Particles % PrevVelocity )
+
+    IF ( ASSOCIATED(Particles % NodeIndex) ) &
+        DEALLOCATE( Particles % NodeIndex )
     
     DEALLOCATE( Particles % Coordinate ) 
     DEALLOCATE( Particles % Distance ) 
@@ -653,7 +884,7 @@ CONTAINS
   ! Subroutine for releaseing initiated but waiting particles.
   !---------------------------------------------------------
   SUBROUTINE ReleaseWaitingParticles(Particles) 
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     
     TYPE(ValueList_t), POINTER :: Params
     INTEGER, POINTER :: Status(:)
@@ -709,7 +940,7 @@ CONTAINS
   !---------------------------------------------------------
   FUNCTION ChangeParticlePartition(Particles) RESULT(nReceived)
     !---------------------------------------------------------
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     !---------------------------------------------------------
     TYPE(Element_t), POINTER :: Face, Parent, Faces(:)
     
@@ -949,7 +1180,7 @@ CONTAINS
       n_part=Particles % NumberOfParticles
       DO j=1,n
         k=SearchElement( nFaces, Faces, Indexes(j) )
-        IF ( k<=0 ) THEN
+        IF ( k <= 0 ) THEN
           PRINT*,ParEnv % myPE, 'failed'
           CYCLE
         END IF
@@ -976,7 +1207,7 @@ CONTAINS
       DO k=1,dim
         DO l=1,n
           m = m + 1
-          Particles % Coordinate(n_part+l,k)=Buf(m)
+          Particles % Coordinate(n_part+l,k) = Buf(m)
         END DO
       END DO
       
@@ -989,13 +1220,13 @@ CONTAINS
         DO k=1,dim
           DO l=1,n
             m = m + 1
-            Particles % Velocity(n_part+l,k)=Buf(m)
+            Particles % Velocity(n_part+l,k) = Buf(m)
           END DO
         END DO
       END IF
       DEALLOCATE(Buf)
       
-      Particles % NumberOfParticles = Particles % NumberOfParticles+n
+      Particles % NumberOfParticles = Particles % NumberOfParticles + n
       DEALLOCATE(Indexes)
     END DO
     
@@ -1058,7 +1289,7 @@ CONTAINS
   ! The statistics could be made more detailed...
   !---------------------------------------------------------
   SUBROUTINE ParticleStatistics( Particles, DerOrder ) 
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER :: DerOrder
     
     REAL(KIND=dp) :: Coord(3),MeanCoord(3),AbsCoord(3),VarCoord(3), &
@@ -1079,7 +1310,9 @@ CONTAINS
     dim = Particles % dim
     Coord = 0.0_dp
     
-    IF( DerOrder == 0 ) THEN
+    IF( DerOrder == -1 ) THEN
+      TargetVector => Particles % PrevCoordinate
+    ELSE IF( DerOrder == 0 ) THEN
       TargetVector => Particles % Coordinate
     ELSE IF( DerOrder == 1 ) THEN
       TargetVector => Particles % Velocity
@@ -1124,7 +1357,9 @@ CONTAINS
       VarCoord = SQRT( VarCoord / TotParticles - MeanCoord**2 ) 
       
       IF( ParEnv % myPE == 0 ) THEN
-        IF( DerOrder == 0 ) THEN
+        IF( DerOrder == -1 ) THEN
+          PRINT *,'Statistical info on previous coordinate values:'
+        ELSE IF( DerOrder == 0 ) THEN
           PRINT *,'Statistical info on coordinate values:'
         ELSE IF( DerOrder == 1 ) THEN
           PRINT *,'Statistical info on velocity values:'
@@ -1152,7 +1387,7 @@ CONTAINS
   ! alternatively to just one particle.
   !---------------------------------------------------------
   FUNCTION CharacteristicSpeed( Particles, No ) RESULT ( CharSpeed )
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     REAL(KIND=dp) :: CharSpeed
     INTEGER, OPTIONAL :: No
     
@@ -1171,7 +1406,7 @@ CONTAINS
       Visited = .TRUE.
     END IF
     
-    
+  
     dim = Particles % dim
     Velocity => Particles % Velocity
     
@@ -1224,7 +1459,7 @@ CONTAINS
   !---------------------------------------------------------
   FUNCTION CharacteristicElementTime( Particles, No ) RESULT ( CharTime )
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     REAL(KIND=dp) :: CharTime
     INTEGER, OPTIONAL :: No
     
@@ -1284,7 +1519,7 @@ CONTAINS
   !-------------------------------------------------------------------------
   SUBROUTINE InitializeParticles( Particles, InitParticles, AppendParticles ) 
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER, OPTIONAL :: InitParticles
     LOGICAL, OPTIONAL :: AppendParticles
     
@@ -1297,9 +1532,9 @@ CONTAINS
     REAL(KIND=dp), POINTER :: rWork(:,:),Coordinate(:,:), Velocity(:,:)
     REAL(KIND=dp) :: Velo(3), Coord(3), Center(3), time0, dist
     CHARACTER(LEN=MAX_NAME_LEN) :: InitMethod
-    INTEGER :: i,j,k,n,nonodes, InitStatus, TotParticles
+    INTEGER :: i,j,k,l,n,vdofs,nonodes, InitStatus, TotParticles
     INTEGER, POINTER :: MaskPerm(:), InvPerm(:), NodeIndexes(:)
-    LOGICAL :: GotIt, GotMask, RequirePositivity
+    LOGICAL :: GotIt, GotMask, RequirePositivity, ContinuousNumbering
     REAL(KIND=dp), POINTER :: InitialValues(:,:)
     REAL(KIND=dp) :: mass,boltz,temp,coeff,eps,frac,meanval 
     REAL(KIND=dp) :: MinCoord(3), MaxCoord(3), Diam
@@ -1533,19 +1768,47 @@ CONTAINS
     SELECT CASE ( InitMethod ) 
       
     CASE ('nodal ordered')
-      NewParticles = MIN(NoElements,NewParticles)
       Particles % NumberOfParticles = NewParticles
       PRINT *,'Initializing particles in nodes:',NewParticles,nonodes
       DO i=1,NewParticles
         k = Offset + i
         j = (nonodes-1)*(i-1)/(NewParticles-1)+1
-        j = MODULO( i * NewParticles -1 , nonodes ) + 1
         IF( GotMask ) j = InvPerm(j)
         Coordinate(k,1) = Mesh % Nodes % x(j)
         Coordinate(k,2) = Mesh % Nodes % y(j)
         IF( dim == 3 ) Coordinate(k,3) = Mesh % Nodes % z(j)
       END DO
-      
+
+      ContinuousNumbering = .FALSE.
+      IF( GotMask ) THEN
+        IF( NewParticles == MAXVAL( MaskPerm ) ) ContinuousNumbering = .TRUE.
+      ELSE IF( NewParticles == Mesh % NumberOfNodes ) THEN
+        ContinuousNumbering = .TRUE.
+      END IF
+
+      IF( ContinuousNumbering ) THEN
+        IF(.NOT. ASSOCIATED( Particles % NodeIndex ) ) THEN
+          ALLOCATE( Particles % NodeIndex( NewParticles ) )
+          Particles % NodeIndex = 0
+        END IF
+        
+        DO i=1,Mesh % NumberOfBulkElements
+          CurrentElement => Mesh % Elements(i)
+          NodeIndexes =>  CurrentElement % NodeIndexes
+          n = CurrentElement % TYPE % NumberOfNodes
+          DO j=1,n
+            k = NodeIndexes(j)
+            IF( GotMask ) THEN
+              k = MaskPerm(k)
+              IF( k == 0 ) CYCLE
+            END IF
+            Particles % ElementIndex(k) = i
+            Particles % NodeIndex(k) = NodeIndexes(j)
+          END DO
+        END DO
+      END IF
+
+
     CASE ('elemental ordered')
       NewParticles = MIN(NoElements,NewParticles)
       Particles % NumberOfParticles = NewParticles
@@ -1554,8 +1817,7 @@ CONTAINS
         k = Offset + i
         j = (NoElements-1)*(i-1)/(NewParticles-1)+1
         IF( GotMask ) j = InvPerm(j)
-        
-        
+                
         IF( j > Mesh % NumberOfBulkElements ) THEN
           PRINT *,'j too large',j,i,k,(NoElements-1)*(i-1)/(NewParticles-1)+1
         END IF
@@ -1688,6 +1950,7 @@ CONTAINS
       END IF
     END SELECT
 
+
     IF( GotMask .AND. ASSOCIATED(InvPerm) ) DEALLOCATE( InvPerm ) 
 
     !------------------------------------------------------------------------
@@ -1719,8 +1982,28 @@ CONTAINS
     InitMethod = ListGetString( Params,'Velocity Initialization Method',gotIt ) 
     coeff = ListGetCReal( Params,'Initial Velocity Amplitude',GotIt)
 
+
     SELECT CASE ( InitMethod ) 
-      
+
+    CASE ('nodal velocity')
+
+      VariableName = ListGetString( Params,'Velocity Variable Name',GotIt )
+      IF(.NOT. GotIt) VariableName = 'Flow Solution'
+      Var => VariableGet( Mesh % Variables, TRIM(VariableName) )
+      IF( .NOT. ASSOCIATED( Var ) ) THEN
+        CALL Warn('InitializeParticles','Velocity variable needed for method >nodal velocity<')
+      ELSE        
+        vdofs = Var % Dofs
+        DO i=1,NewParticles
+          k = Offset + i
+          l = Particles % NodeIndex(i)
+          l = Var % Perm(l)
+          DO j=1,dim
+            Velocity(k,j) = Var % Values(vdofs*(l-1)+j)
+          END DO
+        END DO
+      END IF
+
     CASE ('thermal random')  
       
       IF(.NOT. GotIt) THEN
@@ -1808,6 +2091,8 @@ CONTAINS
       Particles % Status(k) = InitStatus
     END DO
     
+    Particles % PrevCoordinate = Coordinate
+    Particles % PrevVelocity = Velocity
     
   END SUBROUTINE InitializeParticles
 
@@ -1825,20 +2110,21 @@ CONTAINS
     REAL(KIND=dp) :: Rinit(3), Rfin(3), MinLambda
     TYPE(Element_t), POINTER :: FaceElement
     
+    TYPE(Element_t), POINTER :: FaceElement2
     TYPE(Element_t), POINTER   :: BoundaryElement
     TYPE(Nodes_t), SAVE :: BoundaryNodes
-    REAL(KIND=dp) :: Lambda, Epsilon
+    REAL(KIND=dp) :: Lambda, Epsilon, Dist
     INTEGER :: i,j,n
     INTEGER, POINTER :: NodeIndexes(:)
-    LOGICAL :: AtBoundary, Visited = .FALSE.
-    
-    
-    SAVE  Visited
-    
+    LOGICAL :: Success, AtBoundary, AtFace, Visited = .FALSE.
+    LOGICAL :: Set1, Set2
+        
     MinLambda = HUGE( MinLambda ) 
     Epsilon = TINY( Lambda ) 
     FaceElement => Null()
-    
+    Set1 = .FALSE.
+    Set2 = .FALSE.    
+
     IF( BulkElement % TYPE % DIMENSION == 3 ) THEN
       DO i=1, BulkElement % TYPE % NumberOfFaces  
         j = BulkElement % FaceIndexes(i)
@@ -1847,13 +2133,16 @@ CONTAINS
         
         Lambda = LineFaceIntersection(BoundaryElement,BoundaryNodes,&
             Rinit,Rfin) 
+
         IF( Lambda > Epsilon ) THEN
           IF( Lambda < MinLambda ) THEN
+	    Set1 = .TRUE.
             MinLambda = Lambda
             FaceElement => BoundaryElement
           END IF
         ELSE IF( Lambda > -Epsilon ) THEN
-          AtBoundary = .TRUE.
+          Set2 = .TRUE.
+          FaceElement2 => BoundaryElement
         END IF
       END DO
     ELSE
@@ -1867,14 +2156,29 @@ CONTAINS
         
         IF( Lambda > Epsilon ) THEN
           IF( Lambda < MinLambda ) THEN
+	    Set1 = .TRUE.
             MinLambda = Lambda
             FaceElement => BoundaryElement
           END IF
         ELSE IF( Lambda > -Epsilon ) THEN
-          AtBoundary = .TRUE.
+          Set2 = .TRUE.
+          FaceElement2 => BoundaryElement
         END IF
       END DO
     END IF
+
+    ! Either there must be a positive lambda, or then the initial node must 
+    ! already sit on the face.
+    !------------------------------------------------------------------------
+    IF( .NOT. Set1 ) THEN
+      IF( Set2 ) THEN
+        FaceElement => FaceElement2
+        MinLambda = 0.0_dp
+      ELSE
+        CALL Warn('SegmentElementIntersection','Could not find any intersection')
+      END IF
+    END IF
+
     
   END SUBROUTINE SegmentElementIntersection
   
@@ -1972,21 +2276,23 @@ CONTAINS
   ! bulk element.
   !-------------------------------------------------------------------------
   SUBROUTINE LocateParticleInMeshMarch( ElementIndex, Rinit, Rfin, Init, &
-      ParticleStatus, StopFaceIndex, Lambda )
+      ParticleStatus, AccurateAtFace, StopFaceIndex, Lambda )
     
     INTEGER :: ElementIndex
     REAL(KIND=dp) :: Rinit(3), Rfin(3)
     LOGICAL :: Init
+    LOGICAL :: AccurateAtFace
     REAL(KIND=dp), OPTIONAL :: Lambda
     INTEGER :: ParticleStatus
     INTEGER, OPTIONAL :: StopFaceIndex
     
-    TYPE(ValueList_t), POINTER :: Params
+
+    TYPE(ValueList_t), POINTER :: Params, BC
     TYPE(Mesh_t), POINTER :: Mesh
     REAL(KIND=dp) :: Rtmp(3), MinLambda, eps 
     LOGICAL :: Hit, DoInit, Stat, StopAtFace, AtWall, Visited = .FALSE.,&
         Debug,UseCenter
-    INTEGER :: i,j,k,n,FaceIndex,MaxTrials
+    INTEGER :: i,j,k,n,FaceIndex,MaxTrials,bc_id,cons_id
     TYPE(Nodes_t), SAVE :: ElementNodes
     INTEGER, POINTER :: NodeIndexes(:)
     TYPE(Element_t), POINTER :: Element, FaceElement, LeftElement, RightElement, &
@@ -2026,13 +2332,15 @@ CONTAINS
       ElementIndex = 1
       UseCenter = .TRUE.
     ELSE	
-      UseCenter = .NOT. StopAtFace
+      UseCenter = .NOT. AccurateAtFace
     END IF
     
     Element => Mesh % Elements( ElementIndex ) 
     eps = 1.0d-10
+
     
     DO i=1,MaxTrials
+
       n = GetElementNOFNOdes(Element)
       CALL GetElementNodes(ElementNodes,Element)
       
@@ -2042,23 +2350,29 @@ CONTAINS
         Rtmp(1) = SUM( ElementNodes % x(1:n) ) / n
         Rtmp(2) = SUM( ElementNodes % y(1:n) ) / n
         Rtmp(3) = SUM( ElementNodes % z(1:n) ) / n
-      ELSE
-        Rtmp = Rinit
+      ELSE 
+        IF( i > 1 ) THEN
+          Rtmp = Rtmp + MinLambda * (Rfin - Rtmp) 
+        ELSE
+          Rtmp = Rinit
+        END IF
       END IF
       
       CALL SegmentElementIntersection(Mesh,Element,&
           Rtmp,Rfin,MinLambda,FaceElement )
-      
+
       IF( .NOT. ASSOCIATED( FaceElement ) ) THEN
-        ! The likely cause for unsuccessful operation is that the 
+        ! One likely cause for unsuccessful operation is that the 
         ! initial node and target node are the same
         IF( SUM ( ( Rtmp - Rfin )**2 ) < eps**2 ) THEN
           ParticleStatus = PARTICLE_HIT
           EXIT
         ELSE
-          CALL Warn('LocateParticleInMesh','No intersection found?')
-          PRINT *,'Rtmp',Rtmp
-          PRINT *,'Rfin',Rfin
+          IF( .NOT. AccurateAtFace ) THEN
+            CALL Warn('LocateParticleInMesh','No intersection found?')
+            PRINT *,'Rinit:',Rtmp
+            PRINT *,'Rfin: ',Rfin
+          END IF
           EXIT
         END IF
       ELSE IF( MinLambda > 1.0 - eps ) THEN
@@ -2066,27 +2380,40 @@ CONTAINS
         Rtmp = Rfin
         EXIT
       ELSE 
-        LeftElement  => FaceElement % BoundaryInfo % Left
-        RightElement => FaceElement % BoundaryInfo % Right
-        
-        IF( ASSOCIATED( LeftElement) .AND. ASSOCIATED(RightElement)) THEN
-          IF( ASSOCIATED(Element, LeftElement)) THEN
-            NextElement => RightElement
-          ELSE
-            NextElement => LeftElement
-          END IF
-          
-          IF( StopAtFace .AND. .NOT. DoInit ) ParticleStatus = PARTICLE_FACEBOUNDARY
-        ELSE
-          ParticleStatus = PARTICLE_WALLBOUNDARY
+        cons_id = FaceElement % BoundaryInfo % Constraint
+        IF ( cons_id > 0 ) THEN
+          DO bc_id=1,CurrentModel % NumberOfBCs
+            IF ( cons_id == CurrentModel % BCs(bc_id) % Tag ) THEN
+              BC => CurrentModel % BCs(bc_id) % Values
+              IF( ListGetLogical( BC,'Particle Wall',Stat ) ) ParticleStatus = PARTICLE_WALLBOUNDARY
+              EXIT
+            END IF
+          END DO
         END IF
-        
+        IF( .NOT. ParticleStatus == PARTICLE_WALLBOUNDARY) THEN
+          LeftElement  => FaceElement % BoundaryInfo % Left
+          RightElement => FaceElement % BoundaryInfo % Right
+          
+          IF( ASSOCIATED( LeftElement) .AND. ASSOCIATED(RightElement)) THEN
+            IF( ASSOCIATED(Element, LeftElement)) THEN
+              NextElement => RightElement
+            ELSE
+              NextElement => LeftElement
+            END IF
+            IF( StopAtFace .AND. .NOT. DoInit ) ParticleStatus = PARTICLE_FACEBOUNDARY
+          ELSE
+            ParticleStatus = PARTICLE_WALLBOUNDARY
+          END IF
+        END IF
+
         ! There are different reasons why the particle is only integrated until the face
         IF( ParticleStatus == PARTICLE_WALLBOUNDARY .OR. &
             ParticleStatus == PARTICLE_FACEBOUNDARY ) THEN
           IF( PRESENT( Lambda ) ) Lambda = MinLambda
-          Rtmp = Rinit + MinLambda * (Rfin - Rinit) 
           StopFaceIndex = FaceElement % ElementIndex
+
+          Rfin = Rtmp + MinLambda * (Rfin - Rtmp) 
+
           EXIT                      
         END IF
       END IF
@@ -2107,20 +2434,29 @@ CONTAINS
     
     USE Lists
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     LOGICAL, OPTIONAL :: PartitionChangesOnly
     
-    INTEGER :: Status, ElementIndex, No, NoParticles, dim
-    REAL(KIND=dp) :: Rinit(3), Rfin(3)
-    LOGICAL :: InitLocation, Visited=.FALSE.
-    INTEGER :: FaceIndex
+    INTEGER :: Status, ElementIndex, No, NoParticles, dim, ElementIndex0
+    REAL(KIND=dp) :: Rinit(3), Rfin(3),Rfin0(3)
+    LOGICAL :: Stat, InitLocation, AccurateAtFace
+    INTEGER ::VisitedTimes = 0
+    INTEGER :: FaceIndex, FaceIndex0, Status0
     REAL(KIND=dp) :: Lambda
     TYPE(Mesh_t), POINTER :: Mesh
+    TYPE(ValueList_t), POINTER :: Params
+
+    SAVE VisitedTimes, dim, AccurateAtFace
     
     
     NoParticles = Particles % NumberOfParticles
-    dim = Particles % dim
-    
+
+    IF( VisitedTimes == 0 ) THEN
+      Params => GetSolverParams()
+      dim = Particles % dim      
+      AccurateAtFace = ListGetLogical( Params,'Particle Accurate At Face',Stat)
+    END IF
+
     
     DO No = 1, NoParticles
       
@@ -2128,28 +2464,67 @@ CONTAINS
       
       IF( Status >= PARTICLE_LOST ) CYCLE
       IF( Status < PARTICLE_INITIATED ) CYCLE
+      IF( Status == PARTICLE_WALLBOUNDARY ) CYCLE
       
       IF ( PRESENT(PartitionChangesOnly) ) THEN
         IF ( PartitionChangesOnly .AND. Status /= PARTICLE_PARTBOUNDARY ) CYCLE
       END IF
       
-      ElementIndex = Particles % ElementIndex( No )
-      
       ! We only need to find the right element, path is not of importance
       InitLocation = ( Status < PARTICLE_LOCATED ) 
-      Rfin(1:dim) = GetParticleCoord( Particles, No, 0 )
       ElementIndex = GetParticleElement( Particles, No )
+      Rfin(1:dim) = GetParticleCoord( Particles, No )
       
-      ! Note that if we want proper collisions with the boundary done within this
-      ! routine the initial coordinates should really not be rfin!!
+      ! Locate particles using the mid-point of the current element as the 
+      ! reference point for finding face intersections.
       !---------------------------------------------------------------------------
-      CALL LocateParticleInMeshMarch(ElementIndex, Rfin, Rfin, InitLocation, &
-          Status, FaceIndex, Lambda )
+      CALL LocateParticleInMeshMarch(ElementIndex, Rinit, Rfin, InitLocation, &
+          Status, .FALSE., FaceIndex, Lambda )
       
-      Particles % FaceIndex(No) = FaceIndex
+      ! If a boundary face is passed then repeat the process more diligently. 
+      ! Note that if we want proper collisions they should be implemented below
+      !----------------------------------------------------------------------------
+      IF( AccurateAtFace .AND. FaceIndex > 0 ) THEN
+        Rinit = GetParticlePrevCoord( Particles, No )
+
+	FaceIndex0 = FaceIndex
+        ElementIndex0 = ElementIndex
+	Status0 = Status
+	Rfin0 = Rfin        
+
+        ElementIndex = GetParticleElement( Particles, No )
+        Rfin(1:dim) = GetParticleCoord( Particles, No )
+
+        CALL LocateParticleInMeshMarch(ElementIndex, Rinit, Rfin, InitLocation, &
+            Status, .TRUE., FaceIndex, Lambda )
+
+        IF( FaceIndex > 0 ) THEN
+          CALL SetParticleCoord( Particles, No, Rfin  )        
+        ELSE
+          ! Currently it is assumed that if success with the second method is not obtained then
+          ! the particle is already sitting on the face observed by the more robust method. 
+          !-------------------------------------------------------------------------------------
+	  IF( .TRUE. ) THEN
+            CALL Warn('LocateParticles','Difference between robust and accurate?')
+            PRINT *,'Init:    ',Rinit(1:dim),No
+            PRINT *,'Fin:     ',GetParticleCoord( Particles, No )
+            PRINT *,'Robust:  ',ElementIndex0,Faceindex0,Rfin0(1:dim)
+            PRINT *,'Accurate:',ElementIndex,Faceindex,Rfin(1:dim)
+          END IF
+
+	  FaceIndex = FaceIndex0 
+	  ElementIndex = ElementIndex0
+	  Status = Status0
+          CALL SetParticleCoord( Particles, No, Rfin0  )        
+        END IF
+      END IF
+
+      Particles % ElementIndex(No) = ElementIndex       
       Particles % Status(No) = Status
-      Particles % ElementIndex(No) = ElementIndex
+      Particles % FaceIndex(No) = FaceIndex
     END DO
+
+    VisitedTimes = VisitedTimes + 1
     
   END SUBROUTINE LocateParticles
   
@@ -2159,13 +2534,14 @@ CONTAINS
   ! Given the element & global coordinates returns the local coordinates.
   ! The idea of this routine is to transparently block the local coordinate
   ! search from the user by directly giving the basis function values related
-  ! to a global coordinate.
+  ! to a global coordinate. Sloppy tolerances are used since we *should* 
+  ! have already located the element.
   !--------------------------------------------------------------------------
   FUNCTION ParticleElementInfo( CurrentElement, GlobalCoord, &
       SqrtElementMetric, Basis, dBasisdx ) RESULT ( stat )
     
     TYPE(Element_t), POINTER :: CurrentElement
-    REAL(KIND=dp) :: GlobalCoord(:), SqrtElementMetric
+    REAL(KIND=dp) :: GlobalCoord(:), SqrtElementMetric, LocalDistance
     REAL(KIND=dp) :: Basis(:)
     REAL(KIND=dp), OPTIONAL :: dBasisdx(:,:)
     LOGICAL :: Stat
@@ -2180,13 +2556,22 @@ CONTAINS
     CALL GetElementNodes(ElementNodes,CurrentElement)
     
     Stat = PointInElement( CurrentElement, ElementNodes, &
-        GlobalCoord, LocalCoord ) 
-    IF( .NOT. Stat ) THEN
-      CALL Warn('GlobalElementInfo','Should have found the node!')
+        GlobalCoord, LocalCoord, GlobalEps = 1.0d-1, LocalEps = 1.0d-1, &
+	LocalDistance = LocalDistance ) 
+    IF( .NOT. Stat .OR. LocalDistance > 1.0d-2) THEN
+      IF( .NOT. Stat ) THEN
+        CALL Warn('GlobalElementInfo','Should have found the node!')
+      ELSE
+        CALL Warn('GlobalElementInfo','Distance from element higher than expected!')
+      END IF
+      PRINT *,'LocalDistance:',LocalDistance,'Element:',CurrentElement % ElementIndex
       PRINT *,'GlobalCoord:',GlobalCoord
+      PRINT *,'Nodes X:',ElementNodes % x(1:n)
+      PRINT *,'Nodes Y:',ElementNodes % y(1:n)
+      PRINT *,'Nodes Z:',ElementNodes % z(1:n)
       RETURN
     END IF
-    
+
     u = LocalCoord(1)
     v = LocalCoord(2)
     w = LocalCoord(3)
@@ -2211,6 +2596,7 @@ CONTAINS
     REAL(KIND=dp) :: Basis(:), Velo(:) 
     REAL(KIND=dp), OPTIONAL :: dBasisdx(:,:), GradVelo(:,:)
     
+    TYPE(Valuelist_t), POINTER :: Params
     INTEGER, POINTER :: LocalPerm(:)
     REAL(KIND=dp), POINTER :: LocalVelo(:,:)
     INTEGER, POINTER :: NodeIndexes(:)
@@ -2218,16 +2604,20 @@ CONTAINS
     INTEGER :: VeloFieldDofs
     REAL(KIND=dp) :: SumBasis
     INTEGER :: i,j,k,n,npos,ind,dim
-    LOGICAL :: GotIt
+    LOGICAL :: GotIt, InterfaceNodes
     LOGICAL :: Visited
     
     
-    SAVE :: Visited, Dim, LocalVelo, LocalPerm
+    SAVE :: Visited, Dim, LocalVelo, LocalPerm, InterfaceNodes
     
     IF(.NOT. Visited ) THEN
       Mesh => GetMesh()
+      Params => GetSolverParams()
       n = Mesh % MaxElementNodes
       ALLOCATE( LocalPerm(n), LocalVelo(n,3) )
+      
+      InterfaceNodes = GetLogical( Params,'Interface Nodes',GotIt)
+
       LocalPerm = 0
       LocalVelo = 0.0_dp
       Dim = Mesh % MeshDim
@@ -2255,21 +2645,29 @@ CONTAINS
     IF( npos == n ) THEN
       DO i=1,n
         j = LocalPerm(i)
-        LocalVelo(i,1:dim) = Var % Values( VeloFieldDofs*(j-1)+1:dim)
+	DO k=1,dim
+          LocalVelo(i,k) = Var % Values( VeloFieldDofs*(j-1)+k)
+        END DO
       END DO
     ELSE    
+      IF(.NOT. InterfaceNodes ) RETURN
+
       SumBasis = 0.0_dp
       DO i=1,n
         j = LocalPerm(i)
         IF( j > 0 ) THEN
           SumBasis = SumBasis + Basis(i)
-          LocalVelo(i,1:dim) = Var % Values( VeloFieldDofs*(j-1)+1:dim)
+          DO k=1,dim
+            LocalVelo(i,k) = Var % Values( VeloFieldDofs*(j-1)+k)
+          END DO
         ELSE
+          Basis(i) = 0.0_dp
           LocalVelo(i,1:dim) = 0.0_dp
         END IF
       END DO
     END IF
     
+
     DO i=1,dim
       Velo(i) = SUM( Basis(1:n) * LocalVelo(1:n,i) )
       IF( PRESENT( GradVelo ) ) THEN
@@ -2280,10 +2678,12 @@ CONTAINS
     END DO
     
     IF( npos < n ) THEN
-      Velo = Velo / SumBasis
-      GradVelo = GradVelo / SumBasis
+      Velo(1:dim) = Velo(1:dim) / SumBasis
+      IF( PRESENT( GradVelo ) ) THEN
+        GradVelo(:,1:dim) = GradVelo(:,1:dim) / SumBasis
+      END IF
     END IF
-    
+   
   END SUBROUTINE GetVectorFieldInMesh
 
 
@@ -2323,13 +2723,17 @@ CONTAINS
     IF(.NOT. ASSOCIATED( Var ) ) RETURN
     
     n = CurrentElement % TYPE % NumberOfNodes
-    LocalPerm(1:n) = Var % Perm( CurrentElement % NodeIndexes )
-    
-    IF( .NOT. ALL ( LocalPerm(1:n) > 0 )) RETURN
-    
-    LocalField(1:n) = Var % Values( LocalPerm(1:n) )
+    IF( ASSOCIATED( Var % Perm ) ) THEN
+      LocalPerm(1:n) = Var % Perm( CurrentElement % NodeIndexes )
+      IF( .NOT. ALL ( LocalPerm(1:n) > 0 )) RETURN
+      LocalField(1:n) = Var % Values( LocalPerm(1:n) )
+    ELSE
+      ! Some variables do not have permutation, most importantly the node coordinates
+      LocalField(1:n) = Var % Values( CurrentElement % NodeIndexes )
+    END IF
+
     Pot = SUM( Basis(1:n) * LocalField(1:n) )
-    
+
     IF( PRESENT( GradPot ) ) THEN
       DO i=1,dim
         GradPot(i) = SUM( dBasisdx(1:n,i) * LocalField(1:n) )
@@ -2350,7 +2754,7 @@ CONTAINS
   FUNCTION GetParticleElementIntersection(Particles,BulkElement, Basis, Coord, &
       Radius, BulkElement2, VolumeFraction, AreaFraction ) RESULT ( Intersect )
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     TYPE(Element_t), POINTER :: BulkElement, BulkElement2
     REAL(KIND=dp) :: Basis(:)
     REAL(KIND=dp) :: Coord(3), Radius, VolumeFraction
@@ -2551,7 +2955,7 @@ CONTAINS
   !-------------------------------------------------------------
   SUBROUTINE CreateNeighbourList( Particles ) 
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     
     INTEGER :: ElementIndex, dim
     REAL(KIND=dp) :: Coord(3), dist, mindist
@@ -2647,7 +3051,7 @@ CONTAINS
   
 
   SUBROUTINE ExchangeNeighbourParticles(Particles)
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     !---------------------------------------------------------
     INTEGER i,j,k,l,m,n,dim,NoPartitions, node, &
         Proc, ierr, status(MPI_STATUS_SIZE), n_part, nReceived
@@ -2884,7 +3288,7 @@ CONTAINS
   FUNCTION GetNextNeighbour( Particles, No ) RESULT ( No2 )
     IMPLICIT NONE
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER :: No, No2
     
     INTEGER :: PrevNo = 0
@@ -2961,7 +3365,7 @@ CONTAINS
   ! Initialize the time for next time integration step
   !---------------------------------------------------------
   SUBROUTINE ParticleInitializeTime( Particles, No )
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER, OPTIONAL :: No
     
     IF( PRESENT( No ) ) THEN
@@ -2971,26 +3375,74 @@ CONTAINS
     END IF
     
   END SUBROUTINE ParticleInitializeTime
-  
+
+
+
+
+
+  !-------------------------------------------------------------
+  ! Just advance the coordinate for Runge-Kutta type of schemes
+  !-------------------------------------------------------------
+  SUBROUTINE ParticleAdvanceFraction( Particles, dtime, ind )
+    TYPE(Particle_t), POINTER :: Particles
+    REAL(KIND=dp) :: dtime
+    INTEGER, OPTIONAL :: ind
+    
+    REAL(KIND=dp) :: dCoord(3), ds
+    INTEGER :: dim, Status, No, NoStart, NoFin
+
+    dim = Particles % dim
+    IF( PRESENT( ind ) ) THEN
+      NoStart = ind
+      NoFin = ind
+    ELSE
+      NoStart = 1
+      NoFin = Particles % NumberOfParticles
+    END IF
+
+    DO No=NoStart,NoFin
+      Status = Particles % Status(No)
+      
+      IF ( Status >= PARTICLE_LOST ) CYCLE
+      IF ( Status <= PARTICLE_INITIATED ) CYCLE
+      IF ( Status == PARTICLE_WALLBOUNDARY ) CYCLE      
+      IF ( Status == PARTICLE_FIXEDCOORD ) CYCLE
+
+      Particles % PrevCoordinate(No,:) = Particles % Coordinate(No,:)
+      Particles % PrevVelocity(No,:) = Particles % Velocity(No,:)
+
+      dCoord(1:dim) = dtime * Particles % Velocity(No,:)
+      Particles % Coordinate(No,:) = Particles % Coordinate(No,:) + dCoord(1:dim)
+
+      ds = SQRT( SUM( dCoord(1:dim)**2 ) )
+      Particles % Distance(No) = Particles % Distance(No) + ds    
+    END DO
+
+  END SUBROUTINE ParticleAdvanceFraction
+
+
 
   !---------------------------------------------------------
   ! Take a time step
   !---------------------------------------------------------
-  SUBROUTINE ParticleAdvanceTime( Particles, dtime, ind )
-    TYPE(Particle_t) :: Particles
+  SUBROUTINE ParticleAdvanceTime( Particles, dtime, RungeKutta, ind )
+    TYPE(Particle_t), POINTER :: Particles
     REAL(KIND=dp) :: dtime
+    LOGICAL, OPTIONAL :: RungeKutta
     INTEGER, OPTIONAL :: ind
     
-    REAL(KIND=dp) :: Drag, Mass, ds, dCoord(3)
+    REAL(KIND=dp) :: Drag, Mass, ds, dCoord(3),Coord(3)
     INTEGER :: dim
     INTEGER :: Status, TimeOrder, No
     TYPE(ValueList_t), POINTER :: Params
     INTEGER :: NoStart, NoFin
-    LOGICAL :: Found, Visited = .FALSE.
+    LOGICAL :: Found, Visited = .FALSE.,RK2
     
-    SAVE TimeOrder, dim, Mass, Drag, Visited
+    SAVE TimeOrder, dim, Mass, Drag, Visited, dCoord, Coord
+
     
-    
+    Particles % dtime = dtime 
+
     IF(.NOT. Visited ) THEN
       Params => GetSolverParams()
       TimeOrder = Particles % TimeOrder
@@ -3000,17 +3452,16 @@ CONTAINS
         Mass = ListGetConstReal( Params,'Particle Mass',Found)
         IF(.NOT. Found) CALL Fatal('ParticleAdvanceTime',&
             '> Particle Mass < should be given!')
-      ELSE 
+      ELSE IF( TimeOrder == 1 ) THEN
         Drag = ListGetConstReal( Params,'Particle Drag Coefficient',Found)
         IF(.NOT. Found) CALL Fatal('ParticleAdvanceTime',&
             '> Particle Drag Coefficient < should be given!')
       END IF
       
       dCoord = 0.0_dp
+      Coord = 0.0_dp
       Visited = .TRUE.
     END IF
-    
-
 
     IF( PRESENT( ind ) ) THEN
       NoStart = ind
@@ -3018,20 +3469,20 @@ CONTAINS
     ELSE
       NoStart = 1
       NoFin = Particles % NumberOfParticles
-
-      IF(.TRUE.) THEN
-        CALL DeleteLostParticles(Particles)
-      END IF
     END IF
 
+    RK2 = .FALSE.
+    IF( PRESENT( RungeKutta ) ) RK2 = RungeKutta
 
-    
+
     DO No=NoStart,NoFin
+
       Status = Particles % Status(No)
       
       IF ( Status >= PARTICLE_LOST ) CYCLE
       IF ( Status <= PARTICLE_INITIATED ) CYCLE
- 
+      IF ( Status == PARTICLE_WALLBOUNDARY ) CYCLE
+
 ! This is just for debugging so commented away for the moment 
 !      IF( ANY( ISNAN( Particles % Force(No,:) ) ) ) THEN
 !        PRINT *,'dCoord',dCoord(1:dim),dtime
@@ -3047,15 +3498,21 @@ CONTAINS
       ELSE IF( TimeOrder == 2 ) THEN
         Particles % Velocity(No,:) = Particles % Velocity(No,:) + &
             dtime * Particles % Force(No,:) / Mass
-      ELSE
+      ELSE IF( TimeOrder == 1 ) THEN
         Particles % Velocity(No,:) = Particles % Force(No,:) / Drag      
       END IF
-      
-      dCoord(1:dim) = dtime * Particles % Velocity(No,:)
-      Particles % Coordinate(No,:) = Particles % Coordinate(No,:) + &
-          dCoord(1:dim)
-      
-      ds = SQRT( SUM( (dCoord(1:dim))**2 ) )
+
+      dCoord(1:dim) = dtime * Particles % Velocity(No,:) 
+      IF( RK2 ) THEN
+        dCoord(1:dim) = dCoord(1:dim ) - 0.5_dp * dtime * Particles % PrevVelocity(No,:) 
+      END IF
+
+      Particles % PrevCoordinate(No,:) = Particles % Coordinate(No,:)
+      Particles % PrevVelocity(No,:) = Particles % Velocity(No,:)
+
+      Particles % Coordinate(No,:) = Particles % Coordinate(No,:) + dCoord(1:dim)
+
+      ds = SQRT( SUM( dCoord(1:dim)**2 ) )
       Particles % Distance(No) = Particles % Distance(No) + ds    
       
       Particles % Force(No,:)= 0.0_dp
@@ -3072,7 +3529,7 @@ CONTAINS
   !---------------------------------------------------------------    
   SUBROUTINE ParticleBoxPeriodic( Particles, ind )
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER, OPTIONAL :: ind
     
     TYPE(Solver_t), POINTER :: Solver
@@ -3162,7 +3619,7 @@ CONTAINS
   !---------------------------------------------------------------    
   SUBROUTINE ParticleBoxContact(Particles, ind)
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     INTEGER, OPTIONAL :: ind
     
     TYPE(Solver_t), POINTER :: Solver
@@ -3414,7 +3871,7 @@ CONTAINS
   !-------------------------------------------------------------------------
   SUBROUTINE ParticleOutput( Particles ) 
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     LOGICAL :: Visited = .FALSE.
     TYPE(ValueList_t), POINTER :: Params     
     CHARACTER(LEN=MAX_NAME_LEN) :: FileFormat
@@ -3450,7 +3907,7 @@ CONTAINS
   !-------------------------------------------------------------------------
   SUBROUTINE ParticleOutputTable( Particles ) 
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     
     TYPE(Variable_t), POINTER :: TimeVar
     TYPE(ValueList_t), POINTER :: Params 
@@ -3770,7 +4227,7 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE CreateParticleVariable( Particles, Name, DOFs, Category, Output ) 
 !------------------------------------------------------------------------------
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     CHARACTER(LEN=*) :: Name
     INTEGER, OPTIONAL :: DOFs
     INTEGER, OPTIONAL :: Category
@@ -3783,9 +4240,15 @@ CONTAINS
     INTEGER :: NoParticles
 !------------------------------------------------------------------------------
 
+    NoParticles = Particles % MaxNumberOfParticles
+    IF( NoParticles == 0 ) THEN
+      CALL Warn('CreateParticleVariable','No particles present!')
+    END IF	
+
     Variables => Particles % Variables
     IF ( .NOT.ASSOCIATED(Variables) ) THEN
       ALLOCATE(Variables)
+      Particles % Variables => Variables
       ptr => Variables
     ELSE
       ALLOCATE( ptr )
@@ -3799,9 +4262,11 @@ CONTAINS
       ptr1 => Variables
       ptr2 => Variables
       DO WHILE( ASSOCIATED( ptr1 ) )
-        IF ( ptr % Name == ptr1 % Name ) THEN
-          DEALLOCATE( ptr )
-          RETURN
+	IF( ptr % NameLen == ptr1 % NameLen ) THEN
+          IF ( ptr % Name == ptr1 % Name ) THEN	
+            DEALLOCATE( ptr )
+            RETURN
+          END IF
         END IF
         ptr2 => ptr1
         ptr1 => ptr1 % Next
@@ -3816,12 +4281,13 @@ CONTAINS
     ptr % Valid  = .TRUE.
     ptr % Output = .TRUE.
     ptr % ValuesChanged = .TRUE.
-    
+    ptr % Category = 0    
+
     IF( PRESENT( DOFs ) ) ptr % DOFs = DOFs
     IF ( PRESENT( Category ) ) ptr % Category = Category
     IF ( PRESENT( Output ) ) ptr % Output = Output
     
-    NoParticles = Particles % MaxNumberOfParticles
+    NULLIFY( Values )
     ALLOCATE( Values( NoParticles * ptr % Dofs ) )
     Values = 0.0_dp
     ptr % Values => Values
@@ -3836,7 +4302,7 @@ CONTAINS
 !------------------------------------------------------------------------------
   FUNCTION GetParticleVariable( Particles, Name ) RESULT ( Var )
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     CHARACTER(LEN=*) :: Name
     TYPE(ParticleVariable_t), POINTER :: Var
 !------------------------------------------------------------------------------
@@ -3848,16 +4314,15 @@ CONTAINS
     k = StringToLowerCase( str,Name,.TRUE. )
     
     Tmp => Particles % Variables
+
     DO WHILE( ASSOCIATED(tmp) )
       IF ( Tmp % NameLen == k ) THEN
-        IF ( Tmp % Name(1:k) == str(1:k) ) THEN
-          
+        IF ( Tmp % Name(1:k) == str(1:k) ) THEN          
           IF ( Tmp % Valid ) THEN
             Var => Tmp
             RETURN
           END IF
-          EXIT
-          
+          EXIT          
         END IF
       END IF
       Tmp => Tmp % Next
@@ -3876,7 +4341,7 @@ CONTAINS
     USE ElementDescription
     
     IMPLICIT NONE
-    TYPE(Particle_t) :: Particles  
+    TYPE(Particle_t), POINTER :: Particles  
     
     TYPE(ValueList_t),POINTER :: Params
     INTEGER, SAVE :: nTime = 0
@@ -4529,7 +4994,7 @@ CONTAINS
 !-------------------------------------------------------------------------
   FUNCTION GetParticleTimeStep(Particles, InitInterval, No, tinit ) RESULT ( dt )
     
-    TYPE(Particle_t) :: Particles
+    TYPE(Particle_t), POINTER :: Particles
     LOGICAL :: InitInterval
     INTEGER, OPTIONAL :: No
     REAL(KIND=dp), OPTIONAL :: tinit
@@ -4556,7 +5021,8 @@ CONTAINS
       ! Constraint by relative step size taken (1 means size of the element)
       hgoal = GetCReal( Params,'Timestep Courant Number',HGoalIs)
       
-      Nstep = GetInteger( Params,'Max Timestep Intervals',NstepIs)
+      Nstep = GetInteger( Params,'Max Timestep Intervals',GotIt)
+      IF(.NOT. GotIt) Nstep = 1
       
       ! Constraint timestep directly
       dtmax = GetCReal( Params,'Max Timestep Size',GotIt)
@@ -4585,14 +5051,14 @@ CONTAINS
     ! These generally depend on the velocity field and mesh
     !--------------------------------------------------------------------
     IF( DtIs ) THEN
-      dt = dt0
+      dt = dt0 
     ELSE IF( DsGoalIs ) THEN
       CharSpeed = CharacteristicSpeed( Particles, No )     
       dt = dsgoal / CharSpeed
     ELSE IF( HgoalIs ) THEN
       CharTime = CharacteristicElementTime( Particles, No )     
       dt = Hgoal * CharTime ! ElementH / Speed
-    ELSE IF( tfinIs .AND. NstepIs ) THEN
+    ELSE IF( tfinIs ) THEN
       dt = tfin / Nstep
     ELSE
       CALL Fatal('GetParticlesTimeStep','Cannot determine timestep size!')
@@ -4610,7 +5076,6 @@ CONTAINS
     END IF
     tprev = tprev + dt
     
-  
   END FUNCTION GetParticleTimeStep
 
 
@@ -4629,7 +5094,7 @@ CONTAINS
     USE ElementDescription
     
     IMPLICIT NONE
-    TYPE(Particle_t) :: Particles  
+    TYPE(Particle_t), POINTER :: Particles  
     INTEGER :: GridExtent(6)
     REAL(KIND=dp) :: GridOrigin(3), GridDx(3)
     INTEGER, POINTER :: GridIndex(:,:,:)
