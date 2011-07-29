@@ -1,8 +1,9 @@
 elmerfem (6.1.0.svn.5272.dfsg-1) unstable; urgency=low
 
   * New upstream revision, switching to upstream version number.
+  * Bumped Standards-Version.
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Fri, 29 Jul 2011 11:02:58 -0400
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Fri, 29 Jul 2011 11:27:05 -0400
 
 elmerfem (5.5.0.svn.5210.dfsg-1) unstable; urgency=low
 
