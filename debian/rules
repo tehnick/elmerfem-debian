@@ -89,6 +89,8 @@ patch:
 # In a bit of a hack, the "build" target configures, builds and installs, so
 # modules can depend on each other
 build: stamp-build
+build-arch: stamp-build
+build-indep: stamp-build
 stamp-build: patch
 	dh_testdir
 	for backupfile in $(BACKUP_FILES); do \
