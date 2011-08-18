@@ -1,5 +1,5 @@
-Have ElmerGUI use PythonQt, build against Debian's default Python version, and
-update VTK version.
+Have ElmerGUI use PythonQt, build against Debian's default Python version,
+update VTK version, and adjust to new QWT.
 
 Index: elmerfem/ElmerGUI/ElmerGUI.pri
 ===================================================================
@@ -23,6 +23,18 @@ Index: elmerfem/ElmerGUI/ElmerGUI.pri
     PY_LIBPATH = /usr/lib
 -   PY_LIBS = -lpython2.5
 +   PY_LIBS = -l$$(DEB_PY_VERSION)
+ }
+ 
+ win32 {
+@@ -54,9 +54,9 @@
+ # QWT library:
+ #------------------------------------------------------------------------------
+ unix {
+-  QWT_INCLUDEPATH = /usr/include/qwt-qt4
++  QWT_INCLUDEPATH = /usr/include/qwt
+   QWT_LIBPATH = /usr/lib
+-  QWT_LIBS = -lqwt-qt4
++  QWT_LIBS = -lqwt
  }
  
  win32 {

@@ -1,3 +1,10 @@
+elmerfem (6.1.0.svn.5272.dfsg-2) unstable; urgency=low
+
+  * Changed libqwt5-qt4-dev Build-Depends to libqwt-dev, and adjusted
+    ElmerGUI.pri to use its include path and library name (closes: #638214).
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Thu, 18 Aug 2011 11:05:54 -0400
+
 elmerfem (6.1.0.svn.5272.dfsg-1) unstable; urgency=low
 
   * New upstream revision, switching to upstream version number.
