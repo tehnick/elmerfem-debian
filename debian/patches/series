@@ -6,3 +6,4 @@ no-avcore.patch
 lib-link-order.patch
 ElmerGUI-no-strip.patch
 elmer-revision.patch
+libav_071.patch
