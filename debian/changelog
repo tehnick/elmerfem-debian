@@ -1,3 +1,9 @@
+elmerfem (6.1.0.svn.5396.dfsg-1) unstable; urgency=low
+
+  * New upstream revision.
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Sat, 01 Oct 2011 21:58:48 +0900
+
 elmerfem (6.1.0.svn.5272.dfsg-1) unstable; urgency=low
 
   * New upstream revision, switching to upstream version number.
