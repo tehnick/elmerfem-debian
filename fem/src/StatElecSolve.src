@@ -23,10 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  Electrostatics solver
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Juha Ruokolainen, Leila Puska, Antti Pursula, Peter Råback
 ! *  Email:   Juha.Ruokolainen@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -40,90 +36,16 @@
 
 
 !------------------------------------------------------------------------------
-SUBROUTINE StatElecSolver_Init( Model,Solver,dt,TransientSimulation)
-!------------------------------------------------------------------------------
-    USE DefUtils
-    IMPLICIT NONE
-!------------------------------------------------------------------------------
-    TYPE(Model_t)  :: Model
-    TYPE(Solver_t), TARGET :: Solver
-    LOGICAL ::  TransientSimulation
-    REAL(KIND=dp) :: dt
-!------------------------------------------------------------------------------
-    LOGICAL :: Found, Calculate
-    TYPE(ValueList_t), POINTER :: Params
-    CHARACTER(LEN=MAX_NAME_LEN) :: VariableName
-    INTEGER :: dim
-
-    Params => GetSolverParams()
-    dim = CoordinateSystemDimension()
-
-    IF (ListGetLogical(Params,'Calculate Electric Energy',Found)) &
-        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
-        'Electric Energy Density' )
-    
-    IF (ListGetLogical(Params,'Calculate Surface Charge',Found)) &
-        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
-        'Surface Charge Density' )
-    
-    Calculate = ListGetLogical(Params,'Calculate Electric Field',Found)
-    IF( Calculate ) THEN
-      IF( Dim == 2 ) THEN
-        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
-            'elfield[Electric Field:2]' )
-      ELSE
-        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
-            'elfield[Electric Field:3]' )
-      END IF
-    END IF
-    
-    Calculate = ListGetLogical(Params,'Calculate Electric Flux',Found)
-    IF( Calculate ) THEN
-      IF( Dim == 2 ) THEN
-        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
-            'elflux[Electric Flux:2]' )
-      ELSE
-        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
-            'elflux[Electric Flux:3]' )
-      END IF
-    END IF
-
-!------------------------------------------------------------------------------
-END SUBROUTINE StatElecSolver_Init
-!------------------------------------------------------------------------------
-
-
-
-
-
-SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
-!------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Solve the Poisson equation for the electric potential and compute the 
-!  electric field, flux, energy and capacitance
+!>  Solves the Poisson equation for the electric potential and compute the 
+!>  electric field, flux, energy and capacitance as requested using nodal averaging.
 !
 !  NOTE: The permittivity of vacuum is divided into the right hand side of the 
 !        equation. This has to be accounted for in setting the body forces and
 !        assigning flux boundary conditions
-!
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear equation solver options
-!
-!  DOUBLE PRECISION :: dt,
-!     INPUT: Timestep size for time dependent simulations
-!
-!  LOGICAL :: TransientSimulation
-!     INPUT: Steady state or transient simulation
-!
-!******************************************************************************
-
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
+SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
+!------------------------------------------------------------------------------
   USE Types
   USE Lists 
   USE Integration
@@ -387,8 +309,6 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
   EquationName = ListGetString( Params, 'Equation' )
   Norm = Solver % Variable % Norm
   
-  at  = CPUTime()
-  at0 = RealTime()
   CALL InitializeToZero( StiffMatrix, ForceVector )
 !------------------------------------------------------------------------------
   CALL Info( 'StatElecSolve', '-------------------------------------',Level=4 )
@@ -396,6 +316,9 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
   CALL Info( 'StatElecSolve', '-------------------------------------',Level=4 )
 
   DO iter = 1, NonlinearIter
+
+     at  = CPUTime()
+     at0 = RealTime()
 
      IF ( NonlinearIter > 1 ) THEN
         WRITE( Message, '(a,I4)' ) 'Electrostatic iteration', iter
@@ -695,20 +618,17 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
     END DO   ! Neumann BCs
 !------------------------------------------------------------------------------
 
-    CALL SetNodalLoads( Model,StiffMatrix,ForceVector, &
-        Componentname(Solver % Variable),1,1,PotentialPerm )       
-
 !------------------------------------------------------------------------------
 !    FinishAssembly must be called after all other assembly steps, but before
 !    Dirichlet boundary settings. Actually no need to call it except for
 !    transient simulations.
 !------------------------------------------------------------------------------
     CALL FinishAssembly( Solver,ForceVector )
+
 !------------------------------------------------------------------------------
 !    Dirichlet boundary conditions
 !------------------------------------------------------------------------------
-    CALL SetDirichletBoundaries( Model,StiffMatrix,ForceVector, &
-        ComponentName(Solver % Variable),1,1,PotentialPerm )       
+    CALL DefaultDirichletBCs()
    
     IF(CalculateCapMatrix) THEN 
       CALL SetPermutationBoundaries( Model, StiffMatrix, ForceVector, &
@@ -722,8 +642,6 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
 !    Solve the system and we are done.
 !------------------------------------------------------------------------------
     st = CPUTime()
-!    CALL SolveSystem( StiffMatrix, ParMatrix, ForceVector, &
-!        Potential, Norm, 1, Solver )
 
     Norm = DefaultSolve()
     RelativeChange = Solver % Variable % NonlinChange
@@ -921,7 +839,7 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
 
 
 !------------------------------------------------------------------------------
-! Compute the Electric Flux, Electric Field and Electric Energy at model nodes
+!> Compute the Electric Flux, Electric Field and Electric Energy at model nodes.
 !------------------------------------------------------------------------------
   SUBROUTINE GeneralElectricFlux( Model, Potential, Reorder )
 !------------------------------------------------------------------------------
@@ -1503,12 +1421,12 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
 
 
 !------------------------------------------------------------------------------
+!>  To compute the capacitance matrix for m bodies, also m permutations are 
+!> required. This subroutine sets at permutation i, the body i to 1, 
+!> and all else to 0.
+!------------------------------------------------------------------------------
   SUBROUTINE SetPermutationBoundaries( Model, StiffMatrix, ForceVector, &
       Name, Perm, Permutation)
-!------------------------------------------------------------------------------
-!  To compute the capacitance matrix for m bodies, m*(m+1)/2
-! different permutations are required. This subroutine makes different
-! permutation every time when its called.
 !------------------------------------------------------------------------------
 
     TYPE(Model_t) :: Model
@@ -1522,7 +1440,7 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
     INTEGER, POINTER :: NodeIndexes(:)
     INTEGER :: i,j,k,n,t,k1,k2, Body
     LOGICAL :: GotIt
-    REAL(KIND=dp) :: Work(Model % MaxElementNodes),s
+    REAL(KIND=dp) :: val,s
 
 !------------------------------------------------------------------------------
     
@@ -1548,33 +1466,13 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
           
           IF ( gotIt ) THEN           
             IF(Body == Permutation) THEN
-              Work = 1.0d0
+              val = 1.0_dp
             ELSE 
-              Work(1:n) = 0.0d0
+              val = 0.0d0
             END IF
 
             DO j=1,n
-              k = Perm(NodeIndexes(j))
-              IF ( k > 0 ) THEN
-
-                IF ( StiffMatrix % FORMAT == MATRIX_SBAND ) THEN
-                  
-                  CALL SBand_SetDirichlet( StiffMatrix,ForceVector,k,Work(j) )
-                  
-                ELSE IF ( StiffMatrix % FORMAT == MATRIX_CRS .AND. &
-                    StiffMatrix % Symmetric ) THEN
-                  
-                  CALL CRS_SetSymmDirichlet(StiffMatrix,ForceVector,k,Work(j))
-                  
-                ELSE
-                  
-                  s = StiffMatrix % Values(StiffMatrix % Diag(k))
-                  ForceVector(k) = Work(j) * s
-                  CALL ZeroRow( StiffMatrix,k )
-                  CALL SetMatrixElement( StiffMatrix,k,k,1.0d0*s )
-                  
-                END IF
-              END IF
+	      CALL SetDirichletPoint( StiffMatrix, ForceVector, 1, 1, Perm, NodeIndexes(j), val )
             END DO
 
           END IF
@@ -1590,12 +1488,6 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
    SUBROUTINE StatElecBoundary( BoundaryMatrix, BoundaryVector, &
         LoadVector, Alpha, Beta, Element, n, Nodes )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Return element local matrices and RSH vector for boundary conditions
-!  of diffusion equation: 
-!
-!  ARGUMENTS:
 !
 !  REAL(KIND=dp) :: BoundaryVector(:)
 !     OUTPUT: RHS vector
@@ -1616,7 +1508,7 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
 !  TYPE(Nodes_t) :: Nodes
 !       INPUT: Element node coordinates
 !
-!******************************************************************************
+!------------------------------------------------------------------------------
 
      REAL(KIND=dp) :: BoundaryMatrix(:,:), BoundaryVector(:), LoadVector(:)
 
@@ -1698,6 +1590,64 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
  END SUBROUTINE StatElecSolver
 !------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+!> Initialization of the primary solver, i.e. StatElecSolver.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
+SUBROUTINE StatElecSolver_Init( Model,Solver,dt,TransientSimulation)
+!------------------------------------------------------------------------------
+    USE DefUtils
+    IMPLICIT NONE
+!------------------------------------------------------------------------------
+    TYPE(Model_t)  :: Model
+    TYPE(Solver_t), TARGET :: Solver
+    LOGICAL ::  TransientSimulation
+    REAL(KIND=dp) :: dt
+!------------------------------------------------------------------------------
+    LOGICAL :: Found, Calculate
+    TYPE(ValueList_t), POINTER :: Params
+    CHARACTER(LEN=MAX_NAME_LEN) :: VariableName
+    INTEGER :: dim
+
+    Params => GetSolverParams()
+    dim = CoordinateSystemDimension()
+
+    IF (ListGetLogical(Params,'Calculate Electric Energy',Found)) &
+        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
+        'Electric Energy Density' )
+    
+    IF (ListGetLogical(Params,'Calculate Surface Charge',Found)) &
+        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
+        'Surface Charge Density' )
+    
+    Calculate = ListGetLogical(Params,'Calculate Electric Field',Found)
+    IF( Calculate ) THEN
+      IF( Dim == 2 ) THEN
+        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
+            'elfield[Electric Field:2]' )
+      ELSE
+        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
+            'elfield[Electric Field:3]' )
+      END IF
+    END IF
+    
+    Calculate = ListGetLogical(Params,'Calculate Electric Flux',Found)
+    IF( Calculate ) THEN
+      IF( Dim == 2 ) THEN
+        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
+            'elflux[Electric Flux:2]' )
+      ELSE
+        CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
+            'elflux[Electric Flux:3]' )
+      END IF
+    END IF
+
+!------------------------------------------------------------------------------
+END SUBROUTINE StatElecSolver_Init
+!------------------------------------------------------------------------------
+
 
 
 !------------------------------------------------------------------------------

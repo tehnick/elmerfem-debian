@@ -23,10 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  Module containing a solver for the KE-turbulence model.
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Juha Ruokolainen
 ! *  Email:   Juha.Ruokolainen@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -37,36 +33,10 @@
 ! *  Original Date: 08 Jun 1997
 ! *
 ! ****************************************************************************/
-!------------------------------------------------------------------------------
-   SUBROUTINE KESolver_Init( Model,Solver,dt,TransientSimulation )
-!------------------------------------------------------------------------------
-     USE DefUtils
 
-     IMPLICIT NONE
 !------------------------------------------------------------------------------
-
-     TYPE(Model_t)  :: Model
-     TYPE(Solver_t) :: Solver
-
-     REAL(KIND=dp) :: dt
-     LOGICAL :: TransientSimulation
-!------------------------------------------------------------------------------
-     TYPE(ValueList_t), POINTER :: SolverParams
-     LOGICAL :: Found
-     CHARACTER(LEN=MAX_NAME_LEN) :: str
-!------------------------------------------------------------------------------
-     SolverParams => GetSolverParams()
-
-     str = GetString( SolverParams,'Variable', Found )
-     IF ( .NOT. Found ) str = 'K-eps'
-     IF ( INDEX( str, '[' ) <= 0 ) THEN
-       CALL ListAddString( SolverParams, 'Variable', &
-             TRIM(str) // '[Kinetic Energy:1 Kinetic Dissipation:1]' )
-     END IF
-!------------------------------------------------------------------------------
-   END SUBROUTINE KESolver_Init
-!------------------------------------------------------------------------------
-
+!>  Subroutine for the k-e turbulence model.
+!> \ingroup Solvers
 !------------------------------------------------------------------------------
    SUBROUTINE KESolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
@@ -74,25 +44,8 @@
 
      IMPLICIT NONE
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Solve the K-Epsilon model equations !
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations
-!
-!******************************************************************************
      TYPE(Model_t)  :: Model
      TYPE(Solver_t) :: Solver
-
      REAL(KIND=dp) :: dt
      LOGICAL :: TransientSimulation
 !------------------------------------------------------------------------------
@@ -119,7 +72,7 @@
      INTEGER, POINTER :: FlowPerm(:),KinPerm(:)
 
      INTEGER :: NSDOFs,NewtonIter,NonlinearIter
-     REAL(KIND=dp) :: NonlinearTol,NewtonTol, Clip, V2FCp
+     REAL(KIND=dp) :: NewtonTol, Clip, V2FCp
 
      REAL(KIND=dp), POINTER :: KEpsilon(:),KineticDissipation(:), &
                    FlowSolution(:), ElectricCurrent(:), ForceVector(:)
@@ -204,9 +157,6 @@
 !------------------------------------------------------------------------------
 !    Do some additional initialization, and go for it
 !------------------------------------------------------------------------------
-     NonlinearTol = ListGetConstReal( Solver % Values, &
-        'Nonlinear System Convergence Tolerance',gotIt )
-
      NewtonTol = ListGetConstReal( Solver % Values, &
         'Nonlinear System Newton After Tolerance',gotIt )
 
@@ -496,11 +446,7 @@
          Solver % Variable % Values(2*k-0) = MAX( EVal, 1.0d-10 )
       END DO
 !------------------------------------------------------------------------------
-      IF ( PrevNorm + Norm /= 0.0d0 ) THEN
-         RelativeChange = 2.0d0 * ABS(PrevNorm-Norm) / (PrevNorm + Norm)
-      ELSE
-         RelativeChange = 0.0d0
-      END IF
+      RelativeChange = Solver % Variable % NonlinChange
 
       WRITE( Message,* ) 'Result Norm   : ',Norm
       CALL Info( 'KESolver', Message, Level = 4 )
@@ -510,7 +456,7 @@
       IF ( RelativeChange < NewtonTol .OR. &
               iter > NewtonIter ) NewtonLinearization = .TRUE.
 
-      IF ( RelativeChange < NonlinearTol ) EXIT
+      IF ( Solver % Variable % NonlinConverged == 1 ) EXIT
 !------------------------------------------------------------------------------
     END DO
 !------------------------------------------------------------------------------
@@ -870,6 +816,8 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+!> Wall law for the k-e turbulence model.
+!------------------------------------------------------------------------------
    SUBROUTINE EpsilonWall( Element, n, STIFF, FORCE )
 !------------------------------------------------------------------------------
      TYPE(Element_t), POINTER :: Element
@@ -988,3 +936,37 @@ CONTAINS
 !------------------------------------------------------------------------------
   END SUBROUTINE KESolver
 !------------------------------------------------------------------------------
+
+!------------------------------------------------------------------------------
+!> Initialization for the primary solver: KESolver
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
+   SUBROUTINE KESolver_Init( Model,Solver,dt,TransientSimulation )
+!------------------------------------------------------------------------------
+     USE DefUtils
+
+     IMPLICIT NONE
+!------------------------------------------------------------------------------
+
+     TYPE(Model_t)  :: Model
+     TYPE(Solver_t) :: Solver
+
+     REAL(KIND=dp) :: dt
+     LOGICAL :: TransientSimulation
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: SolverParams
+     LOGICAL :: Found
+     CHARACTER(LEN=MAX_NAME_LEN) :: str
+!------------------------------------------------------------------------------
+     SolverParams => GetSolverParams()
+
+     str = GetString( SolverParams,'Variable', Found )
+     IF ( .NOT. Found ) str = 'K-eps'
+     IF ( INDEX( str, '[' ) <= 0 ) THEN
+       CALL ListAddString( SolverParams, 'Variable', &
+             TRIM(str) // '[Kinetic Energy:1 Kinetic Dissipation:1]' )
+     END IF
+!------------------------------------------------------------------------------
+   END SUBROUTINE KESolver_Init
+!------------------------------------------------------------------------------
+

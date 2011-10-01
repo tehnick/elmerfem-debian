@@ -21,12 +21,6 @@
 ! *
 ! *****************************************************************************/
 !
-!/******************************************************************************
-! *
-! *  Module for reordering variables for bandwidth and/or gaussian elimination
-! *  fillin optimization. Also computes node to element connections (which
-! *  implies node to node connections, and thus the global matrix structure).
-! *
 ! ******************************************************************************
 ! *
 ! *  Authors: Juha Ruokolainen
@@ -40,8 +34,14 @@
 ! *
 ! *****************************************************************************/
 
-!-------------------------------------------------------------------------------
+!> \ingroup ElmerLib 
+!> \{
 
+!-------------------------------------------------------------------------------
+!>  Module for reordering variables for bandwidth and/or gaussian elimination
+!>  fillin optimization. Also computes node to element connections (which
+!>  implies node to node connections, and thus the global matrix structure).
+!-------------------------------------------------------------------------------
 MODULE BandwidthOptimize
 
 !-------------------------------------------------------------------------------
@@ -65,6 +65,8 @@ MODULE BandwidthOptimize
 
 CONTAINS
 
+!-------------------------------------------------------------------------------
+!> Subroutine for computing the bandwidth of a sparse matrix.
 !-------------------------------------------------------------------------------
    FUNCTION ComputeBandwidth( N, List, Reorder, &
                InvInitialReorder ) RESULT(HalfBandWidth)
@@ -98,6 +100,10 @@ CONTAINS
 !-------------------------------------------------------------------------------
 
 
+!-------------------------------------------------------------------------------
+!> Subroutine for reordering variables for bandwidth and/or gaussian elimination
+!> fillin optimization. Also computes node to element connections (which
+!>  implies node to node connections, and thus the global matrix structure).
 !-------------------------------------------------------------------------------
    FUNCTION OptimizeBandwidth( ListMatrix, Perm, InvInitialReorder, LocalNodes, &
              Optimize, UseOptimized, Equation ) RESULT( HalfBandWidth )
@@ -348,7 +354,8 @@ use spariterglobals
 !-------------------------------------------------------------------------------
    END FUNCTION OptimizeBandwidth
 !-------------------------------------------------------------------------------
- 
+
+!> \deprecated The LexiographicSearch for bandwidth optimization is not in use. Can it be removed? 
 #if 0
 NOT CURRENT AT THE MOMENT...
    FUNCTION LexiographicSearch(Model,Perm) RESULT(HalfBandWidth)
@@ -694,3 +701,5 @@ NOT CURRENT AT THE MOMENT...
 #endif
 
 END MODULE BandwidthOptimize
+
+!> \{ ElmerLib

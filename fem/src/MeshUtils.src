@@ -23,10 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  Mesh manipulation utilities for *Solver - routines
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Juha Ruokolainen, Peter Råback
 ! *  Email:   Juha.Ruokolainen@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -37,6 +33,13 @@
 ! *  Original Date: 02 Apr 2001
 ! *
 ! *****************************************************************************/
+
+!> \ingroup ElmerLib
+!> \{
+
+!------------------------------------------------------------------------------
+!>  Mesh manipulation utilities for *Solver - routines
+!------------------------------------------------------------------------------
 
 MODULE MeshUtils
 
@@ -50,6 +53,8 @@ MODULE MeshUtils
 
 CONTAINS
 
+!------------------------------------------------------------------------------
+!> Allocated one single element. 
 !------------------------------------------------------------------------------
    FUNCTION AllocateElement() RESULT( Element )
 !------------------------------------------------------------------------------
@@ -104,6 +109,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+!> Allocate mesh structure and return handle to it.
 !------------------------------------------------------------------------------
    FUNCTION AllocateMesh() RESULT(Mesh)
 !------------------------------------------------------------------------------
@@ -259,7 +265,7 @@ END SUBROUTINE GetMaxDefs
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-! Function to load mesh from disk
+!> Function to load mesh from disk.
 !------------------------------------------------------------------------------
   FUNCTION LoadMesh( Model, MeshDirPar, MeshNamePar,&
     BoundariesOnly, NumProcs,MyPE, Def_Dofs ) RESULT( Mesh )
@@ -1138,10 +1144,9 @@ END SUBROUTINE GetMaxDefs
 !------------------------------------------------------------------------------
 
 
+
 !------------------------------------------------------------------------------
   FUNCTION PeriodicProjector( Model, Mesh, This, Trgt, cdim ) RESULT(Projector)
-!------------------------------------------------------------------------------
-!******************************************************************************
 !------------------------------------------------------------------------------
     TYPE(Model_t) :: Model
     INTEGER :: This, Trgt
@@ -1615,9 +1620,9 @@ END SUBROUTINE GetMaxDefs
 
 
 !------------------------------------------------------------------------------
-! Generate element edge (faces in 3D) tables for given mesh.
-! Currently only for triangles and tetras. If mesh already
-! has edges do nothing.
+!> Generate element edge (faces in 3D) tables for given mesh.
+!> Currently only for triangles and tetras. If mesh already
+!> has edges do nothing.
 !------------------------------------------------------------------------------
   SUBROUTINE FindMeshEdges( Mesh, FindEdges)
 !------------------------------------------------------------------------------
@@ -1699,7 +1704,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-! 2D mesh edges.
+!> Find 2D mesh edges.
 !------------------------------------------------------------------------------
   SUBROUTINE FindMeshEdges2D( Mesh )
 !------------------------------------------------------------------------------
@@ -1874,7 +1879,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-! 3D mesh faces.
+!> Find 3D mesh faces.
 !------------------------------------------------------------------------------
   SUBROUTINE FindMeshFaces3D( Mesh )
     USE PElementMaps, ONLY : GetElementFaceMap
@@ -2187,7 +2192,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-! 3D mesh edges.
+!> Find 3D mesh edges.
 !------------------------------------------------------------------------------
   SUBROUTINE FindMeshEdges3D( Mesh )
     USE PElementMaps, ONLY : GetElementEdgeMap, GetElementFaceEdgeMap
@@ -2536,11 +2541,11 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-  SUBROUTINE FindNeighbourNodes( Mesh,Direction,Neighbours,EndNeighbours)
+!> Finds neigbours of the nodes in given direction.
+!> The algorithm finds the neighbour that within 45 degrees of the 
+!> given direction has the smallest distance.
 !------------------------------------------------------------------------------
-! Finds neigbours of the nodes in given direction.
-! The algorithm finds the neighbour that within 45 degrees of the 
-! given direction has the smallest distance.
+  SUBROUTINE FindNeighbourNodes( Mesh,Direction,Neighbours,EndNeighbours)
 !------------------------------------------------------------------------------
 
   TYPE(Mesh_t) , POINTER :: Mesh 
@@ -2745,10 +2750,13 @@ END SUBROUTINE FindNeighbourNodes
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-  FUNCTION SplitMeshEqual( Mesh,h ) RESULT( NewMesh )
+!> Split a mesh equally to smaller pieces by performing a uniform split.
+!> Also known as mesh multiplication. A 2D element splits into 4 elements of
+!> same form, and 3D element into 8 elements. 
+!> Currently works only
+!>   for linear elements.
 !------------------------------------------------------------------------------
-!   h/2 split of  given mesh, currently works only
-!   for linear and bilinear elements
+  FUNCTION SplitMeshEqual( Mesh,h ) RESULT( NewMesh )
 !------------------------------------------------------------------------------
     REAL(KIND=dp), OPTIONAL :: h(:)
     TYPE(Mesh_t), POINTER :: Mesh, NewMesh
@@ -4906,22 +4914,15 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+!>     Convert tetrahedral element to Ainsworth & Coyle type tetrahedron.
+!------------------------------------------------------------------------------
   SUBROUTINE ConvertToACTetra( Tetra )
-!******************************************************************************
-!
-!  DESCRIPTION:
-!     Convert tetrahedral element to Ainsworth & Coyle type tetrahedron.
-!
-!  ARGUMENTS:
-!    Type(Element_t) :: Tetra
-!      INOUT: Tetrahedral element to convert
-!    
-!******************************************************************************
 !------------------------------------------------------------------------------
     USE PElementMaps, ONLY : getTetraEdgeMap, getTetraFaceMap
     IMPLICIT NONE
     
-    TYPE(Element_t), POINTER :: Tetra
+    TYPE(Element_t), POINTER :: Tetra  !< Tetrahedral element to convert
+!------------------------------------------------------------------------------
     INTEGER :: i, globalMin, globalMax, globalMinI
     INTEGER, DIMENSION(3) :: face, globalFace
     INTRINSIC MIN, MAX, CSHIFT
@@ -4991,29 +4992,20 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+!>     Assign local number of edge to given boundary element. Also copies all 
+!>     p element attributes from element edge to boundary edge.
+!------------------------------------------------------------------------------
   SUBROUTINE AssignLocalNumber( EdgeElement, Element, Mesh )
-!******************************************************************************
-!
-!  DESCRIPTION:
-!     Assign local number of edge to given boundary element. Also copies all 
-!     p element attributes from element edge to boundary edge.
-!
-!  ARGUMENTS:
-!    Type(Element_t), POINTER :: EdgeElement, Element
-!      INOUT: Edge element to which assign local number and element 
-!        with some global numbering to use to assign local number.
-!    
-!    Type(Mesh_t), POINTER :: Mesh
-!      INPUT: Finite element mesh containing faces and edges.
-!
-!******************************************************************************
 !------------------------------------------------------------------------------
     USE PElementMaps, ONLY : getFaceEdgeMap 
     IMPLICIT NONE
+
     ! Parameters
-    TYPE(Element_t), POINTER :: EdgeElement, Element 
-    TYPE(Mesh_t), POINTER :: Mesh
-    ! Variables
+    TYPE(Element_t), POINTER :: EdgeElement  !< Edge element to which assign local number
+    TYPE(Element_t), POINTER :: Element      !< Bulk element with some global numbering to use to assign local number
+    TYPE(Mesh_t), POINTER :: Mesh            !< Finite element mesh containing faces and edges.
+!------------------------------------------------------------------------------
+    ! Local variables
     INTEGER i,j,n,edgeNumber, numEdges, bMap(4)
     TYPE(Element_t), POINTER :: Edge
     
@@ -5126,33 +5118,20 @@ CONTAINS
     
 
 !------------------------------------------------------------------------------
+!>     Based on element degrees of freedom, return the sum of element
+!>     degrees of freedom.
+!------------------------------------------------------------------------------
   FUNCTION getElementMaxDOFs( Mesh, Element ) RESULT(dofs)
-!******************************************************************************
-!
-!  DESCRIPTION:
-!     Based on element degrees of freedom, return the sum of element
-!     degrees of freedom.
-!
-!  ARGUMENTS:
-!
-!    Type(Mesh_t), POINTER :: Mesh
-!      INPUT: Finite element mesh
-!
-!    Type(Element_t), POINTER :: Element
-!      INPUT: Element to get maximum dofs for
-!
-!  FUNCTION VALUE:
-!    REAL(KIND=dp) :: dofs
-!       maximum number of dofs for Element
-!    
-!******************************************************************************
 !------------------------------------------------------------------------------
     IMPLICIT NONE
 
-    TYPE(Mesh_t), POINTER :: Mesh
-    TYPE(Element_t), POINTER :: Element
+    TYPE(Mesh_t), POINTER :: Mesh        !< Finite element mesh
+    TYPE(Element_t), POINTER :: Element  !< Element to get maximum dofs for
+    INTEGER :: dofs                      !< maximum number of dofs for Element
+!------------------------------------------------------------------------------
+
     TYPE(ELement_t), POINTER :: Edge, Face
-    INTEGER :: i, edgeDofs, faceDofs, dofs
+    INTEGER :: i, edgeDofs, faceDofs
     
     ! Get sum of edge dofs if any
     edgeDofs = 0
@@ -5181,28 +5160,29 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-  SUBROUTINE MakePermUsingMask( Model,Solver,Mesh,MaskName, &
-       OptimizeBW, Perm, LocalNodes, MaskOnBulk )
+!> Creates a permutation table for bodies or boundaries using a free chosen string
+!> as mask. The resulting permutation is optimized in order, if requested. The
+!> subroutine is intended to help in saving boundary data in an ordered manner,
+!> but it can find other uses as well. Currently the implementation is limited
+!> to normal Lagrangian elements.
 !------------------------------------------------------------------------------
-! Creates a permutation table for bodies or boundaries using a free chosen string
-! as mask. The resulting permutation is optimized in order, if requested. The
-! subroutine is intended to help in saving boundary data in an ordered manner,
-! but it can find other uses as well. Currently the implementation is limited
-! to normal Lagrangian elements.
+  SUBROUTINE MakePermUsingMask( Model,Solver,Mesh,MaskName, &
+       OptimizeBW, Perm, LocalNodes, MaskOnBulk, RequireLogical )
 !------------------------------------------------------------------------------
     TYPE(Model_t)  :: Model
     TYPE(Mesh_t)   :: Mesh
     TYPE(SOlver_t) :: Solver
     INTEGER :: LocalNodes
     LOGICAL :: OptimizeBW
-    INTEGER :: Perm(:)
+    INTEGER, POINTER :: Perm(:)
     CHARACTER(LEN=*) :: MaskName
     LOGICAL, OPTIONAL :: MaskOnBulk
+    LOGICAL, OPTIONAL :: RequireLogical
 !------------------------------------------------------------------------------
     INTEGER, POINTER :: InvPerm(:)
     TYPE(ListMatrix_t), POINTER :: ListMatrix(:)
     INTEGER :: t,i,j,k,l,m,k1,k2,n,p,q,e1,e2,f1,f2,This,bf_id   
-    LOGICAL :: Flag, Found, FirstRound
+    LOGICAL :: Flag, Found, FirstRound, MaskIsLogical, Hit
     INTEGER :: Indexes(30), ElemStart, ElemFin, Width
     TYPE(ListMatrixEntry_t), POINTER :: CList, Lptr
     TYPE(Element_t), POINTER :: CurrentElement,Elm
@@ -5211,10 +5191,26 @@ CONTAINS
     
     ! First check if there are active elements for this mask
     IF( PRESENT( MaskOnBulk ) ) MaskOnBulk = .FALSE.
+    IF( PRESENT( RequireLogical ) ) THEN
+      MaskIsLogical = RequireLogical
+    ELSE
+      MaskIsLogical = .FALSE.
+    END IF
+
+    IF(.NOT. ASSOCIATED( Perm ) ) THEN
+      ALLOCATE( Perm( Mesh % NumberOfNodes ) )
+      Perm = 0
+    END IF
+
     ElemStart = HUGE(ElemStart) 
     ElemFin = 0     
     DO l = 1, Model % NumberOfBodyForces
-       IF(ListCheckPresent( Model % BodyForces(l) % Values,MaskName) ) THEN
+       IF( MaskIsLogical ) THEN
+         Hit = ListGetLogical( Model % BodyForces(l) % Values,MaskName,Found) 
+       ELSE
+         Hit = ListCheckPresent( Model % BodyForces(l) % Values,MaskName)
+       END IF 
+       IF( Hit ) THEN
           ElemStart = 1
           ElemFin = Mesh % NumberOfBulkElements
           IF( PRESENT( MaskOnBulk ) ) MaskOnBulk = .TRUE.
@@ -5222,7 +5218,12 @@ CONTAINS
        END IF
     END DO
     DO l = 1, Model % NumberOfBCs
-       IF( ListCheckPresent(Model % BCs(l) % Values,MaskName ) ) THEN
+       IF( MaskIsLogical ) THEN
+         Hit = ListGetLogical(Model % BCs(l) % Values,MaskName,Found )
+       ELSE
+         Hit = ListCheckPresent(Model % BCs(l) % Values,MaskName )
+       END IF
+       IF( Hit ) THEN
           ElemStart = MIN( ElemStart, Mesh % NumberOfBulkElements + 1)
           ElemFin = Mesh % NumberOfBulkElements + Mesh % NumberOFBoundaryElements
           EXIT
@@ -5247,20 +5248,29 @@ CONTAINS
        
        CurrentElement => Mesh % Elements(t)
        
-       Found = .FALSE.
+       Hit = .FALSE.
        IF(t <= Mesh % NumberOfBulkElements) THEN
           l = CurrentElement % BodyId
 	  bf_id = ListGetInteger( Model % Bodies(l) % Values, 'Body Force',Found)
 	  IF( bf_id>0 ) THEN
-            IF(ListCheckPresent( Model % BodyForces(bf_id) % Values, MaskName )) Found = .TRUE.
+            IF( MaskIsLogical ) THEN
+              Hit = ListGetLogical( Model % BodyForces(bf_id) % Values, MaskName, Found )
+            ELSE
+              Hit = ListCheckPresent( Model % BodyForces(bf_id) % Values, MaskName )
+            END IF
 	  END IF 
        ELSE
           DO l=1, Model % NumberOfBCs
-             IF ( Model % BCs(l) % Tag /= CurrentElement % BoundaryInfo % Constraint ) CYCLE
-             IF( ListCheckPresent(Model % BCs(l) % Values,MaskName ) ) Found = .TRUE.
+            IF ( Model % BCs(l) % Tag /= CurrentElement % BoundaryInfo % Constraint ) CYCLE
+            IF( MaskIsLogical ) THEN
+              Hit = ListGetLogical(Model % BCs(l) % Values,MaskName, Found ) 
+            ELSE
+              Hit = ListCheckPresent(Model % BCs(l) % Values,MaskName ) 
+            END IF
+            EXIT
           END DO
        END IF       
-       IF( .NOT. Found ) CYCLE       
+       IF( .NOT. Hit ) CYCLE       
        
        n = CurrentElement % NDOFs               
        Indexes(1:n) = CurrentElement % NodeIndexes(1:n)
@@ -5351,14 +5361,14 @@ CONTAINS
 
 
 !------------------------------------------------------------------------
-! Find a point in the mesh structure
-! There are two strategies:
-! 1) Recursive where the same routine is repeated with sloppier criteria
-! 2) One-sweep strategy where the best hit is registered and used if of 
-!    acceptable accuracy. 
-! There are two different epsilons that control the search. One for the 
-! rough test in absolute coordinates and another one for the more accurate
-! test in local coordinates.   
+!> Find a point in the mesh structure
+!> There are two strategies:
+!> 1) Recursive where the same routine is repeated with sloppier criteria
+!> 2) One-sweep strategy where the best hit is registered and used if of 
+!>    acceptable accuracy. 
+!> There are two different epsilons that control the search. One for the 
+!> rough test in absolute coordinates and another one for the more accurate
+!> test in local coordinates.   
 !-------------------------------------------------------------------------
   FUNCTION PointInMesh(Solver, GlobalCoords, LocalCoords, HitElement, &
       CandElement, ExtInitialize ) RESULT ( Hit )
@@ -5579,48 +5589,117 @@ CONTAINS
 
 
 !--------------------------------------------------------------------------
-!  This subroutine finds the structure of an extruded mesh even though it is 
-! given in an unstructured format. The routine may be used by some special
-! solvers that employ the special character of the mesh.
-! The extrusion is found for a given direction and for each node the corresponding 
-! up and down, and thereafter top and bottom node is computed.
+!>  This subroutine finds the structure of an extruded mesh even though it is 
+!> given in an unstructured format. The routine may be used by some special
+!> solvers that employ the special character of the mesh.
+!> The extrusion is found for a given direction and for each node the corresponding 
+!> up and down, and thereafter top and bottom node is computed.
 !-----------------------------------------------------------------------------
-  SUBROUTINE DetectExtrudedStructure( Mesh, Direction, Tolerance, MaskPerm, &
+  SUBROUTINE DetectExtrudedStructure( Mesh, Solver, ExtVar, &
       TopNodePointer, BotNodePointer, UpNodePointer, DownNodePointer )
     
     USE CoordinateSystems
 
     TYPE(Mesh_t), POINTER :: Mesh
-    REAL(KIND=dp) :: Direction(3)
-    REAL(KIND=dp), OPTIONAL :: Tolerance
-    INTEGER, POINTER, OPTIONAL :: MaskPerm(:)
+    TYPE(Solver_t), POINTER :: Solver
+    TYPE(Variable_t), POINTER :: ExtVar
     INTEGER, POINTER, OPTIONAL :: TopNodePointer(:), BotNodePointer(:), &
         UpNodePointer(:), DownNodePointer(:)
 !-----------------------------------------------------------------------------
+    REAL(KIND=dp) :: Direction(3)
+    TYPE(ValueList_t), POINTER :: Params
+    TYPE(Variable_t), POINTER :: Var
+    REAL(KIND=dp) :: Tolerance
     TYPE(Element_t), POINTER :: Element
     TYPE(Nodes_t) :: Nodes
-    INTEGER :: i,j,k,n,ii,jj,dim, nsize, elem, TopNodes, BotNodes, Rounds
-    INTEGER, POINTER :: NodeIndexes(:)
-    LOGICAL :: MaskExists, UpActive, DownActive, GotIt, Found
-    REAL(KIND=dp) :: at0, at1, Length, UnitVector(3), ElemVector(3), DotPro, Eps, CPUTime
+    INTEGER :: i,j,k,n,ii,jj,dim, nsize, elem, TopNodes, BotNodes, Rounds, ActiveDirection, &
+	UpHit, DownHit
+    INTEGER, POINTER :: NodeIndexes(:), MaskPerm(:)
+    LOGICAL :: MaskExists, UpActive, DownActive, GotIt, Found, DoCoordTransform
+    REAL(KIND=dp) :: at0, at1, Length, UnitVector(3), Vector(3), Vector2(3), &
+	             ElemVector(3), DotPro, Eps, CPUTime
+    REAL(KIND=dp), POINTER :: Values(:)
     INTEGER, POINTER :: TopPointer(:), BotPointer(:), UpPointer(:), DownPointer(:)
+    CHARACTER(LEN=MAX_NAME_LEN) :: VarName, CoordTransform
 
    
     CALL Info('DetectExtrudedStructure','Determining extruded structure')
     at0 = CPUTime()
 
-    ! Choose active direction coordinate and set corresponding unit vector
-    !---------------------------------------------------------------------
-    
-    Length = SQRT( SUM( Direction ** 2 ) )
-    IF( Length < EPSILON(Length) ) THEN
-      CALL Warn('DetectExtrudedStructure','Invalid direction vector, exiting...')
-      RETURN
-    END IF
-    UnitVector = Direction / Length
-    
+    DIM = Mesh % MeshDim
+    Params => Solver % Values
+
+
+    ActiveDirection = ListGetInteger(Params,'Active Coordinate')
+    IF( ActiveDirection < 1 .OR. ActiveDirection > 3 ) THEN
+      CALL Fatal('StructuredMeshMapper','Invalid value for Active Coordinate')
+    END IF  
+    UnitVector = 0.0_dp
+    UnitVector(ActiveDirection) = 1.0_dp
+
+
+    IF( ListGetLogical(Params,'Project To Bottom',GotIt) ) &
+        UnitVector = -1.0_dp * UnitVector
+
     WRITE(Message,'(A,3F8.3)') 'Unit vector of direction:',UnitVector
     CALL Info('DetectExtrudedStructure',Message)
+
+    ! Set the dot product tolerance
+    !-----------------------------------------------------------------
+    Eps = ListGetConstReal( Params,'Dot Product Tolerance',GotIt)
+    IF(.NOT. GotIt) Eps = 1.0e-4_dp
+
+    VarName = ListGetString(Params,'Mapping Mask Variable',GotIt )
+    MaskExists = .FALSE.
+    IF(GotIt) THEN
+      Var => VariableGet( Mesh % Variables,  VarName )
+      IF(ASSOCIATED(Var)) THEN
+        MaskPerm => Var % Perm
+        MaskExists = ASSOCIATED(MaskPerm)
+      END IF
+    END IF
+
+    IF( MaskExists ) THEN
+      nsize = MAXVAL( MaskPerm ) 
+      WRITE(Message,'(A,I8)') 'Applying mask of size:',nsize
+      CALL Info('DetectExtrudedStructure',Message)
+    ELSE
+      nsize = Mesh % NumberOfNodes
+    END IF 
+
+    CoordTransform = ListGetString(Params,'Mapping Coordinate Transformation',DoCoordTransform )
+    IF( DoCoordTransform .OR. MaskExists) THEN
+      NULLIFY( Values )
+      ALLOCATE( Values( nsize ) )
+      Values = 0.0_dp
+      IF( MaskExists ) THEN
+        CALL VariableAdd( Mesh % Variables, Mesh, Solver,'Extruded Coordinate',1,Values, MaskPerm)
+      ELSE
+        CALL VariableAdd( Mesh % Variables, Mesh, Solver,'Extruded Coordinate',1,Values)
+      END IF
+      Var => VariableGet( Mesh % Variables,'Extruded Coordinate')
+    ELSE IF( ActiveDirection == 1 ) THEN
+      Var => VariableGet( Mesh % Variables,'Coordinate 1')
+    ELSE IF( ActiveDirection == 2 ) THEN
+      Var => VariableGet( Mesh % Variables,'Coordinate 2')
+    ELSE 
+      Var => VariableGet( Mesh % Variables,'Coordinate 3')
+    END IF	      
+
+    IF( MaskExists .OR. DoCoordTransform) THEN
+      DO i=1,Mesh % NumberOfNodes
+        j = i
+	IF( MaskExists ) j = MaskPerm(i)
+        Vector(1) = Mesh % Nodes % x(i)
+	Vector(2) = Mesh % Nodes % y(i)
+	Vector(3) = Mesh % Nodes % z(i)
+	IF( DoCoordTransform ) THEN
+          CALL CoordinateTransformation( CoordTransform, Vector )
+        END IF
+        Values(j) = Vector( ActiveDirection )
+      END DO
+    END IF
+    ExtVar => Var
 
     ! Check which direction is active
     !---------------------------------------------------------------------
@@ -5632,19 +5711,6 @@ CONTAINS
 
     ! Allocate pointers to top and bottom, and temporary pointers up and down
     !------------------------------------------------------------------------
-    n = Mesh % MaxElementNodes
-    ALLOCATE( Nodes % x(n), Nodes % y(n),Nodes % z(n) )
-
-    DIM = Mesh % MeshDim
-    MaskExists = PRESENT( MaskPerm )
-    IF( MaskExists ) THEN
-      nsize = MAXVAL( MaskPerm ) 
-      WRITE(Message,'(A,I8)') 'Applying mask of size:',nsize
-      CALL Info('DetectExtrudedStructure',Message)
-    ELSE
-      nsize = Mesh % NumberOfNodes
-    END IF
-    
     IF( UpActive ) THEN
       ALLOCATE(TopPointer(nsize),UpPointer(nsize))
       DO i=1,nsize
@@ -5660,19 +5726,14 @@ CONTAINS
       END DO
     END IF
 
-    ! Set the dot product tolerance
-    !-----------------------------------------------------------------
-    IF( PRESENT( Tolerance ) ) THEN
-      Eps = Tolerance 
-    ELSE
-      Eps = ListGetConstReal(CurrentModel % Solver % Values,'Dot Product Tolerance',GotIt)
-      IF(.NOT. GotIt) Eps = 0.01_dp
-    END IF
 
     CALL Info('DetectExtrudedStructure','determine up and down pointers')
 
     ! Determine the up and down pointers using dot product as criterion
     !-----------------------------------------------------------------
+    n = Mesh % MaxElementNodes
+    ALLOCATE( Nodes % x(n), Nodes % y(n),Nodes % z(n) )
+    
     DO elem = 1,Mesh % NumberOfBulkElements      
       Element => Mesh % Elements(elem)
       NodeIndexes => Element % NodeIndexes
@@ -5691,12 +5752,27 @@ CONTAINS
 
       DO i=1,n
         ii = NodeIndexes(i)
+        Vector(1) = Nodes % x(i)
+	Vector(2) = Nodes % y(i)
+	Vector(3) = Nodes % z(i)
+	
+ 	IF( DoCoordTransform ) THEN
+          CALL CoordinateTransformation( CoordTransform, Vector )
+        END IF
+
         DO j=i+1,n
           jj = NodeIndexes(j)
 
-          ElemVector(1) = Nodes % x(j) - Nodes % x(i)
-          ElemVector(2) = Nodes % y(j) - Nodes % y(i)
-          ElemVector(3) = Nodes % z(j) - Nodes % z(i)
+	  Vector2(1) = Nodes % x(j)
+	  Vector2(2) = Nodes % y(j)
+	  Vector2(3) = Nodes % z(j)
+
+	  IF( DoCoordTransform ) THEN
+            CALL CoordinateTransformation( CoordTransform, Vector2 )
+          END IF
+
+          ElemVector = Vector2 - Vector
+
           Length = SQRT(SUM(ElemVector*ElemVector))
           DotPro = SUM(ElemVector * UnitVector) / Length
 
@@ -5710,15 +5786,17 @@ CONTAINS
         END DO
       END DO
     END DO
+    DEALLOCATE( Nodes % x, Nodes % y,Nodes % z )
+
     
     ! Pointer to top and bottom are found recursively using up and down
     !------------------------------------------------------------------
     CALL Info('DetectExtrudedStructure','determine top and bottom pointers')
 
-    Found = .TRUE.
-    Rounds = 0
-    DO WHILE(Found) 
-      Found = .FALSE.
+
+    DO Rounds = 1, nsize
+      DownHit = 0
+      UpHit = 0
       DO i=1,nsize
         IF( MaskExists ) THEN
           IF( MaskPerm(i) == 0) CYCLE
@@ -5726,45 +5804,40 @@ CONTAINS
         IF( UpActive ) THEN
           j = UpPointer(i)
           IF( TopPointer(i) /= TopPointer( j ) ) THEN
-            Found = .TRUE.
+            UpHit = UpHit + 1
             TopPointer(i) = TopPointer( j )
           END IF
         END IF
         IF( DownActive ) THEN
           j = DownPointer(i)
           IF( BotPointer(i) /= BotPointer( j ) ) THEN
-            Found = .TRUE.
+	    DownHit = DownHit + 1
             BotPointer(i) = BotPointer( j )
           END IF
         END IF
       END DO
-      IF( Found ) Rounds = Rounds + 1
+      IF( UpHit == 0 .AND. DownHit == 0 ) EXIT
     END DO
+    PRINT *,'Extruded Structure Layers:',Rounds-1	
 
-    ! Count the number of nodes, for information only
+    ! Count the number of top and bottom nodes, for information only
     !---------------------------------------------------------------
     IF( UpActive ) THEN
       TopNodes = 0
       DO i=1,nsize
-        IF(TopPointer(i) == i) THEN
-          TopNodes = TopNodes + 1
-        END IF
+        IF(TopPointer(i) == i) TopNodes = TopNodes + 1
       END DO
     END IF
 
     IF( DownActive ) THEN
       BotNodes = 0
       DO i=1,nsize
-        IF(BotPointer(i) == i) THEN
-          BotNodes = BotNodes + 1
-        END IF
+        IF(BotPointer(i) == i) BotNodes = BotNodes + 1
       END DO
     END IF
 
     ! Return the requested pointer structures, otherwise deallocate
     !---------------------------------------------------------------
-    DEALLOCATE( Nodes % x, Nodes % y,Nodes % z )
-
     IF( UpActive ) THEN
       IF( PRESENT( TopNodePointer ) ) THEN
         TopNodePointer => TopPointer 
@@ -5809,6 +5882,51 @@ CONTAINS
       CALL Info('DetectExtrudedStructure',Message)
     END IF
 
+
+  CONTAINS
+    
+    
+    !---------------------------------------------------------------
+    SUBROUTINE CoordinateTransformation( CoordTransform, R )
+      CHARACTER(LEN=MAX_NAME_LEN) :: VarName, CoordTransform
+      REAL(KIND=dp) :: R(3)
+      !---------------------------------------------------------------
+      REAL(KIND=dp) :: Rtmp(3)
+      REAL(KIND=dp), SAVE :: Coeff 
+      LOGICAL, SAVE :: Visited = .FALSE.
+      
+
+      IF( .NOT. Visited ) THEN
+        IF( ListGetLogical( Params,'Angles in Degrees') ) THEN
+          Coeff = 180.0_dp / PI
+        ELSE
+          Coeff = 1.0_dp
+        END IF
+        Visited = .TRUE.
+      END IF
+      
+      SELECT CASE ( CoordTransform )
+        
+      CASE('cartesian to cylindrical')
+        Rtmp(1) = SQRT( R(1)**2 + R(2)**2)
+        Rtmp(2) = Coeff * ATAN2( R(2), R(1)  ) 
+        Rtmp(3) = R(3) 
+        
+      CASE('cylindrical to cartesian')
+        Rtmp(1) = COS( R(2) / Coeff ) * R(1)
+        Rtmp(2) = SIN( R(2) / Coeff ) * R(1)
+        Rtmp(3) = R(3)
+        
+      CASE DEFAULT
+        CALL Fatal('CoordinateTransformation','Unknown transformation: '//TRIM(CoordTransform) )
+        
+      END SELECT
+      
+      R = Rtmp
+
+    END SUBROUTINE CoordinateTransformation
+   
+
   END SUBROUTINE DetectExtrudedStructure
  !---------------------------------------------------------------
 
@@ -5816,10 +5934,10 @@ CONTAINS
 
 
 !---------------------------------------------------------------
-! This partitions the mesh into a given number of partitions in each 
-! direction. It may be used in clustering multigrid or similar. 
-! It is not easily applicable to parallel computation as this 
-! partitioning should be done outside ElmerSolver in advance.
+!> This partitions the mesh into a given number of partitions in each 
+!> direction. It may be used in clustering multigrid or similar. 
+!> It is not easily applicable to parallel computation as this 
+!> partitioning should be done outside ElmerSolver in advance.
 !---------------------------------------------------------------
   SUBROUTINE ClusterNodesByDirection(Solver,Mesh,Clustering,MaskPerm)
  
@@ -6032,10 +6150,9 @@ CONTAINS
 
 
 !---------------------------------------------------------------
-! This find two fixing nodes for each coordinate direction
-! The indexes are returned in order: x1 x2 y1 y2 z1 z2
+!> This find two fixing nodes for each coordinate direction
+!> The indexes are returned in order: x1 x2 y1 y2 z1 z2.
 !---------------------------------------------------------------
-!------------------------------------------------------------------------------
   SUBROUTINE FindRigidBodyFixingNodes(Solver,FixingDofs,MaskPerm)
 !------------------------------------------------------------------------------
     USE GeneralUtils
@@ -6060,8 +6177,6 @@ CONTAINS
 !---------------------------------------------------------------
 
     CALL Info('FindRigidBodyFixingNodes','Starting')
-
-
 
     Mesh => Solver % Mesh
     dim = Mesh % MeshDim 
@@ -6275,7 +6390,7 @@ CONTAINS
 
   CONTAINS
 
-    ! Find the nodes that are either on interface, boundary or do not belong to the field
+    !> Find the nodes that are either on interface, boundary or do not belong to the field.
     !-----------------------------------------------------------------------------------
     SUBROUTINE DetermineForbiddenNodes()
 
@@ -6286,7 +6401,7 @@ CONTAINS
       ! Mark all interface nodes as forbidden nodes
       !-----------------------------------------------
       IF( ParEnv % PEs > 1 ) THEN
-        ig => Mesh % ParallelInfo % Interface
+        ig => Mesh % ParallelInfo % INTERFACE
         ForbiddenNodes = ig(1:Mesh % NumberOfNodes)
       END IF
 
@@ -6310,7 +6425,7 @@ CONTAINS
     END SUBROUTINE DetermineForbiddenNodes
 
 
-    ! Give a value of goodness to the chosen fixing node
+    !> Give a value of goodness to the chosen fixing node.
     !-----------------------------------------------------------------------------------
     FUNCTION FixingNodesScore(direction,cand) RESULT ( Score )
 
@@ -6360,9 +6475,9 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-  FUNCTION CreateLineMesh( Params ) RESULT( Mesh )
+!>   Create a 1D mesh, may be used in 1D outlet conditions, for example.
 !------------------------------------------------------------------------------
-!   Create a 1D mesh, may be used in 1D outlet conditions
+  FUNCTION CreateLineMesh( Params ) RESULT( Mesh )
 !------------------------------------------------------------------------------
     TYPE(ValueList_t), POINTER :: Params 
     TYPE(Mesh_t), POINTER :: Mesh
@@ -6379,7 +6494,6 @@ CONTAINS
     Mesh => AllocateMesh()
 
     CALL Info('CreateLineMesh','Starting')
-
 
 !   Read in the parameters defining a uniform 1D mesh
 !--------------------------------------------------------------    
@@ -6458,7 +6572,7 @@ CONTAINS
     Mesh % MaxElementNodes = 1 + Order
     Mesh % MaxElementDOFs = 1 + Order
 
-
+ 
     PRINT *,'NoNodes:',NoNodes
     PRINT *,'NoElements:',NoElements
  
@@ -6470,3 +6584,6 @@ CONTAINS
 !------------------------------------------------------------------------------
 END MODULE MeshUtils
 !------------------------------------------------------------------------------
+
+!> \}
+

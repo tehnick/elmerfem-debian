@@ -1,11 +1,5 @@
 !/******************************************************************************
 ! *
-! * Subroutine for advecting fields in time using particles to follow them (-dt) 
-! * in time, and taking the field value from the given point. This should overcome
-! * all problems with diffusion. 
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Peter Råback & Juha Ruokolainen
 ! *  Email:   Peter.Raback@csc.fi & Juha.Ruokolainen@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -17,65 +11,15 @@
 ! *
 ! *****************************************************************************/
 
-
-SUBROUTINE ParticleAdvector_Init( Model,Solver,dt,TransientSimulation )
-
-  USE DefUtils
-  USE Interpolation
-  USE MeshUtils
-  USE ElementUtils
-  USE ParticleUtils
-
-  IMPLICIT NONE
-!------------------------------------------------------------------------------
-  TYPE(Solver_t), TARGET :: Solver
-  TYPE(Model_t) :: Model
-  REAL(KIND=dp) :: dt
-  LOGICAL :: TransientSimulation
-!------------------------------------------------------------------------------
-! Local variables
-!------------------------
-  
-  TYPE(ValueList_t), POINTER :: Params
-  LOGICAL :: Found
-
-  Params => Solver % Values
-
-  ! These are default setting that make the operation of the advection solver 
-  ! possible. There should always be one passive particle for each active node.
-  !---------------------------------------------------------------------------
-  CALL ListAddString( Params,'Coordinate Initialization Method','nodal ordered')
-  CALL ListAddString( Params,'Velocity Initialization Method','nodal velocity')
-  CALL ListAddInteger( Params,'Time Order',0 )
-  CALL ListAddConstReal( Params,'Particle Node Fraction',1.0_dp)
-  IF(.NOT. ListCheckPresent( Params,'Particle Accurate At Face') ) &
-      CALL ListAddLogical( Params,'Particle Accurate At Face',.TRUE.)  
-
-END SUBROUTINE ParticleAdvector_Init
-
-
-!------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+!> Subroutine for advecting fields in time using particles to follow them  
+!> backwards in time, and taking the field value from the given point. This should overcome
+!> all problems with diffusion. 
+!> This is a dynamically loaded solver with a standard interface. 
+!> \ingroup Solvers
+!-------------------------------------------------------------------------------
 SUBROUTINE ParticleAdvector( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  This subroutine saves scalar values to a matrix.
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear & nonlinear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations
-!
-!  LOGICAL :: TransientSimulation
-!     INPUT: Steady state or transient simulation
-!
-!******************************************************************************
   USE DefUtils
   USE Interpolation
   USE MeshUtils
@@ -96,28 +40,24 @@ SUBROUTINE ParticleAdvector( Model,Solver,dt,TransientSimulation )
   TYPE(ValueList_t), POINTER :: Params
   TYPE(Solver_t), POINTER :: PSolver
   TYPE(Variable_t), POINTER :: Var
-  LOGICAL :: GotIt, Debug, Hit, InitLocation, InitTimestep, Found, ParticleInfo, &
-      RungeKutta
-  INTEGER :: i,j,k,n,dim,No,nodims,NoParticles = 0,&
+  TYPE(Variable_t), POINTER :: AgeVar
+  LOGICAL :: GotIt, Debug, Hit, InitLocation, InitTimestep, Found, ParticleInfo
+  INTEGER :: i,j,k,n,dim,No,nodims,&
       ElementIndex, VisitedTimes = 0, nstep, &
       Status,TimeOrder, PartitionChanges, TimeStepsTaken=0,&
       ParticleStepsTaken=0, TotParticleStepsTaken, TotNoParticles, &
-      FirstGhost,istep,iorder
-  REAL(KIND=dp) :: dtime, dertime, tottime = 0.0, Coord(3), Velo(3), &
-      Lambda, LocalCoords(3), Rinit(3),Rfin(3),Norm
+      istep,iorder
+  REAL(KIND=dp) :: maxdt, dertime, tottime = 0.0
   CHARACTER(LEN=MAX_NAME_LEN) :: VariableName, IntegMethod
   TYPE(Particle_t), POINTER  :: Particles
   
-
-  SAVE Nstep, VisitedTimes, TimeOrder, RungeKutta, &
+  SAVE Nstep, VisitedTimes, TimeOrder, &
       tottime, TimeStepsTaken, ParticleStepsTaken, ParticleInfo
-
 
 !------------------------------------------------------------------------------
 
   CALL Info('ParticleAdvector','-----------------------------------------', Level=4 )
   CALL Info('ParticleAdvector','Advecting fields using particle tracking',Level=4) 
-
   
   Particles => GlobalParticles
   VisitedTimes = VisitedTimes + 1
@@ -127,13 +67,7 @@ SUBROUTINE ParticleAdvector( Model,Solver,dt,TransientSimulation )
   PSolver => Solver
   DIM = CoordinateSystemDimension()
 
-  ! Initialize as some of these are also used with dim==2
-  Rfin = 0.0_dp
-  Rinit = 0.0_dp
-  Coord = 0.0_dp
-  Velo = 0.0_dp
-  dtime = 0.0_dp
-  
+  maxdt = 0.0_dp  
   istep = 1
   iorder = 1
 
@@ -144,7 +78,6 @@ SUBROUTINE ParticleAdvector( Model,Solver,dt,TransientSimulation )
     CALL SetParticlePreliminaries( Particles, dim, TimeOrder )
     Nstep = GetInteger( Params,'Max Timestep Intervals',Found)
     IF(.NOT. Found) Nstep = 1
-    RungeKutta = GetLogical( Params,'Runge Kutta',Found)
     ParticleInfo = GetLogical( Params,'Particle Info',Found)
   END IF
 
@@ -153,120 +86,83 @@ SUBROUTINE ParticleAdvector( Model,Solver,dt,TransientSimulation )
   CALL InitializeParticles( Particles ) 
   CALL ReleaseWaitingParticles(Particles) 
   Particles % Status = PARTICLE_LOCATED
-  FirstGhost = 0
 
+  IF( GetLogical( Params,'Particle Time',Found) ) THEN
+    CALL ParticleVariableCreate( Particles,'particle time')
+  END IF
+  CALL ParticleVariableCreate( Particles,'particle distance')
+
+  ! We are advecting backwards in time!
+  !----------------------------------------------------
   InitTimestep = .TRUE.
-  IF( RungeKutta ) THEN
+  IF( Particles % RK2 ) THEN
     iorder = 2
   ELSE
     iorder = 1
   END IF
 
+
   DO i=1,nstep
+
     ! Get the timestep size, initialize at 1st round
     !--------------------------------------------------------------
-    dtime = GetParticleTimeStep( Particles, InitTimestep )
-    InitTimestep = .FALSE.
+    maxdt = GetParticleTimeStep( Particles, InitTimestep )
+
+ 
+! CALL ParticleStatusCount(Particles)
 
     ! If size of timestep goes to zero then no more steps are needed
     !---------------------------------------------------------------
-    IF( ABS( dtime )  < TINY( dtime ) ) EXIT	
+    IF( ABS( maxdt )  < TINY( maxdt ) ) EXIT	
 
-    dertime = dertime + dtime
-    tottime = tottime + dtime
-
-    ! We are advecting backwards in time!
-    !----------------------------------------------------
-    dtime = -dtime
+    dertime = dertime + maxdt
+    tottime = tottime + maxdt
 
     TimeStepsTaken = TimeStepsTaken + 1
     ParticleStepsTaken = ParticleStepsTaken + Particles % NumberOfParticles
 
     ! If there are periodic BCs apply them just before locating the particles
     !------------------------------------------------------------------------
-    CALL ParticleBoxPeriodic( Particles )
+    ! CALL ParticleBoxPeriodic( Particles )
+
 
     ! Loop over possible runge-kutta steps
     !------------------------------------------------------------------------
 
     DO istep = 1, iorder
 
-      ! Set velocity field at points
+      ! Set velocity field at points.
+      ! This is not done the first time. 
       !------------------------------------------------------------------
-      IF( i > 1 .OR. istep > 1 ) THEN
-        CALL SetParticleVelocities()
-        CALL LocateParticles( Particles ) 
-
-        ! This assumes that the real particles are followed by ghost particles. 
-        ! which are destroyed before leaving this configuration.
-        !---------------------------------------------------------------
-        NoParticles = Particles % NumberOfParticles
-        IF ( FirstGhost /= 0 ) THEN
-          Particles % NumberOfParticles = FirstGhost - 1
-          DO No=FirstGhost, NoParticles
-            Particles % Status(No) = PARTICLE_LOST
-          END DO
-          NoParticles = Particles % NumberOfParticles
-        END IF
-      END IF
+      IF( .NOT. InitTimestep ) CALL SetParticleVelocities()
 
       ! Advance the coordinate, r = r0 + v * dt
       ! either with 2nd order Runge-Kutta, or with 1st order explicit scheme.
-      !----------------------------------------------------------------------
-      IF( istep < iorder ) THEN
-        ! Advect just with half timestep for the second order runge kutta
-        CALL ParticleAdvanceFraction( Particles, 0.5 * dtime )
-      ELSE        
-        ! Set the precoordinate for runge-kutta integrator to the original value
-        CALL ParticleAdvanceTime( Particles, dtime, RungeKutta )
-      END IF
+      !------------------------------------------------------------------
+      CALL ParticleAdvanceTimestep( Particles, istep )
 
       ! Find the elements (and only the elements) in which the particles are in. 
       !------------------------------------------------------------------------    
-      PartitionChanges = 0
       CALL LocateParticles( Particles ) 
+      InitTimestep = .FALSE.
+    END DO 
 
-      ! Change the partion in where the particles are located
-      ! Only applies to parallel cases.
-      !------------------------------------------------------------------------
-      PartitionChanges = ChangeParticlePartition(Particles)    
-      DO WHILE(PartitionChanges > 0)
-        CALL LocateParticles(Particles,PartitionChangesOnly = .TRUE.) 
-        PartitionChanges = ChangeParticlePartition( Particles )
-      END DO
-      NoParticles = Particles % NumberOfParticles
-    END DO
+    WRITE (Message,'(A,I0,A,I0,A)') 'Timestep ',i,' with ',&
+	Particles % NumberOfMovingParticles,' moving particles'
+    CALL Info('ParticleAdvector',Message,Level=6)
+
+
   END DO
-
 
   ! Set the advected field giving the final locations of the particles backward in time
   !------------------------------------------------------------------------------------
   CALL SetAdvectedField()
-
   
   ! In the end show some statistical info
   !---------------------------------------------------------------   
   IF( ParticleInfo ) THEN
-    CALL ParticleStatusCount( Particles )
-
-    IF( ParEnv % PEs > 1 ) THEN
-      TotNoParticles =  NINT( ParallelReduction( 1.0_dp * Particles % NumberOfParticles ) )
-      TotParticleStepsTaken = NINT( ParallelReduction( 1.0_dp * ParticleStepsTaken) )
-    ELSE
-      TotNoParticles = Particles % NumberOfParticles 
-      TotParticleStepsTaken =  ParticleStepsTaken
-    END IF
-    
-    IF ( ParEnv % mype==0 ) THEN
-      WRITE (Message,'(A,T22,I12)') 'Active particles:',TotNoParticles
-      CALL Info('ParticleAdvector',Message)
-      WRITE (Message,'(A,T22,F12.2)') 'Elapsed time:',tottime
-      CALL Info('ParticleAdvector',Message)
-      WRITE (Message,'(A,T22,I12)') 'Time steps taken:',TimeStepsTaken
-      CALL Info('ParticleAdvector',Message)
-      WRITE (Message,'(A,T22,I12)') 'Particle steps taken:',TotParticleStepsTaken
-      CALL Info('ParticleAdvector',Message)
-    END IF
+    CALL ParticleInformation(Particles, ParticleStepsTaken, &
+	TimeStepsTaken, tottime )
   END IF
     
   CALL Info('ParticleAdvector','All done',Level=4)
@@ -278,17 +174,17 @@ CONTAINS
    
   
   !------------------------------------------------------------------------
-  ! Compute field values at the given points in the FE mesh. 
+  !> Compute field values at the given points in the FE mesh. 
   !-------------------------------------------------------------------------
   SUBROUTINE SetParticleVelocities()
 
     TYPE(Element_t), POINTER :: BulkElement
     INTEGER :: No, Status
-    REAL(KIND=dp) :: dtime, Coord(3),Velo(3),GradVelo(3,3)    
+    REAL(KIND=dp) :: Coord(3),Velo(3),GradVelo(3,3)    
     TYPE(Element_t), POINTER :: BulkElement2
     TYPE(Mesh_t), POINTER :: Mesh
     TYPE(Valuelist_t), POINTER :: Params
-    REAL(KIND=dp) :: VeloAtPoint(3), GradVeloAtPoint(3,3)
+    REAL(KIND=dp) :: VeloAtPoint(3), GradVeloAtPoint(3,3),dtime
     LOGICAL :: Stat, UseGradVelo, Visited = .FALSE.
     INTEGER :: i,j,k,l,n,dim,TimeOrder
     INTEGER, POINTER :: NodeIndexes(:), FieldPerm(:),FieldIndexes(:)
@@ -297,10 +193,10 @@ CONTAINS
     LOGICAL :: GotIt
     CHARACTER(LEN=MAX_NAME_LEN) :: VariableName
     TYPE(Variable_t), POINTER :: VeloVar
+    TYPE(Variable_t), POINTER :: DtVar	
     
     
-    SAVE :: Visited, Mesh, dim, Basis, dBasisdx, Params, VeloVar, UseGradvelo
-
+    SAVE :: Visited, Mesh, dim, Basis, dBasisdx, Params, VeloVar, UseGradvelo, DtVar
 
     IF( .NOT. Visited ) THEN
       Mesh => GetMesh()
@@ -317,22 +213,31 @@ CONTAINS
         CALL Fatal('ParticleFieldInteraction','Velocity field variable does not exist: '//TRIM(VariableName))           
       END IF
       UseGradVelo = GetLogical( Params,'Velocity Gradient Correction',Found)
-      
+
+      IF( .NOT. Particles % DtConstant ) THEN
+        DtVar => ParticleVariableGet( Particles,'particle dt')
+        IF( .NOT. ASSOCIATED( DtVar ) ) THEN
+          CALL Fatal('SetParticleVelocities','Required field > particle dt < not present!')
+        END IF
+      END IF      
+
       Visited = .TRUE.
-    END IF
+    END IF 
 
     Coordinate => Particles % Coordinate
     Velocity => Particles % Velocity
     Coord = 0.0_dp
     Velo = 0.0_dp
-    FirstGhost = 0
+
+    IF( Particles % DtConstant ) THEN
+      dtime = Particles % DtSign * Particles % dtime
+    END IF
 
     DO No = 1, Particles % NumberOfParticles
-
       Status = GetParticleStatus( Particles, No )
       IF( Status >= PARTICLE_LOST ) CYCLE
       IF( Status <= PARTICLE_INITIATED ) CYCLE
-      IF( Status == PARTICLE_GHOST ) EXIT
+      IF( Status == PARTICLE_WALLBOUNDARY ) CYCLE
       
       ElementIndex = GetParticleElement( Particles, No )
       BulkElement => Mesh % Elements( ElementIndex )
@@ -348,6 +253,11 @@ CONTAINS
         IF(.NOT. Stat ) CYCLE
         CALL GetVectorFieldInMesh(VeloVar,BulkElement, Basis, VeloAtPoint, &
             dBasisdx, GradVeloAtPoint )
+
+	IF( .NOT. Particles % DtConstant ) THEN
+          dtime = Particles % DtSign * DtVar % Values(No)
+        END IF
+
         DO i=1,dim
           Velo(i) = VeloAtPoint(i) + &
               0.5_dp * SUM( GradVeloAtPoint(i,1:dim) * VeloAtPoint(1:dim) ) * dtime        
@@ -363,23 +273,18 @@ CONTAINS
       Velocity( No, 1:dim ) = Velo(1:dim)
     END DO
     
-
-    IF( No < Particles % NumberOfParticles ) THEN
-      FirstGhost = No
-    END IF
-
   END SUBROUTINE SetParticleVelocities
    
 
 
 
   !------------------------------------------------------------------------
-  ! Compute field values at the given points in the FE mesh. 
+  !> Compute field values at the given points in the FE mesh. 
   !-------------------------------------------------------------------------
   SUBROUTINE SetAdvectedField()
 
     TYPE(Element_t), POINTER :: BulkElement
-    INTEGER :: No, Status
+    INTEGER :: No, Status, NoParticles
     REAL(KIND=dp) :: dtime, Coord(3),Velo(3),val,vals(10)
     TYPE(Mesh_t), POINTER :: Mesh
     TYPE(Valuelist_t), POINTER :: Params
@@ -392,6 +297,7 @@ CONTAINS
         UsePerm,InternalVariable
     CHARACTER(LEN=MAX_NAME_LEN) :: VariableName, ResultName, OperName, Name
     TYPE(Variable_t), POINTER :: TargetVar, ResultVar, Var
+    TYPE(Variable_t), POINTER :: ParticleVar
     REAL(KIND=dp), ALLOCATABLE :: NewValues(:)
     REAL(KIND=dp), POINTER :: TmpValues(:)
     INTEGER, POINTER :: TmpPerm(:)
@@ -409,7 +315,7 @@ CONTAINS
 
     Params => GetSolverParams()
     NoNorm = GetInteger( Params,'Norm Variable Index',GotIt)
-    
+    NoParticles = Particles % NumberOfParticles
 
     NoVar = 0 
     DO WHILE(.TRUE.)
@@ -425,7 +331,9 @@ CONTAINS
           VariableName == 'particle number' .OR. &
           VariableName == 'particle distance' .OR. &
           VariableName == 'particle coordinate_abs' .OR. &
-          VariableName == 'particle velocity_abs') THEN
+          VariableName == 'particle velocity_abs' .OR. &
+	  VariableName == 'particle time' .OR. &
+	  VariableName == 'particle dt' ) THEN
         dofs = 1
         InternalVariable = .TRUE.
       ELSE IF( VariableName == 'particle coordinate' .OR. &
@@ -514,8 +422,6 @@ CONTAINS
           ResultVar % Values = 1.0_dp * Particles % Status
         ELSE IF( VariableName == 'particle number') THEN
           ResultVar % Values = 1.0_dp * Particles % NodeIndex
-        ELSE IF( VariableName == 'particle distance') THEN
-          ResultVar % Values = Particles % Distance
         ELSE IF( VariableName == 'particle coordinate') THEN
           IF( ResultVar % Dofs /= dim ) THEN
             CALL Fatal('ParticleAdvector','Variable should have dim dofs: '//TRIM(VariableName))
@@ -551,7 +457,16 @@ CONTAINS
             END DO
             ResultVar % Values(i) = SQRT( ResultVar % Values(i) )
           END DO
-        ELSE
+        ELSE IF( VariableName == 'particle time' .OR. &
+                 VariableName == 'particle dt'   .OR. &
+                 VariableName == 'particle distance' ) THEN
+          ParticleVar => ParticleVariableGet( Particles, VariableName )
+          IF( ASSOCIATED( ParticleVar ) ) THEN
+            ResultVar % Values = ParticleVar % Values
+          ELSE
+            CALL Warn('ParticleAdvector','Field does not exist:'//TRIM(VariableName))
+          END IF
+        ELSE	
           CALL Warn('ParticleAdvector','Unknown field:'//TRIM(VariableName))
         END IF
       ELSE 
@@ -567,7 +482,6 @@ CONTAINS
           NewValues = 0.0_dp
         END IF
 
-
         DO No = 1, NoParticles
           Status = GetParticleStatus( Particles, No )
           
@@ -575,6 +489,8 @@ CONTAINS
           IF( Status <= PARTICLE_INITIATED ) CYCLE
           
           ElementIndex = GetParticleElement( Particles, No )
+	  IF( ElementIndex == 0 ) CYCLE
+
           BulkElement => Mesh % Elements( ElementIndex )      
           
           Coord(1:dim) = Particles % Coordinate(No, 1:dim) 
@@ -626,8 +542,17 @@ CONTAINS
         ! There most be a temporal vector for the values in case it would point 
         ! to itself. 
         !---------------------------------------------------------------
-        ResultVar % Values = NewValues        
+        j = SIZE( NewValues )
+        k = SIZE( ResultVar % Values )
+	IF( j /= k ) THEN
+	  CALL Warn('ParticleAdvector','Vectors of different size!')
+          j = MIN(j,k)
+        END IF
+        ResultVar % Values(1:j) = NewValues(1:j)
       END IF
+
+
+
     END DO
 
     NoVar = NoVar - 1
@@ -647,3 +572,43 @@ END SUBROUTINE ParticleAdvector
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
+!> Initialization for the primary solver: ParticleAdvector
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
+SUBROUTINE ParticleAdvector_Init( Model,Solver,dt,TransientSimulation )
+
+  USE DefUtils
+  USE Interpolation
+  USE MeshUtils
+  USE ElementUtils
+  USE ParticleUtils
+
+  IMPLICIT NONE
+!------------------------------------------------------------------------------
+  TYPE(Solver_t), TARGET :: Solver
+  TYPE(Model_t) :: Model
+  REAL(KIND=dp) :: dt
+  LOGICAL :: TransientSimulation
+!------------------------------------------------------------------------------
+! Local variables
+!------------------------
+  
+  TYPE(ValueList_t), POINTER :: Params
+  LOGICAL :: Found
+
+  Params => Solver % Values
+
+  ! These are default setting that make the operation of the advection solver 
+  ! possible. There should always be one passive particle for each active node.
+  !---------------------------------------------------------------------------
+  CALL ListAddString( Params,'Coordinate Initialization Method','nodal ordered')
+  CALL ListAddString( Params,'Velocity Initialization Method','nodal velocity')
+  CALL ListAddInteger( Params,'Time Order',0 )
+  CALL ListAddConstReal( Params,'Particle Node Fraction',1.0_dp)
+  IF(.NOT. ListCheckPresent( Params,'Particle Accurate At Face') ) &
+      CALL ListAddLogical( Params,'Particle Accurate At Face',.TRUE.)  
+  CALL ListAddLogical( Params,'Particle Dt Negative',.TRUE.)
+  CALL ListAddLogical( Params,'Particle Fix Frozen',.TRUE.)
+
+END SUBROUTINE ParticleAdvector_Init

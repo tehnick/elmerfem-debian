@@ -23,21 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  A solver for the Fourier transformed time-dependent diffusion equation
-! *  with a constant frequency forcing term,
-! *  (nabla^2 - iw) B(x) = -f(x,w)
-! *
-! *  Here we are solving specifically the magnetic problem
-! *  (nabla^2/(mu*sigma) - iw) B(x) = iw B_ac(x)
-! * 
-! *  This version solves for a vector field, i.e., the AC field is
-! *  B_ac(x,y,z,t) = B_ac(x,y,z) exp(iwt) is a vector
-! *
-! *  If requested, the time-averaged Lorentz force due to induced field B,
-! *  < 1/mu (curl B) x B >, is calculated and written in the result files.
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Juha Ruokolainen, Ville Savolainen
 ! *  Email:   Juha.Ruokolainen@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -50,32 +35,27 @@
 ! ****************************************************************************/
 
 !------------------------------------------------------------------------------
+!>  A solver for the Fourier transformed time-dependent diffusion equation
+!>  with a constant frequency forcing term,
+!>  (nabla^2 - iw) B(x) = -f(x,w)
+! 
+!>  Here we are solving specifically the magnetic problem
+!>  (nabla^2/(mu*sigma) - iw) B(x) = iw B_ac(x)
+!  
+!>  This version solves for a vector field, i.e., the AC field is
+!>  B_ac(x,y,z,t) = B_ac(x,y,z) exp(iwt) is a vector
+! 
+!>  If requested, the time-averaged Lorentz force due to induced field B,
+!>  < 1/mu (curl B) x B >, is calculated and written in the result files.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
 SUBROUTINE FourierDiffusion3DSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear & nonlinear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations
-!
-!  LOGICAL :: TransientSimulation
-!     INPUT: Steady state or transient simulation
-!
-!******************************************************************************
   USE DefUtils
   USE Types
   USE Lists
-
   USE Integration
   USE ElementDescription
-
   USE SolverUtils
 
   IMPLICIT NONE
@@ -103,7 +83,7 @@ SUBROUTINE FourierDiffusion3DSolver( Model,Solver,dt,TransientSimulation )
        BRer(:), BImr(:), BRez(:), BImz(:), BRep(:), BImp(:)
 
   INTEGER :: iter, i, j, k, n, t, istat, eq, LocalNodes
-  REAL(KIND=dp) :: Norm, PrevNorm, RelativeChange, AngularFrequency
+  REAL(KIND=dp) :: Norm, RelativeChange, AngularFrequency
 
   TYPE(ValueList_t), POINTER :: Material
 
@@ -358,29 +338,7 @@ SUBROUTINE FourierDiffusion3DSolver( Model,Solver,dt,TransientSimulation )
 !
 !    Dirichlet BCs:
 !    --------------
-     CALL SetDirichletBoundaries( Model, StiffMatrix, ForceVector, &
-          ComponentName(Solver % Variable,1), 1, &
-             Solver % Variable % DOFs, SomeQuantityPerm )
-
-     CALL SetDirichletBoundaries( Model, StiffMatrix, ForceVector, &
-          ComponentName(Solver % Variable,2), 2, &
-             Solver % Variable % DOFs, SomeQuantityPerm )
-
-     CALL SetDirichletBoundaries( Model, StiffMatrix, ForceVector, &
-          ComponentName(Solver % Variable,3), 3, &
-             Solver % Variable % DOFs, SomeQuantityPerm )
-
-     CALL SetDirichletBoundaries( Model, StiffMatrix, ForceVector, &
-          ComponentName(Solver % Variable,4), 4, &
-             Solver % Variable % DOFs, SomeQuantityPerm )
-
-     CALL SetDirichletBoundaries( Model, StiffMatrix, ForceVector, &
-          ComponentName(Solver % Variable,5), 5, &
-             Solver % Variable % DOFs, SomeQuantityPerm )
-
-     CALL SetDirichletBoundaries( Model, StiffMatrix, ForceVector, &
-          ComponentName(Solver % Variable,6), 6, &
-             Solver % Variable % DOFs, SomeQuantityPerm )
+     CALL DefaultDirichletBCs()
 
      CALL Info( 'FourierDiffusion3DSolve', 'Assembly done', Level=4 )
 
@@ -388,12 +346,10 @@ SUBROUTINE FourierDiffusion3DSolver( Model,Solver,dt,TransientSimulation )
 !    Solve the system and we are done:
 !    ---------------------------------
 
-     PrevNorm = Norm
      at = CPUTime() - at
      st = CPUTime()
 
-     CALL SolveSystem( StiffMatrix, ParMatrix, ForceVector, &
-          SomeQuantity, Norm, Solver % Variable % DOFs, Solver )
+     Norm = DefaultSolve()
 
      st = CPUTIme()-st
      totat = totat + at
@@ -405,18 +361,15 @@ SUBROUTINE FourierDiffusion3DSolver( Model,Solver,dt,TransientSimulation )
 
 !------------------------------------------------------------------------------
 
-     IF ( PrevNorm + Norm /= 0.0d0 ) THEN
-        RelativeChange = 2*ABS(PrevNorm - Norm) / (PrevNorm + Norm)
-     ELSE
-        RelativeChange = 0.0d0
-     END IF
-
      WRITE( Message, * ) 'Result Norm    : ',Norm
      CALL Info( 'FourierDiffusion3DSolve', Message, Level=4 )
+
+
+     RelativeChange = Solver % Variable % NonlinChange
      WRITE( Message, * ) 'Relative Change: ',RelativeChange
      CALL Info( 'FourierDiffusion3DSolve', Message, Level=4 )
 
-     IF ( RelativeChange < NonlinearTol ) EXIT
+     IF( Solver % Variable % NonlinConverged == 1 ) EXIT
 !------------------------------------------------------------------------------
   END DO ! of nonlinear iteration
 !------------------------------------------------------------------------------

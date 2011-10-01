@@ -23,11 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  FSurSolverLimited: Solver for free surface evolution in 2d and 3d flows
-! *                     with/without surface flux and upper and lower limiters
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Thomas Zwinger, Peter Råback, Juha Ruokolainen, Mikko Lyly
 ! *  Email:   Thomas.Zwinger@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -41,6 +36,11 @@
 ! ****************************************************************************/
 
 
+!-----------------------------------------------------------------------------
+!>  Solver for free surface evolution in 2d and 3d flows
+!>  with or without surface flux, and upper and lower limiters.
+!> \ingroup Solvers
+!-----------------------------------------------------------------------------
 SUBROUTINE FreeSurfaceSolver( Model,Solver,dt,TransientSimulation )
   USE DefUtils
   USE Differentials
@@ -928,7 +928,6 @@ SUBROUTINE FreeSurfaceSolver( Model,Solver,dt,TransientSimulation )
        !------------------------------------------------------------------------------
      END SUBROUTINE LocalMatrix
 
-     !==============================================================================
      !------------------------------------------------------------------------------
    END SUBROUTINE FreeSurfaceSolver
 !------------------------------------------------------------------------------

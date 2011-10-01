@@ -22,28 +22,14 @@
 ! *****************************************************************************/
 
 
+!------------------------------------------------------------------------------
+!>  Exports data to other suitable postprocessing software.
+!>  Currently supported formats are ElmerPost, GiD, VTK legacy, VTK XML, and Open DX.
+!> This is a dynamically loaded solver with a standard interface.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
 SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Exports data to other suitable postprocessing software.
-!  Currently supported formats are GiD, VTK legacy, and Open DX.
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear & nonlinear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations
-!
-!  LOGICAL :: TransientSimulation
-!     INPUT: Steady state or transient simulation
-!
-!******************************************************************************
 
   USE DefUtils
 
@@ -178,7 +164,7 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
     Model % Variables => iMesh % variables 
 
     IF( .NOT. ListSet ) THEN
-      CALL Info('ResultOutputSolver','Creating list for saving')
+      CALL Info('ResultOutputSolver','Creating list for saving - if not present')
       CALL CreateListForSaving( Model, Params,.TRUE. )    
       ListSet = .TRUE.
     ELSE IF( MeshDim /= Model % Mesh % MeshDim ) THEN
@@ -214,7 +200,7 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
       CALL VtkOutputSolver( Model,Solver,dt,TransientSimulation )
     END IF
     IF( SaveVTU ) THEN
-      CALL Info( 'ResultOutputSolver','Saving in Unstructured VTK XML (.vtu) format' )               
+      CALL Info( 'ResultOutputSolver','Saving in unstructured VTK XML (.vtu) format' )               
       CALL VtuOutputSolver( Model,Solver,dt,TransientSimulation )
     END IF
     IF( SaveOpenDx ) THEN
@@ -243,6 +229,9 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
 END SUBROUTINE ResultOutputSolver
 
 
+!------------------------------------------------------------------------------
+!> A fork of the ElmerPost output utility which also includes use of masks.
+!> \ingroup Solvers
 !------------------------------------------------------------------------------
   RECURSIVE SUBROUTINE ElmerPostOutputSolver( Model, Solver,dt,TransientSimulation,ONOEfound )
 !------------------------------------------------------------------------------
@@ -872,6 +861,9 @@ END SUBROUTINE ResultOutputSolver
 
 
 !------------------------------------------------------------------------------
+!> Saves results in a format understood by the pre-/postprocessing software GiD.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
 SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
   USE DefUtils
@@ -1355,6 +1347,9 @@ SUBROUTINE GiDOutputSolver( Model,Solver,dt,TransientSimulation )
 
 
 !------------------------------------------------------------------------------
+!> Saves results in ascii format understood by the pre-/postprocessing software Gmsh.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
 SUBROUTINE GmshOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
   USE DefUtils
@@ -1768,7 +1763,7 @@ END SUBROUTINE GmshOutputSolver
 
 
 !------------------------------------------------------------------------------
-! The Vtk output solver begins here
+!> Module for saving result in the VTK legacy output ascii format. 
 !------------------------------------------------------------------------------
 MODULE VtkLegacyFile
 
@@ -1797,7 +1792,7 @@ CONTAINS
     TYPE(Model_t) :: Model 
     LOGICAL, INTENT(IN) :: SubtractDisp
     TYPE(Variable_t), POINTER :: Var,Var1
-    CHARACTER(LEN=512) :: str
+    CHARACTER(LEN=512) :: str, VarName
     INTEGER :: i,j,k
     
     OPEN( UNIT=VtkUnit, FILE=VtkFile, STATUS='UNKNOWN' )
@@ -1818,7 +1813,8 @@ CONTAINS
         CYCLE
       END IF
       
-      SELECT CASE( Var % Name )
+      
+      SELECT CASE( Var % Name(1:Var % NameLen) )
         
       CASE( 'mesh update' )
         Var1 => Model % Variables
@@ -2246,6 +2242,10 @@ END MODULE VtkLegacyFile
 
 
 !------------------------------------------------------------------------------
+!> Subroutine for legacy VTK output. 
+!> Note that this has been replaced by the more concurrent XML VTK cased formats.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
 SUBROUTINE VtkOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
   
@@ -2343,9 +2343,6 @@ SUBROUTINE VtkOutputSolver( Model,Solver,dt,TransientSimulation )
     END SUBROUTINE VtkOutputSolver
 
 
-!------------------------------------------------------------------------------
-! The DX output solver begins here
-!------------------------------------------------------------------------------
     MODULE DXFile
 
       USE MeshUtils
@@ -2906,6 +2903,8 @@ SUBROUTINE VtkOutputSolver( Model,Solver,dt,TransientSimulation )
       
       
 !------------------------------------------------------------------------------
+!> Module for the DX result writer.
+!------------------------------------------------------------------------------
       SUBROUTINE DXOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
 
@@ -3000,7 +2999,10 @@ END SUBROUTINE DXOutputSolver
 
 
 !------------------------------------------------------------------------------
-! The Vtu output solver begins here
+!> Subroutine for saving the results in XML based VTK format (VTU). Both ascii and binary
+!> output is available, in single or double precision. The format is understood by 
+!> visualization softwares Paraview and ViSit, for example.
+!> \ingroup Solvers
 !------------------------------------------------------------------------------
 SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
@@ -3021,9 +3023,12 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
   CHARACTER(MAX_NAME_LEN) :: VtuFile, PvtuFile 
   TYPE(Mesh_t), POINTER :: Mesh
   TYPE(Variable_t), POINTER :: Var
-  INTEGER :: i, j, k, Partitions, Part, ExtCount, FileindexOffSet, MeshDim
+  INTEGER :: i, j, k, Partitions, Part, ExtCount, FileindexOffSet, MeshDim, PrecBits, PrecSize
   CHARACTER(MAX_NAME_LEN) :: Dir
   LOGICAL :: Visited = .FALSE.
+  REAL(KIND=dp) :: DoubleWrk
+  REAL :: SingleWrk
+
 
   LOGICAL :: MaskExists, MaskAllocated, BinaryOutput, AsciiOutput, SinglePrec, NoFileindex
   CHARACTER(MAX_NAME_LEN) :: Str
@@ -3049,6 +3054,13 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
   IF( SinglePrec .AND. AsciiOutput ) THEN
     CALL Warn('VtuOutputSolver','Single precision is associated only with binary output!')
     SinglePrec = .FALSE.
+  END IF
+  IF( SinglePrec ) THEN
+    PrecBits = 32
+    PrecSize = sizeof( SingleWrk ) 
+  ELSE
+    PrecBits = 64
+    PrecSize = sizeof( DoubleWrk ) 
   END IF
   NoFileindex = GetLogical( Params,'No Fileindex',GotIt)
 
@@ -3167,6 +3179,7 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
         WRITE( VtuFile,'(A,A,I4.4,".vtu")' ) TRIM(Dir),TRIM(FilePrefix),nTime+FileIndexOffset
       END IF
     END IF
+    CALL Info('VtuOutputSolver','Saving to file: '//TRIM(VtuFile))
     CALL WriteVtuFile( VtuFile, Model, FixedMesh )
   END IF
 
@@ -3203,7 +3216,8 @@ CONTAINS
     CHARACTER(LEN=1024) :: Txt, ScalarFieldName, VectorFieldName, TensorFieldName, &
         FieldName, FieldName2, OutStr
     CHARACTER :: lf
-    LOGICAL :: ScalarsExist, VectorsExist, Found, ComponentVector, ComplementExists, Use2
+    LOGICAL :: ElementalSolutionsExist, ScalarsExist, VectorsExist, Found,&
+              ComponentVector, ComplementExists, Use2
     LOGICAL :: WriteData, WriteXML, L
     TYPE(Variable_t), POINTER :: Solution
     INTEGER, POINTER :: Perm(:), Perm2(:), DispPerm(:), Disp2Perm(:)
@@ -3240,7 +3254,10 @@ CONTAINS
     OPEN( UNIT=VtuUnit, FILE=VtuFile, FORM = 'unformatted', ACCESS = 'stream', STATUS='unknown' )
     
     Solver => Model % Solver
-    dim = Model % Mesh % MeshDim
+
+    ! VTU seemingly only works with 3D cases, so enforce it
+    dim = 3
+
     
     WRITE( OutStr,'(A)') '<?xml version="1.0"?>'//lf
     CALL StrWrite( OutStr ) 
@@ -3261,18 +3278,11 @@ CONTAINS
     !-------------------------------------
     ScalarFieldName = GetString( Params,'Scalar Field 1',ScalarsExist)
     VectorFieldName = GetString( Params,'Vector Field 1',VectorsExist)
-    IF( ScalarsExist .AND. VectorsExist) THEN
-      WRITE( OutStr,'(A)') '      <PointData Scalars="'//TRIM(ScalarFieldName)&
-          //'" Vectors="'//TRIM(VectorFieldName)//'">'//lf
-    ELSE IF( ScalarsExist ) THEN
-      WRITE( OutStr,'(A)') '      <PointData Scalars="'//TRIM(ScalarFieldName)//'">'//lf
-    ELSE IF( VectorsExist ) THEN
-      WRITE( OutStr,'(A)') '      <PointData Vectors="'//TRIM(VectorFieldName)//'">'//lf
+    IF( ScalarsExist .OR. VectorsExist) THEN
+      WRITE( OutStr,'(A)') '      <PointData>'//lf
+      CALL StrWrite( OutStr )
     ELSE
       CALL Warn('WriteVtuFile','Are there really no scalars or vectors?')
-    END IF
-    IF( ScalarsExist .OR. VectorsExist ) THEN
-      CALL StrWrite( OutStr )
     END IF
 
 
@@ -3305,6 +3315,7 @@ CONTAINS
     !------------------------------------------------------------------------------------
 100 Offset = 0
     
+    ElementalSolutionsExist=.FALSE.
     DO Rank = 0,2
       DO Vari = 1, 99
         IF(Rank==0) WRITE(Txt,'(A,I0)') 'Scalar Field ',Vari
@@ -3315,8 +3326,7 @@ CONTAINS
         IF(.NOT. Found) EXIT
         
         IF(Rank == 2) THEN
-          CALL Warn('VtuOutputSolver','Do the tensors')
-          EXIT
+          CALL Fatal('VtuOutputSolver','Do the tensors')
         END IF
         
         !---------------------------------------------------------------------
@@ -3382,23 +3392,19 @@ CONTAINS
         END IF
 
         IF( dofs > 1 ) THEN
-          sdofs = MAX(dofs,3)
+          sdofs = MAX(dofs,dim)
         ELSE
-          sdofs = dofs
+          sdofs = 1
         END IF
 
         !---------------------------------------------------------------------
         ! Finally save the field values 
         !---------------------------------------------------------------------
         IF( WriteXML ) THEN
-          IF( SinglePrec ) THEN
-            WRITE( OutStr,'(A,I1,A)') '        <DataArray type="Float32" Name="'//TRIM(FieldName)
-          ELSE
-             WRITE( OutStr,'(A,I1,A)') '        <DataArray type="Float64" Name="'//TRIM(FieldName)
-          END IF
+          WRITE( OutStr,'(A,I0,A)') '        <DataArray type="Float',PrecBits,'" Name="'//TRIM(FieldName)
           CALL StrWrite( OutStr )
 
-          WRITE( OutStr,'(A,I1,A)') '" NumberOfComponents="',sdofs,'"'          
+          WRITE( OutStr,'(A,I0,A)') '" NumberOfComponents="',sdofs,'"'          
           CALL StrWrite( OutStr ) 
           
           IF( AsciiOutput ) THEN
@@ -3411,11 +3417,7 @@ CONTAINS
         END IF
 
         IF( BinaryOutput ) THEN
-          IF( SinglePrec ) THEN
-            k = NumberOfNodes * SIZEOF( fvalue ) * sdofs
-          ELSE
-            k = NumberOfNodes * SIZEOF( value ) * sdofs
-          END IF
+          k = NumberOfNodes * PrecSize * sdofs
           Offset = Offset + SIZEOF( i ) + k
         END IF
          
@@ -3470,14 +3472,14 @@ CONTAINS
             END DO
           END DO
         END IF
-
+        
         IF( AsciiOutput ) THEN
           WRITE( OutStr,'(A)') lf//'        </DataArray>'//lf
           CALL StrWrite( OutStr ) 
         END IF
       END DO
     END DO
-
+    
     IF( WriteXML ) THEN
       IF( ScalarsExist .OR. VectorsExist) THEN
         WRITE( OutStr,'(A)') '      </PointData>'//lf
@@ -3487,136 +3489,92 @@ CONTAINS
     
     ! Elementwise information
     !-------------------------------------
-    FieldName = GetString( Params,'Vector Field Elemental 1',VectorsExist)
-    FieldName = GetString( Params,'Scalar Field Elemental 1',ScalarsExist)
-
-    IF( VectorsExist .OR. ScalarsExist ) THEN
-      IF( WriteXML ) THEN
-        WRITE( OutStr,'(A)') '      <CellData>'//lf
-        CALL StrWrite( OutStr ) 
-      END IF
-
-      IF ( .FALSE. ) THEN
-        IF( WriteXml ) THEN
-          WRITE( OutStr,'(A)') '        <DataArray type="Int32" Name="body" format="ascii">'
-          CALL StrWrite( OutStr ) 
+    IF( WriteXML ) THEN
+      WRITE( OutStr,'(A)') '      <CellData>'//lf
+      CALL StrWrite( OutStr ) 
+    END IF
+    
+    DO Rank = 0,1
+      DO Vari = 1, 99
+        IF( Rank == 0 ) THEN
+          WRITE(Txt,'(A,I0)') 'Scalar Field ',Vari
+        ELSE
+          WRITE(Txt,'(A,I0)') 'Vector Field ',Vari
         END IF
+        
+        FieldName = GetString( Params, TRIM(Txt), Found )
+        IF(.NOT. Found) THEN
+          IF( Rank == 0 ) THEN
+            WRITE(Txt,'(A,I0)') 'Scalar Field Elemental ',Vari
+          ELSE
+            WRITE(Txt,'(A,I0)') 'Vector Field Elemental ',Vari
+          END IF
+          FieldName = GetString( Params, TRIM(Txt), Found )
+          IF(.NOT. Found) EXIT
+        END IF
+        
+        !---------------------------------------------------------------------
+        ! Find the variable with the given name in the normal manner 
+        !---------------------------------------------------------------------
+        Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName))
+        
+        IF(.NOT. ASSOCIATED(Solution)) THEN
+          WRITE(Txt, '(A,A)') 'Nonexistent variable: ',TRIM(FieldName)
+          CALL Warn('WriteVtuXMLFile', Txt)
+          CYCLE
+        END IF
+        
+        IF (Solution % Type /= Variable_on_nodes_on_elements ) CYCLE
+
+        Perm => Solution % Perm
+        Dofs = Solution % DOFs
+        Values => Solution % Values
+        
+        IF( dofs > 1 ) THEN
+          sdofs = MAX(dofs,dim)
+        ELSE
+          sdofs = 1
+        END IF
+        
+        !---------------------------------------------------------------------
+        ! Finally save the field values 
+        !---------------------------------------------------------------------
+        IF( WriteXML ) THEN
+          CALL Info('WriteVtuFile','Writing variable: '//TRIM(FieldName) )
+          WRITE( OutStr,'(A,I0,A)') '        <DataArray type="Float',PrecBits,'" Name="'//TRIM(FieldName)
+          CALL StrWrite( OutStr )
+          
+          WRITE( OutStr,'(A,I0,A)') '" NumberOfComponents="',sdofs,'"'          
+          CALL StrWrite( OutStr ) 
+          
+          IF( AsciiOutput ) THEN
+            WRITE( OutStr,'(A)') ' format="ascii">'//lf
+            CALL StrWrite( OutStr ) 
+          ELSE
+            WRITE( OutStr,'(A,I0,A)') ' format="appended" offset="',Offset,'"/>'//lf
+            CALL StrWrite( OutStr ) 
+          END IF
+        END IF
+        
+        IF( BinaryOutput ) THEN
+          k = PrecSize * sdofs * NumberOfElements
+          Offset = Offset + SIZEOF( i ) + k
+        END IF
+
+        
         IF( WriteData ) THEN
+
+          IF( BinaryOutput ) WRITE( VtuUnit ) k
+
           DO i = 1, Model % NumberOfBulkElements + Model % NumberOfBoundaryElements
+            ElemVectVal = 0.0
+
             CurrentElement => Model % Elements(i)
-            IF(MaskExists) THEN
-              IF( .NOT. ALL(MaskPerm(CurrentElement % NodeIndexes) /= 0)) CYCLE
-            END IF
-            IF( i <= Model % NumberOfBulkElements ) THEN
-              n = CurrentElement % BodyId 
-            ELSE
-              n = 0
+            IF( MaskExists ) THEN
+              IF( ANY(MaskPerm(CurrentElement % NodeIndexes) == 0) ) CYCLE
             END IF
 
-            IF( BinaryOutput ) THEN
-              WRITE( VtuUnit ) n
-            ELSE
-              WRITE( OutStr, '(I0," ")') n
-              CALL StrWrite( OutStr )
-            END IF
-          END DO
-        END IF
-        IF( AsciiOutput ) THEN
-          WRITE( OutStr,'(A)') lf//'        </DataArray>'//lf
-          CALL StrWrite( OutStr ) 
-        END IF
-      END IF
-      
-      DO Vari = 1, 99
-        WRITE(Txt,'(A,I0)') 'Scalar Field Elemental ',Vari
-        FieldName = GetString( Params, TRIM(Txt), Found )
-        IF(.NOT. Found) EXIT
-        
-        !---------------------------------------------------------------------
-        ! Find the variable with the given name in the normal manner 
-        !---------------------------------------------------------------------
-        Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName))
-
-        IF(.NOT. ASSOCIATED(Solution)) THEN
-          WRITE(Txt, '(A,A)') 'Nonexistent variable: ',TRIM(FieldName)
-          CALL Warn('WriteVtuXMLFile', Txt)
-          CYCLE
-        END IF
-        
-        Perm => Solution % Perm
-        Dofs = Solution % DOFs
-        Values => Solution % Values
-  
-        WRITE(Txt, '(A,A,A)') 'Write variable: "',TRIM(FieldName), "'"
-        CALL Info('WriteVtuFile', Txt)
-  
-        IF( WriteXML ) THEN
-          WRITE( OutStr,'(A,I1,A)') '        <DataArray type="Float64" Name="'//TRIM(FieldName)&
-              //'" NumberOfComponents="1" format="ascii">'    
-        END IF
-
-        IF( WriteData ) THEN
-          DO i = 1, Model % NumberOfBulkElements + Model % NumberOfBoundaryElements
-            ElemVectVal = 0.0
-            IF( i <= Model % NumberOfBulkElements ) THEN
-              CurrentElement => Model % Elements(i)
-              IF ( ALL(Perm(CurrentElement % DGIndexes) > 0)) THEN
-                n = GetElementNOFNodes()
-                ElemVectVal(1) = SUM(Values(perm(CurrentElement % DGIndexes)))/n
-              END IF
-            END IF
-            IF( BinaryOutput ) THEN
-              WRITE( VtuUnit ) ElemVectVal(1)
-            ELSE
-              WRITE( OutStr,'(ES16.7E3)') ElemVectVal(1)
-              CALL StrWrite( OutStr ) 
-            END IF
-          END DO
-        END IF
-
-        IF( AsciiOutput ) THEN
-          WRITE( OutStr,'(A)') lf//'        </DataArray>'//lf
-          CALL StrWrite( OutStr )
-        END IF
-      END DO
-
-      !---------------------------------------------------------------------
-      ! Elemental fields
-      !---------------------------------------------------------------------
-      DO Vari = 1, 99
-        WRITE(Txt,'(A,I0)') 'Vector Field Elemental ',Vari
-        FieldName = GetString( Params, TRIM(Txt), Found )
-        IF(.NOT. Found) EXIT
-        
-        !---------------------------------------------------------------------
-        ! Find the variable with the given name in the normal manner 
-        !---------------------------------------------------------------------
-        Solution => VariableGet( Model % Mesh % Variables, TRIM(FieldName))
-
-        IF(.NOT. ASSOCIATED(Solution)) THEN
-          WRITE(Txt, '(A,A)') 'Nonexistent variable: ',TRIM(FieldName)
-          CALL Warn('WriteVtuXMLFile', Txt)
-          CYCLE
-        END IF
-        
-        Perm => Solution % Perm
-        Dofs = Solution % DOFs
-        Values => Solution % Values
-  
-        WRITE(Txt, '(A,A,A)') 'Write variable: "',TRIM(FieldName), "'"
-        CALL Info('WriteVtuFile', Txt)
-
-        IF( WriteXML ) THEN
-          WRITE( OutStr,'(A,I1,A)') '        <DataArray type="Float64" Name="'//TRIM(FieldName)&
-              //'" NumberOfComponents="3" format="ascii">'//lf
-          CALL StrWrite( OutStr )
-        END IF
-
-        IF( WriteData ) THEN
-          DO i = 1, Model % NumberOfBulkElements + Model % NumberOfBoundaryElements
-            ElemVectVal = 0.0
-            IF( i <= Model % NumberOfBulkElements ) THEN
-              CurrentElement => Model % Elements(i)
+            IF (i<=Model % NumberOfBulkElements) THEN
               IF ( ALL(Perm(CurrentElement % DGIndexes)>0)) THEN
                 n = GetElementNOFNodes()
                 DO j=1,dofs
@@ -3624,31 +3582,35 @@ CONTAINS
                 END DO
               END IF
             END IF
-
-            DO j=1,dofs                
+            
+            DO j=1,sdofs                
               IF( BinaryOutput ) THEN
-                WRITE( VtuUnit ) ElemVectVal(j) 
+                IF( SinglePrec ) THEN
+                  fvalue = ElemVectVal(j)
+                  WRITE( VtuUnit ) fvalue
+                ELSE
+                  WRITE( VtuUnit ) ElemVectVal(j) 	
+                END IF
               ELSE
                 WRITE( OutStr,'(ES16.7E3)') ElemVectVal(j)
                 CALL StrWrite( OutStr ) 
               END IF
             END DO
-
+            
           END DO
         END IF
-
+        
         IF( AsciiOutput ) THEN
           WRITE( OutStr,'(A)') lf//'        </DataArray>'//lf
           CALL StrWrite( OutStr ) 
         END IF
       END DO
-      
-      IF( WriteXML ) THEN
-        WRITE( OutStr,'(A)') '      </CellData>'//lf
-        CALL StrWrite( OutStr ) 
-      END IF
-        
-    END IF
+    END DO
+
+    IF( WriteXML ) THEN
+      WRITE( OutStr,'(A)') '      </CellData>'//lf
+      CALL StrWrite( OutStr ) 
+    END IF        
 
     ! Coordinates of each point
     !-------------------------------------
@@ -3656,11 +3618,7 @@ CONTAINS
       WRITE( OutStr,'(A)') '      <Points>'//lf
       CALL StrWrite( OutStr ) 
 
-      IF( SinglePrec ) THEN
-        WRITE( OutStr,'(A)') '        <DataArray type="Float32" NumberOfComponents="3"'
-      ELSE
-        WRITE( OutStr,'(A)') '        <DataArray type="Float64" NumberOfComponents="3"'
-      END IF
+      WRITE( OutStr,'(A,I0,A,I0,A)') '        <DataArray type="Float',PrecBits,'" NumberOfComponents="',dim,'"'
       CALL StrWrite( OutStr )       
 
       IF( AsciiOutput ) THEN
@@ -3673,11 +3631,7 @@ CONTAINS
     END IF
 
     IF( BinaryOutput ) THEN
-      IF( SinglePrec ) THEN
-        k = 3 * NumberOfNodes * SIZEOF( fvalue )
-      ELSE      
-        k = 3 * NumberOfNodes * SIZEOF( value )
-      END IF
+      k = dim * NumberOfNodes * PrecSize
       Offset = Offset + SIZEOF( i ) + k
     END IF
 
@@ -3717,16 +3671,24 @@ CONTAINS
           IF( SinglePrec ) THEN
             xf = x
             yf = y
-            zf = z
-            WRITE( VtuUnit ) xf, yf, zf
+	    IF( dim == 2 ) THEN
+              WRITE( VtuUnit ) xf, yf
+            ELSE
+              zf = z
+              WRITE( VtuUnit ) xf, yf, zf
+            END IF
           ELSE
-            WRITE( VtuUnit ) x, y, z 
+            IF( dim == 2 ) THEN
+              WRITE( VtuUnit ) x, y 
+            ELSE
+              WRITE( VtuUnit ) x, y, z
+            END IF	      
           END IF
         ELSE        
-          IF(dim == 3) THEN
-            WRITE(OutStr,'(3ES16.7E3)') x, y, z
+          IF(meshdim == 2) THEN
+            WRITE(OutStr,'(2ES16.7E3,A)') x, y,' 0.0'
           ELSE
-            WRITE(OutStr,'(2ES16.7E3," 0.0")') x, y
+            WRITE(OutStr,'(3ES16.7E3)') x, y, z
           END IF
           CALL StrWrite( OutStr ) 
         END IF
@@ -3980,7 +3942,7 @@ CONTAINS
     IF( Part > 0 ) RETURN
 
     OPEN( UNIT=VtuUnit, FILE=VtuFile, form = 'formatted', STATUS='UNKNOWN' )
-    dim = Model % Mesh % MeshDim
+    dim = 3
 
     IF ( LittleEndian() ) THEN
       WRITE( VtuUnit,'(A)') '<VTKFile type="PUnstructuredGrid" version="0.1" byte_order="LittleEndian">'
@@ -4057,10 +4019,7 @@ CONTAINS
           WRITE( VtuUnit,'(A,A,I1,A)') '      <PDataArray type="Float64" Name="'//TRIM(FieldName), &
               '" NumberOfComponents="',sdofs,'" format="ascii"/>'  
         ELSE IF( SinglePrec ) THEN
-          WRITE( VtuUnit,'(A,A,I1,A)') '      <PDataArray type="Float32" Name="'//TRIM(FieldName), &
-              '" NumberOfComponents="',sdofs,'" format="appended"/>'  
-        ELSE
-          WRITE( VtuUnit,'(A,A,I1,A)') '      <PDataArray type="Float64" Name="'//TRIM(FieldName), &
+          WRITE( VtuUnit,'(A,I0,A,A,I0,A)') '      <PDataArray type="Float',PrecBits,'" Name="'//TRIM(FieldName), &
               '" NumberOfComponents="',sdofs,'" format="appended"/>'  
         END IF
       END DO
@@ -4083,11 +4042,9 @@ CONTAINS
     !-------------------------------------
     WRITE( VtuUnit,'(A)') '      <PPoints>'
     IF( AsciiOutput ) THEN
-      WRITE( VtuUnit,'(A)') '        <DataArray type="Float64" NumberOfComponents="3" format="ascii"/>'    
-    ELSE IF( SinglePrec ) THEN
-      WRITE( VtuUnit,'(A)') '        <DataArray type="Float32" NumberOfComponents="3" format="appended"/>'    
-    ELSE
-      WRITE( VtuUnit,'(A)') '        <DataArray type="Float64" NumberOfComponents="3" format="appended"/>'    
+      WRITE( VtuUnit,'(A,I0,A)') '        <DataArray type="Float64" NumberOfComponents="',dim,'" format="ascii"/>'    
+    ELSE 
+      WRITE( VtuUnit,'(A,I0,A,I0,A)') '        <DataArray type="Float',PrecBits,'" NumberOfComponents="',dim,'" format="appended"/>'    
     END IF
     WRITE( VtuUnit,'(A)') '      </PPoints>' 
 

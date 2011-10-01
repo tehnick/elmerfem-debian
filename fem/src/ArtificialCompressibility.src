@@ -41,33 +41,19 @@
 ! ******************************************************************************
 
 !------------------------------------------------------------------------------
+!> Subroutine that may be used to normalize the amplitude of artificial compressibility for
+!> optimal fluid-structure coupling.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
 SUBROUTINE CompressibilityScale( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear & nonlinear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations
-!
-!  LOGICAL :: TransientSimulation
-!     INPUT: Steady state or transient simulation
-!
-!******************************************************************************
   USE DefUtils
-
   IMPLICIT NONE
 !------------------------------------------------------------------------------
-  TYPE(Solver_t) :: Solver
-  TYPE(Model_t) :: Model
-  REAL(KIND=dp) :: dt
-  LOGICAL :: TransientSimulation
+  TYPE(Solver_t) :: Solver   !< Linear & nonlinear equation solver options
+  TYPE(Model_t) :: Model     !< All model information (mesh, materials, BCs, etc...)
+  REAL(KIND=dp) :: dt        !< Timestep size for time dependent simulations
+  LOGICAL :: TransientSimulation !< Steady state or transient simulation
 !------------------------------------------------------------------------------
 ! Local variables
 !------------------------------------------------------------------------------
@@ -80,7 +66,7 @@ SUBROUTINE CompressibilityScale( Model,Solver,dt,TransientSimulation )
       Time, PrevTime=0.0d0, MinimumSideVolume=1.0d10, &
       TransitionVolume, dVolume
   LOGICAL :: Stat, GotIt, SubroutineVisited=.False., &
-      ScaleCompressibility
+      ScaleCompressibility, FsiBC
   INTEGER :: i,j,k,n,pn,t,DIM,mat_id,TimeStepVisited
   INTEGER, POINTER :: NodeIndexes(:)
   TYPE(Variable_t), POINTER :: Var,Dvar
@@ -181,7 +167,10 @@ SUBROUTINE CompressibilityScale( Model,Solver,dt,TransientSimulation )
 
      DO k=1, Model % NumberOfBCs
         IF ( Model % BCs(k) % Tag /= CurrentElement % BoundaryInfo % Constraint ) CYCLE
-        IF ( .NOT.ListGetLogical(Model % BCs(k) % Values,'Force BC',stat ) ) CYCLE
+
+        FsiBC = ListGetLogical(Model % BCs(k) % Values,'Force BC',stat ) .OR. &
+                ListGetLogical(Model % BCs(k) % Values,'Fsi BC',stat ) 
+        IF(.NOT. FsiBC ) CYCLE
 
         ElementNodes % x(1:n) = Mesh % Nodes % x(NodeIndexes)
         ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes)
@@ -412,36 +401,21 @@ END SUBROUTINE CompressibilityScale
 
 
 
-
+!------------------------------------------------------------------------------
+!> Subroutine for computing the artificial compressibility from the volume change 
+!> of elements. The volume change is obtained by extending the displacement field
+!> of a test load to the fluid domain.
+!> \ingroup Solvers
 !------------------------------------------------------------------------------
 SUBROUTINE CompressibilitySolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Solve the artificial compressibility from the volume change of elements
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear & nonlinear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations
-!
-!  LOGICAL :: TransientSimulation
-!     INPUT: Steady state or transient simulation
-!
-!******************************************************************************
   USE DefUtils
   IMPLICIT NONE
 !------------------------------------------------------------------------------
-  TYPE(Solver_t) :: Solver
-  TYPE(Model_t) :: Model
-  REAL(KIND=dp) :: dt
-  LOGICAL :: TransientSimulation
+  TYPE(Solver_t) :: Solver   !< Linear & nonlinear equation solver options
+  TYPE(Model_t) :: Model     !< All model information (mesh, materials, BCs, etc...)
+  REAL(KIND=dp) :: dt        !< Timestep size for time dependent simulations
+  LOGICAL :: TransientSimulation !< Steady state or transient simulation
 !------------------------------------------------------------------------------
 ! Local variables
 !------------------------------------------------------------------------------

@@ -23,10 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  Module containing a solver for the general non-linear elasticity equations
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Juha Ruokolainen, Mikko Lyly
 ! *  Email:   Juha.Ruokolainen@csc.fi, Mikko.Lyly@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -38,30 +34,10 @@
 ! *
 ! *****************************************************************************/
 
-!------------------------------------------------------------------------------
-  SUBROUTINE ElasticSolver_Init( Model,Solver,dt,Transient )
-!------------------------------------------------------------------------------
-    USE DefUtils
 
-    TYPE(Model_t)  :: Model
-    TYPE(Solver_t) :: Solver
-    REAL(KIND=dp) :: DT
-    LOGICAL :: Transient
 !------------------------------------------------------------------------------
-    INTEGER :: dim
-    TYPE(ValueList_t), POINTER :: SolverParams
-!------------------------------------------------------------------------------
-    SolverParams => GetSolverParams()
-    IF ( .NOT. ListCheckPresent( SolverParams,'Variable') ) THEN
-      dim = CoordinateSystemDimension()
-      CALL ListAddInteger( SolverParams, 'Variable DOFs', dim )
-      CALL ListAddString( SolverParams, 'Variable', 'Displacement' )
-    END IF
-    CALL ListAddInteger( SolverParams, 'Time derivative order', 2 )
-!------------------------------------------------------------------------------
-  END SUBROUTINE ElasticSolver_Init
-!------------------------------------------------------------------------------
-
+!>  Solver for the general non-linear elasticity equations.
+!> \ingroup Solvers
 !------------------------------------------------------------------------------
    SUBROUTINE ElasticSolver( Model, Solver, dt, TransientSimulation )
 !------------------------------------------------------------------------------
@@ -73,27 +49,8 @@
     IMPLICIT NONE
 
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Solve elasticity equations for one timestep
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh,materials,BCs,etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations (NOTE: Not used
-!            currently)
-!
-!******************************************************************************
-
      TYPE(Model_t)  :: Model
      TYPE(Solver_t), TARGET :: Solver
-
      LOGICAL ::  TransientSimulation
      REAL(KIND=dp) :: dt
 !------------------------------------------------------------------------------
@@ -110,7 +67,7 @@
      TYPE(Element_t),POINTER :: CurrentElement, ParentElement, FlowElement
 
      REAL(KIND=dp) :: RelativeChange,UNorm,Gravity(3), &
-         Tdiff,Normal(3),NewtonTol,NonlinearTol,s,TOL(1)
+         Tdiff,Normal(3),NewtonTol,s,TOL(1)
 
      INTEGER :: NewtonIter,NonlinearIter, FlowNOFNodes
 
@@ -133,14 +90,19 @@
 
      CHARACTER(LEN=MAX_NAME_LEN) :: str, CompressibilityFlag
      LOGICAL :: CompressibilityDefined = .FALSE.
+     TYPE(ValueList_t), POINTER :: SolverParams
+     TYPE(Mesh_t), POINTER :: Mesh
+!------------------------------------------------------------------------------
+
+
 
      REAL(KIND=dp),ALLOCATABLE:: LocalMassMatrix(:,:),LocalStiffMatrix(:,:),&
-          LocalDampMatrix(:,:),LoadVector(:,:),Viscosity(:),LocalForce(:), &
+          LocalDampMatrix(:,:),LoadVector(:,:),InertialLoad(:,:), Viscosity(:),LocalForce(:), &
           LocalTemperature(:),ElasticModulus(:),PoissonRatio(:), Density(:), &
           Damping(:), HeatExpansionCoeff(:,:,:),Alpha(:,:),Beta(:), &
           ReferenceTemperature(:),BoundaryDispl(:),LocalDisplacement(:,:), PrevSOL(:)
 
-     SAVE LocalMassMatrix,LocalStiffMatrix,LocalDampMatrix,LoadVector,Viscosity, &
+     SAVE LocalMassMatrix,LocalStiffMatrix,LocalDampMatrix,LoadVector,InertialLoad, Viscosity, &
        LocalForce,ElementNodes,ParentNodes,FlowNodes,Alpha,Beta, &
          LocalTemperature,AllocationsDone,ReferenceTemperature,BoundaryDispl, &
            ElasticModulus, PoissonRatio,Density,Damping,HeatExpansionCoeff, &
@@ -187,6 +149,8 @@
 !------------------------------------------------------------------------------
      IF ( .NOT. ASSOCIATED( Solver % Matrix ) ) RETURN
 
+     SolverParams => GetSolverParams()
+     Mesh => GetMesh()
      dim = CoordinateSystemDimension()
      CoordinateSystem = CurrentCoordinateSystem()
 
@@ -198,26 +162,26 @@
      LocalNodes = COUNT( StressPerm > 0 )
      IF ( LocalNodes <= 0 ) RETURN
 
-     TempSol => VariableGet( Solver % Mesh % Variables, 'Temperature' )
+     TempSol => VariableGet( Mesh % Variables, 'Temperature' )
      IF ( ASSOCIATED( TempSol) ) THEN
        TempPerm    => TempSol % Perm
        Temperature => TempSol % Values
      END IF
 
-     FlowSol => VariableGet( Solver % Mesh % Variables, 'Flow Solution' )
+     FlowSol => VariableGet( Mesh % Variables, 'Flow Solution' )
      IF ( ASSOCIATED( FlowSol) ) THEN
        FlowPerm => FlowSol % Perm
        k = SIZE( FlowSol % Values )
        FlowSolution => FlowSol % Values
      END IF
 
-     MeshDisplacementActive = ListGetLogical( Solver % Values, &
+     MeshDisplacementActive = ListGetLogical( SolverParams, &
                  'Displace Mesh', GotIt )
      IF ( .NOT. GotIt ) &
        MeshDisplacementActive = .NOT.EigenOrHarmonicAnalysis()
 
      IF ( AllocationsDone .AND. MeshDisplacementActive ) THEN
-        CALL DisplaceMesh( Solver % Mesh, Displacement, -1, StressPerm, STDOFs )
+        CALL DisplaceMesh( Mesh, Displacement, -1, StressPerm, STDOFs )
      END IF
 
      StiffMatrix => Solver % Matrix
@@ -228,8 +192,8 @@
 !------------------------------------------------------------------------------
 !     Allocate some permanent storage, this is done first time only
 !------------------------------------------------------------------------------
-     IF ( .NOT. AllocationsDone .OR. Solver %  Mesh % Changed ) THEN
-       N = Solver % Mesh % MaxElementNodes
+     IF ( .NOT. AllocationsDone .OR. Mesh % Changed ) THEN
+       N = Mesh % MaxElementNodes
 
        IF ( AllocationsDone ) THEN
           DEALLOCATE( &
@@ -244,7 +208,7 @@
                  LocalMassMatrix,  &
                  LocalStiffMatrix,  &
                  LocalDampMatrix,  &
-                 LoadVector, Alpha, Beta, &
+                 LoadVector, InertialLoad, Alpha, Beta, &
                  LocalDisplacement )
        END IF
 
@@ -260,7 +224,7 @@
                  LocalMassMatrix(  STDOFs*N,STDOFs*N ),  &
                  LocalStiffMatrix( STDOFs*N,STDOFs*N ),  &
                  LocalDampMatrix( STDOFs*N,STDOFs*N ),  &
-                 LoadVector( 4,N ), Alpha( 3,N ), Beta( N ), &
+                 LoadVector( 4,N ), InertialLoad(3,N), Alpha( 3,N ), Beta( N ), &
                  LocalDisplacement( 3,N ), STAT=istat )
 
        IF ( istat /= 0 ) THEN
@@ -292,28 +256,26 @@
 !      Gravity(2) = -9.81D0
 !    END IF
 !------------------------------------------------------------------------------
-     NonlinearTol = ListGetConstReal( Solver % Values, &
-        'Nonlinear System Convergence Tolerance' )
 
 ! Newton linearization not implemented, it seems
-!     NewtonTol = ListGetConstReal( Solver % Values, &
+!     NewtonTol = ListGetConstReal( SolverParams, &
 !        'Nonlinear System Newton After Tolerance' )
 
-!     NewtonIter = ListGetInteger( Solver % Values, &
+!     NewtonIter = ListGetInteger( SolverParams, &
 !        'Nonlinear System Newton After Iterations' )
 
-     NonlinearIter = ListGetInteger( Solver % Values, &
+     NonlinearIter = ListGetInteger( SolverParams, &
          'Nonlinear System Max Iterations',GotIt )
 
      IF ( .NOT.GotIt ) NonlinearIter = 1
 
-     LinearModel = ListGetLogical( Solver % Values, &
+     LinearModel = ListGetLogical( SolverParams, &
           'Elasticity Solver Linear', GotIt )
 
-     IF( ListGetLogical( Solver % Values, 'Eigen Analysis',GotIt) ) &
+     IF( ListGetLogical( SolverParams, 'Eigen Analysis',GotIt) ) &
           LinearModel = .TRUE.
 
-     EquationName = ListGetString( Solver % Values, 'Equation' )
+     EquationName = ListGetString( SolverParams, 'Equation' )
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
@@ -402,6 +364,7 @@
              'Body Force',gotIt, 1, Model % NumberOFBodyForces)
 
          LoadVector = 0.0D0
+         InertialLoad = 0.0D0
 
          IF ( gotit ) THEN
            LoadVector(1,1:n) = LoadVector(1,1:n) + ListGetReal( &
@@ -417,8 +380,23 @@
               Model % BodyForces(bf_id) % Values, &
                        'Stress Bodyforce 3',n,NodeIndexes,gotIt )
            END IF
-         END IF
 
+           InertialLoad(1,1:n) = InertialLoad(1,1:n) + ListGetReal( &
+            Model % BodyForces(bf_id) % Values, &
+                       'Inertial Bodyforce 1',n,NodeIndexes,gotIt )
+
+           InertialLoad(2,1:n) = InertialLoad(2,1:n) + ListGetReal( &
+            Model % BodyForces(bf_id) % Values, &
+                       'Inertial Bodyforce 2',n,NodeIndexes,gotIt )
+
+           IF ( STDOFs > 2 ) THEN
+             InertialLoad(3,1:n) = InertialLoad(3,1:n) + ListGetReal( &
+              Model % BodyForces(bf_id) % Values, &
+                       'Inertial Bodyforce 3',n,NodeIndexes,gotIt )
+           END IF
+
+
+         END IF
 
 !------------------------------------------------------------------------------
 !        Get element local stiffness & mass matrices
@@ -445,7 +423,7 @@
 
          IF ( CoordinateSystem == Cartesian ) THEN
             CALL StressCompose( LocalMassMatrix, LocalDampMatrix, &
-              LocalStiffMatrix,LocalForce, LoadVector, ElasticModulus, &
+              LocalStiffMatrix,LocalForce, LoadVector, InertialLoad, ElasticModulus, &
                 PoissonRatio,Density,Damping,PlaneStress,HeatExpansionCoeff, &
                 LocalTemperature,CurrentElement,n,ElementNodes,LocalDisplacement )
          ELSE
@@ -495,17 +473,17 @@
 !------------------------------------------------------------------------------
 !     Neumann & Newton boundary conditions
 !------------------------------------------------------------------------------
-      DO t = Solver % Mesh % NumberOfBulkElements+1, &
-               Solver % Mesh % NumberOfBulkElements + &
-                   Solver % Mesh % NumberOfBoundaryElements
+      DO t = Mesh % NumberOfBulkElements+1, &
+             Mesh % NumberOfBulkElements + &
+             Mesh % NumberOfBoundaryElements
 
-        CurrentElement => Solver % Mesh % Elements(t)
+        CurrentElement => Mesh % Elements(t)
 
 !------------------------------------------------------------------------------
 !        Set also the current element pointer in the model structure to
 !        reflect the element being processed
 !------------------------------------------------------------------------------
-        Model % CurrentElement => Solver % Mesh % Elements(t)
+        Model % CurrentElement => Mesh % Elements(t)
 !------------------------------------------------------------------------------
         n = CurrentElement % TYPE % NumberOfNodes
         NodeIndexes => CurrentElement % NodeIndexes
@@ -517,9 +495,9 @@
 !
         IF ( CurrentElement % TYPE % ElementCode /= 101 ) THEN
 
-        ElementNodes % x(1:n) = Solver % Mesh % Nodes % x(NodeIndexes)
-        ElementNodes % y(1:n) = Solver % Mesh % Nodes % y(NodeIndexes)
-        ElementNodes % z(1:n) = Solver % Mesh % Nodes % z(NodeIndexes)
+        ElementNodes % x(1:n) = Mesh % Nodes % x(NodeIndexes)
+        ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes)
+        ElementNodes % z(1:n) = Mesh % Nodes % z(NodeIndexes)
 
         DO i=1,Model % NumberOfBCs
           IF ( CurrentElement % BoundaryInfo % Constraint == &
@@ -660,8 +638,6 @@
                ParentElement, ParentElement % TYPE % NumberOfNodes,          &
                 ParentNodes, FlowElement, FlowNOFNodes, FlowNodes,Velocity,  &
                  Pressure,Viscosity,Density,CompressibilityDefined )
-!             CALL StressGeneralBoundary( LocalStiffMatrix, &
-!              LocalForce,LoadVector,Alpha,Beta,CurrentElement,n,ElementNodes )
            END IF
 
 !------------------------------------------------------------------------------
@@ -710,20 +686,20 @@
 !      IF ( RelativeChange < NewtonTol .OR. &
 !             iter > NewtonIter ) NewtonLinearization = .TRUE.
 
-      IF ( RelativeChange < NonLinearTol ) EXIT
+      IF ( Solver % Variable % NonlinConverged == 1 ) EXIT
 
 !------------------------------------------------------------------------------
     END DO ! of nonlinear iter
 !------------------------------------------------------------------------------
 
-    IF ( ListGetLogical(Solver % Values, 'Adaptive Mesh Refinement', GotIt) ) THEN
+    IF ( ListGetLogical(SolverParams, 'Adaptive Mesh Refinement', GotIt) ) THEN
        CALL RefineMesh( Model, Solver, Displacement, StressPerm, &
             ElastInsideResidual, ElastEdgeResidual, ElastBoundaryResidual )
 
        IF ( MeshDisplacementActive ) THEN
          StressSol => Solver % Variable
-         IF ( .NOT.ASSOCIATED( Solver % Mesh, Model % Mesh ) ) &
-            CALL DisplaceMesh( Solver % Mesh, StressSol % Values, 1, &
+         IF ( .NOT.ASSOCIATED( Mesh, Model % Mesh ) ) &
+            CALL DisplaceMesh( Mesh, StressSol % Values, 1, &
                   StressSol % Perm, StressSol % DOFs, .FALSE. )
        END IF
     END IF
@@ -739,10 +715,93 @@
 
     CONTAINS
 
+      
+      FUNCTION ElasticityGaussPoints( Element ) RESULT ( N_gauss ) 
+
+        TYPE(Element_t) :: Element
+        INTEGER :: N_gauss
+        
+        INTEGER :: ElemFamily
+
+        ElemFamily = Element % TYPE % ElementCode / 100
+        N_gauss = 0
+
+        SELECT CASE( ElemFamily ) 
+
+!       Line segments:
+!       --------------
+        CASE( 2 )
+          SELECT CASE( n )
+          CASE( 2 )
+            N_gauss = 1
+          CASE( 3 )
+            N_gauss = 4
+          CASE( 4 )
+            N_gauss = 5
+          END SELECT
+          
+!       Triangles:
+!       ----------
+        CASE( 3 )
+          SELECT CASE( n )
+          CASE( 3 )
+            N_gauss = 1
+          CASE( 6 )
+            N_gauss = 7
+          CASE( 10 )
+            N_gauss = 17
+          END SELECT
+
+!       Quadrilaterals:
+!       ---------------
+        CASE( 4 )
+          SELECT CASE( n )
+          CASE( 4 )
+            N_gauss = 4
+          CASE( 8,9 )
+            N_gauss = 16
+          CASE( 12,16 )
+            N_gauss = 25
+          END SELECT
+          
+!       Tetrahedrons:
+!       -------------
+        CASE( 5 )
+          SELECT CASE( n )
+          CASE( 4 )
+            N_gauss = 1
+          CASE( 10 )
+            N_gauss = 11
+          END SELECT
+
+!       Octahedrons:
+!       ------------
+        CASE( 8 )
+          SELECT CASE( n )
+          CASE( 8 )
+            N_gauss = 8
+          CASE( 20,27 )
+            N_gauss = 64
+          END SELECT
+       
+!       Others:
+!       -------
+        CASE DEFAULT
+          CALL Fatal( 'ElasticSolve',  'Unknown element type.' )
+       
+        END SELECT
+
+        IF( N_gauss == 0 ) THEN
+          CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
+        END IF
+
+      END FUNCTION ElasticityGaussPoints
+
+
 
 !------------------------------------------------------------------------------
    SUBROUTINE StressCompose( MassMatrix,DampMatrix,StiffMatrix,ForceVector, &
-        LoadVector, NodalYoung, NodalPoisson, NodalDensity, NodalDamping, &
+        LoadVector, InertialLoad, NodalYoung, NodalPoisson, NodalDensity, NodalDamping, &
         PlaneStress,NodalHeatExpansion, NodalTemperature, Element,n,Nodes, &
         NodalDisplacement )
 !------------------------------------------------------------------------------
@@ -750,7 +809,7 @@
      REAL(KIND=dp) :: StiffMatrix(:,:),MassMatrix(:,:),DampMatrix(:,:), &
           NodalHeatExpansion(:,:,:)
      REAL(KIND=dp) :: NodalTemperature(:),NodalDensity(:), &
-                NodalDamping(:),LoadVector(:,:)
+                NodalDamping(:),LoadVector(:,:), InertialLoad(:,:)
      REAL(KIND=dp) :: NodalDisplacement(:,:)
      REAL(KIND=dp), DIMENSION(:) :: ForceVector,NodalPoisson,NodalYoung
 
@@ -759,13 +818,13 @@
      TYPE(Element_t) :: Element
      TYPE(Nodes_t) :: Nodes
 
-     INTEGER :: n
+     INTEGER :: n, N_gauss
 !------------------------------------------------------------------------------
 !
      REAL(KIND=dp) :: Basis(n)
      REAL(KIND=dp) :: dBasisdx(n,3),SqrtElementMetric
 
-     REAL(KIND=dp) :: Force(3),NodalLame1(n),NodalLame2(n),Density, &
+     REAL(KIND=dp) :: Force(3), InertialForce(3), NodalLame1(n),NodalLame2(n),Density, &
           Damping,Lame1,Lame2
      REAL(KIND=dp) :: Grad(3,3),Identity(3,3),DetDefG,CofG(3,3),TrueForce(3)
      REAL(KIND=dp) ::  DefG(3,3), Strain(3,3), Stress2(3,3), Stress1(3,3)
@@ -812,80 +871,10 @@
 !    
 !    Integration stuff
 !    
-     SELECT CASE(Element % TYPE % ElementCode/100)
 
-!       Line segments:
-!       --------------
-        CASE( 2 )
-        SELECT CASE( n )
-           CASE( 2 )
-           IntegStuff = GaussPoints( element,1 )
-           CASE( 3 )
-           IntegStuff = GaussPoints( element,4 )
-           CASE( 4 )
-           IntegStuff = GaussPoints( element,5 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
+     N_gauss = ElasticityGaussPoints( Element )      
+     IntegStuff = GaussPoints( element,N_gauss )
 
-!       Triangles:
-!       ----------
-        CASE( 3 )
-        SELECT CASE( n )
-           CASE( 3 )
-           IntegStuff = GaussPoints( element,1 )
-           CASE( 6 )
-           IntegStuff = GaussPoints( element,7 )
-           CASE( 10 )
-           IntegStuff = GaussPoints( element,17 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
-
-!       Quadrilaterals:
-!       ---------------
-        CASE( 4 )
-        SELECT CASE( n )
-           CASE( 4 )
-           IntegStuff = GaussPoints( element,4 )
-           CASE( 8,9 )
-           IntegStuff = GaussPoints( element,16 )
-           CASE( 12,16 )
-           IntegStuff = GaussPoints( element,25 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
-
-!       Tetrahedrons:
-!       -------------
-        CASE( 5 )
-        SELECT CASE( n )
-           CASE( 4 )
-           IntegStuff = GaussPoints( element,1 )
-           CASE( 10 )
-           IntegStuff = GaussPoints( element,11 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
-
-!       Octahedrons:
-!       ------------
-        CASE( 8 )
-        SELECT CASE( n )
-           CASE( 8 )
-           IntegStuff = GaussPoints( element,8 )
-           CASE( 20,27 )
-           IntegStuff = GaussPoints( element,64 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
-
-!       Others:
-!       -------
-        CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown element type.' )
-
-     END SELECT
 
      U_Integ => IntegStuff % u
      V_Integ => IntegStuff % v
@@ -916,6 +905,7 @@
       Force = 0.0D0
       DO i=1,dim
         Force(i) = SUM( LoadVector(i,1:n)*Basis )
+        InertialForce(i) = SUM( InertialLoad(i,1:n)*Basis )
       END DO
 !
 !     Lame parameters at the integration point
@@ -927,7 +917,7 @@
 !
 !     Temperature at the integration point
 !
-      Temperature = SUM( NodalTemperature(1:n)*Basis )
+!      Temperature = SUM( NodalTemperature(1:n)*Basis )
 !
 !     Heat expansion tensor values at the integration point
 !
@@ -989,6 +979,7 @@
 
              ForceVector(dim*(p-1)+i) = ForceVector(dim*(p-1)+i) &
                   +(Basis(p)*Force(i)*DetDefG &
+                   +Basis(p)*InertialForce(i)*Density &
                    -DOT_PRODUCT(dBasisdx(p,:),Stress1(i,:)) &
                    +DOT_PRODUCT(dBasisdx(p,:),dStress1U(i,:)))*s
 
@@ -1029,7 +1020,7 @@
 
                 MassMatrix(dim*(p-1)+i,dim*(q-1)+i) &
                         = MassMatrix(dim*(p-1)+i,dim*(q-1)+i) &
-                        + Basis(p)*Basis(q)*Density*DetDefG*s
+                        + Basis(p)*Basis(q)*Density*s
 
              END DO
           END DO
@@ -1088,11 +1079,10 @@
      INTEGER :: i,j,k,l,p,q,t,dim
 
      REAL(KIND=dp) :: s,u,v,w,Radius
-     REAL(KIND=dp) :: Pii = 3.14159d0
   
      TYPE(GaussIntegrationPoints_t), TARGET :: IntegStuff
 
-     INTEGER :: N_Integ
+     INTEGER :: N_Integ, N_gauss
 
      REAL(KIND=dp), DIMENSION(:), POINTER :: U_Integ,V_Integ,W_Integ,S_Integ
 
@@ -1103,9 +1093,9 @@
           CoordinateSystem == AxisSymmetric )
 
      IF( CylindricSymmetry ) THEN
-        dim = 3
+       dim = 3
      ELSE
-        dim = CoordinateSystemDimension()
+       dim = CoordinateSystemDimension()
      END IF
 
      IF ( PlaneStress ) THEN
@@ -1130,80 +1120,8 @@
 !    
 !    Integration stuff
 !    
-     SELECT CASE(Element % TYPE % ElementCode/100)
-
-!       Line segments:
-!       --------------
-        CASE( 2 )
-        SELECT CASE( n )
-           CASE( 2 )
-           IntegStuff = GaussPoints( element,1 )
-           CASE( 3 )
-           IntegStuff = GaussPoints( element,4 )
-           CASE( 4 )
-           IntegStuff = GaussPoints( element,5 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
-
-!       Triangles:
-!       ----------
-        CASE( 3 )
-        SELECT CASE( n )
-           CASE( 3 )
-           IntegStuff = GaussPoints( element,1 )
-           CASE( 6 )
-           IntegStuff = GaussPoints( element,7 )
-           CASE( 10 )
-           IntegStuff = GaussPoints( element,17 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
-
-!       Quadrilaterals:
-!       ---------------
-        CASE( 4 )
-        SELECT CASE( n )
-           CASE( 4 )
-           IntegStuff = GaussPoints( element,4 )
-           CASE( 8,9 )
-           IntegStuff = GaussPoints( element,16 )
-           CASE( 12,16 )
-           IntegStuff = GaussPoints( element,25 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
-
-!       Tetrahedrons:
-!       -------------
-        CASE( 5 )
-        SELECT CASE( n )
-           CASE( 4 )
-           IntegStuff = GaussPoints( element,1 )
-           CASE( 10 )
-           IntegStuff = GaussPoints( element,11 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
-
-!       Octahedrons:
-!       ------------
-        CASE( 8 )
-        SELECT CASE( n )
-           CASE( 8 )
-           IntegStuff = GaussPoints( element,8 )
-           CASE( 20,27 )
-           IntegStuff = GaussPoints( element,64 )
-           CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown number of nodes.' )
-        END SELECT
-
-!       Others:
-!       -------
-        CASE DEFAULT
-           CALL Fatal( 'ElasticSolve',  'Unknown element type.' )
-
-     END SELECT
+     N_gauss = ElasticityGaussPoints( Element ) 
+     IntegStuff = GaussPoints( element,N_gauss )
 
      U_Integ => IntegStuff % u
      V_Integ => IntegStuff % v
@@ -1254,7 +1172,7 @@
 !
 !     Temperature at the integration point
 
-      Temperature = SUM( NodalTemperature(1:n)*Basis )
+!      Temperature = SUM( NodalTemperature(1:n)*Basis )
 
 !===========================================================================
 !
@@ -1771,9 +1689,9 @@
    DO i = 1,n
      DO j = 1,pn
        IF( Element % NodeIndexes(i) == Parent % NodeIndexes(j) ) THEN
-          x(i) = Parent % Type % NodeU(j)
-          y(i) = Parent % Type % NodeV(j)
-          z(i) = Parent % Type % NodeW(j)
+          x(i) = Parent % TYPE % NodeU(j)
+          y(i) = Parent % TYPE % NodeV(j)
+          z(i) = Parent % TYPE % NodeW(j)
           EXIT
        END IF
      END DO
@@ -1783,9 +1701,9 @@
      DO i = 1,n
        DO j = 1,fn
          IF ( Element % NodeIndexes(i) == Flow % NodeIndexes(j) ) THEN
-           fx(i) = Flow % Type % NodeU(j)
-           fy(i) = Flow % Type % NodeV(j)
-           fz(i) = Flow % Type % NodeW(j)
+           fx(i) = Flow % TYPE % NodeU(j)
+           fy(i) = Flow % TYPE % NodeV(j)
+           fz(i) = Flow % TYPE % NodeW(j)
            EXIT
          END IF
        END DO
@@ -2152,10 +2070,35 @@
  END FUNCTION DDOT_PRODUCT
 !------------------------------------------------------------------------------
 
+!------------------------------------------------------------------------------
+  END SUBROUTINE ElasticSolver
+!------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-  END SUBROUTINE ElasticSolver
+!> Initialization for the primary solver, i.e. ElasticSolver
+!------------------------------------------------------------------------------
+  SUBROUTINE ElasticSolver_Init( Model,Solver,dt,Transient )
+!------------------------------------------------------------------------------
+    USE DefUtils
+
+    TYPE(Model_t)  :: Model
+    TYPE(Solver_t) :: Solver
+    REAL(KIND=dp) :: DT
+    LOGICAL :: Transient
+!------------------------------------------------------------------------------
+    INTEGER :: dim
+    TYPE(ValueList_t), POINTER :: SolverParams
+!------------------------------------------------------------------------------
+    SolverParams => GetSolverParams()
+    IF ( .NOT. ListCheckPresent( SolverParams,'Variable') ) THEN
+      dim = CoordinateSystemDimension()
+      CALL ListAddInteger( SolverParams, 'Variable DOFs', dim )
+      CALL ListAddString( SolverParams, 'Variable', 'Displacement' )
+    END IF
+    CALL ListAddInteger( SolverParams, 'Time derivative order', 2 )
+!------------------------------------------------------------------------------
+  END SUBROUTINE ElasticSolver_Init
 !------------------------------------------------------------------------------
 
 
