@@ -59,6 +59,7 @@ clean:
 	  fi; \
 	done
 	if [ -e ElmerGUI/Makefile ]; then \
+	  export DEB_PY_VERSION=$(shell pyversions -d); \
 	  make -C ElmerGUI distclean; \
 	fi
 	if [ -e ElmerGUIlogger/Makefile ]; then \
