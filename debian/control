@@ -14,7 +14,7 @@ Build-Depends: debhelper (>= 5), quilt, po-debconf, autoconf, automake,
  libopencascade-modeling-dev, libqt4-dev, qt4-qmake, libqt4-opengl-dev,
  libqwt5-qt4-dev, libvtk5-qt4-dev (>= 5.6), python-qt4-dev, libscotchmetis-dev,
  r-base-core, libavcodec-dev, libavutil-dev, libswscale-dev
-Build-Conflicts: libatlas3gf-base, libatlas-base-dev
+Build-Conflicts: libatlas3gf-base, libatlas-base-dev, gcc-multilib
 Vcs-Git: git://git.debian.org/git/debian-science/packages/elmerfem.git
 Vcs-Browser: http://git.debian.org/?p=debian-science/packages/elmerfem.git
 Homepage: http://www.csc.fi/elmer/

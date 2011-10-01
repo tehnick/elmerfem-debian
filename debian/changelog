@@ -3,8 +3,9 @@ elmerfem (6.1.0.svn.5396.dfsg-1) unstable; urgency=low
   * New upstream revision.
   * Added DEB_PY_VERSIONS to ElmerGUI clean to make sure that works.
   * Patched ElmerClips to use libav/0.7.1 (closes: #640548).
+  * Build-Conflict with gcc-multilib (closes: #640504).
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Sat, 01 Oct 2011 22:32:51 +0900
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Sat, 01 Oct 2011 22:37:15 +0900
 
 elmerfem (6.1.0.svn.5272.dfsg-1) unstable; urgency=low
 
