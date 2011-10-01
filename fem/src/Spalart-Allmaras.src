@@ -23,10 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  Module containing a solver for the Spalart-Allmaras-turbulence model.
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Juha Ruokolainen
 ! *  Email:   Juha.Ruokolainen@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -39,34 +35,19 @@
 ! ****************************************************************************/
 
 !------------------------------------------------------------------------------
+!> Solver for the Spalart-Allmaras-turbulence model.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
    SUBROUTINE SpalartAllmaras( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
      USE DefUtils
 
      IMPLICIT NONE
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Solve the Spalart-Allmaras model equation !
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations
-!
-!******************************************************************************
      TYPE(Model_t)  :: Model
      TYPE(Solver_t) :: Solver
-
      REAL(KIND=dp) :: dt
      LOGICAL :: TransientSimulation
-!------------------------------------------------------------------------------
 !------------------------------------------------------------------------------
 !    Local variables
 !------------------------------------------------------------------------------
@@ -76,8 +57,8 @@
      TYPE(Nodes_t)   :: ElementNodes
      TYPE(Element_t),POINTER :: Element
 
-     REAL(KIND=dp) :: RelativeChange,Norm,PrevNorm
-     LOGICAL :: Stabilize = .TRUE.,NewtonLinearization = .FALSE.,gotIt
+     REAL(KIND=dp) :: RelativeChange,Norm
+     LOGICAL :: Stabilize = .TRUE.,gotIt
 
      LOGICAL :: AllocationsDone = .FALSE.
 
@@ -85,8 +66,7 @@
 
      INTEGER, POINTER :: KinPerm(:)
 
-     INTEGER :: NewtonIter,NonlinearIter
-     REAL(KIND=dp) :: NonlinearTol,NewtonTol
+     INTEGER :: NonlinearIter
 
      REAL(KIND=dp), ALLOCATABLE :: MASS(:,:), &
        STIFF(:,:), LOAD(:,:),FORCE(:), LocalKinEnergy(:), TimeForce(:)
@@ -134,15 +114,6 @@
 !------------------------------------------------------------------------------
 !    Do some additional initialization, and go for it
 !------------------------------------------------------------------------------
-
-     NonlinearTol = ListGetConstReal( Solver % Values, &
-        'Nonlinear System Convergence Tolerance',gotIt )
-
-     NewtonTol = ListGetConstReal( Solver % Values, &
-        'Nonlinear System Newton After Tolerance',gotIt )
-
-     NewtonIter = ListGetInteger( Solver % Values, &
-        'Nonlinear System Newton After Iterations',gotIt )
 
      NonlinearIter = ListGetInteger( Solver % Values, &
          'Nonlinear System Max Iterations',GotIt )
@@ -225,7 +196,6 @@
 !------------------------------------------------------------------------------
 !     Solve the system and check for convergence
 !------------------------------------------------------------------------------
-      PrevNorm = Norm
       Norm = DefaultSolve()
 !------------------------------------------------------------------------------
 !     Kinetic Energy Solution should be positive
@@ -240,7 +210,7 @@
 
 !------------------------------------------------------------------------------
 
-      IF ( Solver % Variable % NonlinChange < NonlinearTol ) EXIT
+      IF ( Solver % Variable % NonlinConverged == 1 ) EXIT
 !------------------------------------------------------------------------------
     END DO
 !------------------------------------------------------------------------------
@@ -250,12 +220,6 @@ CONTAINS
 !------------------------------------------------------------------------------
    SUBROUTINE LocalMatrix( MASS,STIFF,FORCE, LOAD, Element,n,Nodes )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Return element local matrices and RSH vector for diffusion-convection
-!  equation: 
-!
-!  ARGUMENTS:
 !
 !  REAL(KIND=dp) :: MASS(:,:)
 !     OUTPUT: time derivative coefficient matrix

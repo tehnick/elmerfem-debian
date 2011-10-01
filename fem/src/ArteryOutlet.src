@@ -40,24 +40,12 @@
 ! *****************************************************************************/
  
 !------------------------------------------------------------------------------
+!>  Solve for the 1D characteristics equation arising from newtonian flow in an 
+!>  elastic tube. The subroutine may be used as the outlet for blood flow simulation.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
 SUBROUTINE OutletCompute( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear equation solver options
-!
-!  REAL(KIND=dp) :: dt
-!     INPUT: Timestep size for time dependent simulations
-!            and time
-!
-!  LOGICAL :: TransientSimulation
-!     INPUT: Steady state or transient simulation
-!
-!******************************************************************************
   USE Types
   USE Lists 
   USE Integration
@@ -1078,9 +1066,9 @@ END SUBROUTINE OutletCompute
 
 
 !------------------------------------------------------------------------------
-!   Compute the initial guess for the characteristics variable
+!>   Compute the initial guess for the characteristics variable
+!> \ingroup UDF
 !------------------------------------------------------------------------------
-
 FUNCTION OutletInit( Model,n,t ) RESULT( Winit )
   
   USE Types
@@ -1113,9 +1101,9 @@ END FUNCTION OutletInit
 
 
 !------------------------------------------------------------------------------
-!   Return the change in the radius x-component computed by the 1D model
+!>   Return the change in the radius x-component computed by the 1D model
+!> \ingroup UDF
 !------------------------------------------------------------------------------
-
 FUNCTION OutletdX( Model,n,t ) RESULT(dx)
   
   USE Types
@@ -1191,17 +1179,14 @@ IF( y0 <= 0 ) THEN
 END IF
 
 !----!----!----!----!----!----!----!----!----!----!----!
-
 IF ( CurrentCoordinateSystem() /= Cartesian ) dx = dRout
-
 !----!----!----!----!----!----!----!----!----!----!----!
-
 END FUNCTION OutletdX
 
 !------------------------------------------------------------------------------
-!   Return the change in the radius y-component computed by the 1D model
+!>   Return the change in the radius y-component computed by the 1D model
+!> \ingroup UDF
 !------------------------------------------------------------------------------
-
 FUNCTION OutletdY( Model,n,t ) RESULT(dy)
   
   USE Types
@@ -1243,7 +1228,6 @@ FUNCTION OutletdY( Model,n,t ) RESULT(dy)
 
   dRout = ListGetConstReal( Model % Simulation, 'res: dRout', GotIt)  
 
-
   IF(.NOT. GotIt) THEN    
     bc = Model % CurrentElement % BoundaryInfo % Constraint
     bc2 = ListGetInteger( Model % BCs(bc) % Values,'Structure Coupling With Boundary', GotIt)
@@ -1257,7 +1241,6 @@ FUNCTION OutletdY( Model,n,t ) RESULT(dy)
   END IF
 
 !------------------------------------------------------------------------------
-
 
  x = Model % Nodes % x(n) 
  y = Model % Nodes % y(n) 
@@ -1277,22 +1260,18 @@ IF( y0 <= 0 ) THEN
   dy = -dy
 END IF
 
-
 !----!----!----!----!----!----!----!----!----!----!----!
-
 IF ( CurrentCoordinateSystem() /= Cartesian ) dy = dRout
-
 !----!----!----!----!----!----!----!----!----!----!----!
-
 
 END FUNCTION OutletdY
 
 
 
 !------------------------------------------------------------------------------
-!   Return the pressure computed by the characteristics model
+!>   Return the pressure computed by the characteristics model.
+!> \ingroup UDF
 !------------------------------------------------------------------------------
-
 FUNCTION OutletPres( Model,n,t ) RESULT(pout)
   
   USE Types

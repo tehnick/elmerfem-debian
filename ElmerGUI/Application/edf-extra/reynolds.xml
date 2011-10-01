@@ -29,8 +29,20 @@
          <Parameter Widget="Edit" >
             <Name> Surface Velocity 3 </Name>
          </Parameter>
-      </Equation>
 
+
+         <Parameter Widget="Label">
+           <Name> Free text input </Name>
+         </Parameter>
+	 
+	 <Parameter Widget="TextEdit" Enabled="True">
+	   <Name> Free text </Name>
+	   <Type> String </Type>
+	   <Whatis> Free text is copied into the Equation-block of the SIF as such. </Whatis>
+	   <StatusTip> Free text is copied into the Equation-block of the SIF as such. </StatusTip>
+	 </Parameter>
+
+      </Equation>
 
       <Solver>
          <Parameter Widget="Edit" >
@@ -42,30 +54,30 @@
            <DefaultValue> FilmPressure </DefaultValue>
          </Parameter>
  
-       <Parameter Widget="Label"> <Name>Additional definitions for cavitation</Name> </Parameter>
-         <Parameter Widget="Edit">
-           <Name> Cavitation Pressure </Name>
-           <Activate> /Reynolds Equation/Solver/Exported Variable 1</Activate>
-           <Activate> /Reynolds Equation/Solver/Exported Variable 2</Activate>
-         </Parameter>
-         <Parameter Widget="Edit" Enabled="False" Visible="False">
-           <Name> Exported Variable 1 </Name>
-           <DefaultValue> FilmPressure Loads </DefaultValue>
-         </Parameter>
-         <Parameter Widget="Edit" Enabled="False" Visible="False">
-             <Name> Exported Variable 2 </Name>
-            <DefaultValue> FilmPressure Cavitation</DefaultValue>
-          </Parameter>
+       <Parameter Widget="Label"> <Name>Definitions for cavitation</Name> </Parameter>
 
+         <Parameter Widget="CheckBox">
+           <Name> Apply Limiter </Name>
+           <Whatis> If checked the pressure may be given a soft limit as in cavitation. </Whatis>
+           <StatusTip> If checked the pressure may be given a soft limit as in cavitation. </StatusTip>
+           <Activate> /Reynolds Equation/BodyForce/Filmpressure Lower Limit</Activate>
+         </Parameter>
+
+         <Parameter Widget="Label">
+           <Name> Free text input </Name>
+         </Parameter>	 
+	 <Parameter Widget="TextEdit" Enabled="True">
+	   <Name> Free text </Name>
+	   <Type> String </Type>
+	   <Whatis> Free text is copied into the Solver-block of the SIF as such. </Whatis>
+	   <StatusTip> Free text is copied into the Solver-block of the SIF as such. </StatusTip>
+	 </Parameter>
        </Solver>
 
       <InitialCondition>
          <Parameter Widget="Label" > <Name> Variables </Name> </Parameter>
           <Parameter  Widget="Edit">
            <Name> FilmPressure  </Name>
-         </Parameter>
-         <Parameter  Widget="Edit"> 
-           <Name> FilmPressure Condition </Name>
          </Parameter>
       </InitialCondition>
 
@@ -78,8 +90,25 @@
 
          <Parameter  Widget="Edit" Enabled="False">
            <Name> FilmPressure Condition </Name>
-           <DefaultValue> Variable "FilmPressure Cavitation"; Real MATC "tx" </DefaultValue>
          </Parameter>
+
+         <Parameter  Widget="Edit" Enabled="False">
+           <Name> Filmpressure Lower Limit </Name>
+           <Whatis> Soft limit for pressure that may be used to model cavitation</Whatis>
+           <StatusTip> Soft limit for pressure that may be used to model cavitation</StatusTip>
+         </Parameter>
+
+         <Parameter Widget="Label">
+           <Name> Free text input </Name>
+         </Parameter>
+	 
+	 <Parameter Widget="TextEdit" Enabled="True">
+	   <Name> Free text </Name>
+	   <Type> String </Type>
+	   <Whatis> Free text is copied into the Body Force-block of the SIF as such. </Whatis>
+	   <StatusTip> Free text is copied into the Body Force-block of the SIF as such. </StatusTip>
+	 </Parameter>
+
       </BodyForce>
 
       <Material>
@@ -146,6 +175,16 @@
             <Name> Bulk Modulus </Name>
          </Parameter>
 
+         <Parameter Widget="Label">
+           <Name> Free text input </Name>
+         </Parameter>
+	 
+	 <Parameter Widget="TextEdit" Enabled="True">
+	   <Name> Free text </Name>
+	   <Type> String </Type>
+	   <Whatis> Free text is copied into the Material-block of the SIF as such. </Whatis>
+	   <StatusTip> Free text is copied into the Material-block of the SIF as such. </StatusTip>
+	 </Parameter>
 
       </Material>
 
@@ -155,6 +194,19 @@
          <Parameter  Widget="Edit">
            <Name> FilmPressure </Name>
          </Parameter>
+
+         <Parameter Widget="Label">
+           <Name> Free text input </Name>
+         </Parameter>
+	 
+	 <Parameter Widget="TextEdit" Enabled="True">
+	   <Name> Free text </Name>
+	   <Type> String </Type>
+	   <Whatis> Free text is copied into the Initial Condition-block of the SIF as such. </Whatis>
+	   <StatusTip> Free text is copied into the Initial Condition-block of the SIF as such. </StatusTip>
+	 </Parameter>
+
+
       </InitialCondition>
 
       <BoundaryCondition>
@@ -175,6 +227,24 @@
            <Name> Open Side </Name>
            <Whatis> If checked use effective elongation model for the side. </Whatis>
          </Parameter>
+
+          <Parameter Widget="Label"> <Name> Periodic boundary condition </Name> </Parameter>
+          <Parameter Widget="CheckBox">
+              <Name> Filmpressure periodic </Name>
+              <SifName> Periodic BC Filmpressure </SifName>
+          </Parameter>
+
+         <Parameter Widget="Label">
+           <Name> Free text input </Name>
+         </Parameter>
+	 
+	 <Parameter Widget="TextEdit" Enabled="True">
+	   <Name> Free text </Name>
+	   <Type> String </Type>
+	   <Whatis> Free text is copied into the Boundary Condition-block of the SIF as such. </Whatis>
+	   <StatusTip> Free text is copied into the Boundary Condition-block of the SIF as such. </StatusTip>
+	 </Parameter>
+
       </BoundaryCondition>
    </PDE>
 </edf>

@@ -23,11 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  Module for computing vorticity of vector fields. May be used to compute 
-! *  either the whole vorticity vector (3D) or just its z-component (2D).
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Peter Råback
 ! *  Email:   Peter.Raback@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -40,97 +35,20 @@
 ! *****************************************************************************/
 
 
-!------------------------------------------------------------------------------
-  SUBROUTINE VorticitySolver_Init( Model,Solver,dt,Transient )
-!------------------------------------------------------------------------------
-    USE DefUtils
-    IMPLICIT NONE
 
-    TYPE(Model_t)  :: Model
-    TYPE(Solver_t) :: Solver
-    REAL(KIND=dp) :: DT
-    LOGICAL :: Transient
-!------------------------------------------------------------------------------
-    TYPE(ValueList_t), POINTER :: SolverParams
-    INTEGER :: dim
-    CHARACTER(LEN=MAX_NAME_LEN) :: VarName, VorName, HelpName
-    LOGICAL :: GotIt
-!------------------------------------------------------------------------------
-    SolverParams => GetSolverParams()
-    dim = CoordinateSystemDimension()
-
-    VarName = GetString(SolverParams,'Vorticity Variable',GotIt )
-    IF(gotIt) THEN
-      VorName = 'Curl '//TRIM(VarName)
-    ELSE
-      VorName = 'Vorticity'
-    END IF
-
-    IF ( .NOT. ListCheckPresent( SolverParams,'Variable') ) THEN
-      CALL ListAddInteger( SolverParams, 'Variable DOFs', 1 )
-      IF(dim == 2) THEN
-        CALL ListAddString( SolverParams, 'Variable', VorName )
-      ELSE IF(dim == 3) THEN
-        HelpName = 'F['//TRIM(Vorname)//':3]'
-        CALL ListAddString(SolverParams, 'Exported Variable 1',HelpName)
-        CALL ListAddString(SolverParams, 'Vorticity Result Variable','F')
-        CALL ListAddString( SolverParams, 'Variable','-nooutput vorticity_temp' )
-      ELSE
-        CALL Fatal('VortictySolver_init','Vorticity computation makes sense only in 2D and 3D')
-      END IF
-    END IF
-
-    IF( GetLogical( SolverParams,'Calculate Abs',GotIt) ) THEN
-      CALL ListAddString( SolverParams,&
-          NextFreeKeyword('Exported Variable',SolverParams),TRIM(VorName)//'_abs')        
-    END IF	
-
-    CALL ListAddInteger( SolverParams, 'Time derivative order', 0 )
-
-    ! Add linear system defaults: cg+ILU0
-    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Solver')) &
-      CALL ListAddString(SolverParams,'Linear System Solver','Iterative')
-    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Iterative Method')) &
-      CALL ListAddString(SolverParams,'Linear System Iterative Method','cg')
-    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Preconditioning')) &
-      CALL ListAddString(SolverParams,'Linear System Preconditioning','ILU0')
-    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Max Iterations')) &
-      CALL ListAddInteger(SolverParams,'Linear System Max Iterations',500)
-    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Convergence Tolerance')) &
-      CALL ListAddConstReal(SolverParams,'Linear System Convergence Tolerance',1.0e-8_dp)
 
 !------------------------------------------------------------------------------
-  END SUBROUTINE VorticitySolver_Init
-!------------------------------------------------------------------------------
-
-
+!>  Subroutine for computing vorticity of vector fields. May be used to compute 
+!>  either the whole vorticity vector (3D) or just its z-component (2D).
+!> \ingroup Solvers
 !------------------------------------------------------------------------------
 SUBROUTINE VorticitySolver( Model,Solver,dt,Transient )
 !------------------------------------------------------------------------------
-
   USE CoordinateSystems
   USE DefUtils
 
   IMPLICIT NONE
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Solve stress equations for one timestep
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh,materials,BCs,etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations (NOTE: Not used
-!            currently)
-!
-!******************************************************************************
-
   TYPE(Model_t)  :: Model
   TYPE(Solver_t), TARGET :: Solver
   LOGICAL ::  Transient
@@ -150,9 +68,8 @@ SUBROUTINE VorticitySolver( Model,Solver,dt,Transient )
   
   SAVE Visited
 
- 
   CALL Info( 'VorticitySolver', '-------------------------------------',Level=4 )
-  CALL Info( 'VorticitySolver','Computing the vorticity field',Level=4 )
+  CALL Info( 'VorticitySolver', 'Computing the vorticity field',Level=4 )
   CALL Info( 'VorticitySolver', '-------------------------------------',Level=4 )
 
   dim = CoordinateSystemDimension()
@@ -190,7 +107,8 @@ SUBROUTINE VorticitySolver( Model,Solver,dt,Transient )
       CurrentCoordinateSystem() == CylindricSymmetric
   
   VarName = GetString(SolverParams,'Vorticity Variable',GotIt )
-  IF(.NOT. gotIt) VarName = TRIM('Velocity')
+  IF(.NOT. GotIt) VarName = GetString(SolverParams,'Target Variable',GotIt )
+  IF(.NOT. GotIt) VarName = TRIM('Velocity')
 
   ! For future use
   CondName = ListGetString(SolverParams,'Vorticity Coefficient',GotCoeff )
@@ -365,8 +283,74 @@ CONTAINS
   END SUBROUTINE BulkAssembly
 !------------------------------------------------------------------------------
 
-
 !------------------------------------------------------------------------------
 END SUBROUTINE VorticitySolver
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+!> Initialization for the primary solver: VorticitySolver.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
+  SUBROUTINE VorticitySolver_Init( Model,Solver,dt,Transient )
+!------------------------------------------------------------------------------
+    USE DefUtils
+    IMPLICIT NONE
+
+    TYPE(Model_t)  :: Model
+    TYPE(Solver_t) :: Solver
+    REAL(KIND=dp) :: DT
+    LOGICAL :: Transient
+!------------------------------------------------------------------------------
+    TYPE(ValueList_t), POINTER :: SolverParams
+    INTEGER :: dim
+    CHARACTER(LEN=MAX_NAME_LEN) :: VarName, VorName, HelpName
+    LOGICAL :: GotIt
+!------------------------------------------------------------------------------
+    SolverParams => GetSolverParams()
+    dim = CoordinateSystemDimension()
+
+    VarName = GetString(SolverParams,'Vorticity Variable',GotIt )
+    IF(gotIt) THEN
+      VorName = 'Curl '//TRIM(VarName)
+    ELSE
+      VorName = 'Vorticity'
+    END IF
+
+    IF ( .NOT. ListCheckPresent( SolverParams,'Variable') ) THEN
+      CALL ListAddInteger( SolverParams, 'Variable DOFs', 1 )
+      IF(dim == 2) THEN
+        CALL ListAddString( SolverParams, 'Variable', VorName )
+      ELSE IF(dim == 3) THEN
+        HelpName = 'F['//TRIM(Vorname)//':3]'
+        CALL ListAddString(SolverParams, 'Exported Variable 1',HelpName)
+        CALL ListAddString(SolverParams, 'Vorticity Result Variable','F')
+        CALL ListAddString( SolverParams, 'Variable','-nooutput vorticity_temp' )
+      ELSE
+        CALL Fatal('VortictySolver_init','Vorticity computation makes sense only in 2D and 3D')
+      END IF
+    END IF
+
+    IF( GetLogical( SolverParams,'Calculate Abs',GotIt) ) THEN
+      CALL ListAddString( SolverParams,&
+          NextFreeKeyword('Exported Variable',SolverParams),TRIM(VorName)//'_abs')        
+    END IF	
+
+    CALL ListAddInteger( SolverParams, 'Time derivative order', 0 )
+
+    ! Add linear system defaults: cg+ILU0
+    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Solver')) &
+      CALL ListAddString(SolverParams,'Linear System Solver','Iterative')
+    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Iterative Method')) &
+      CALL ListAddString(SolverParams,'Linear System Iterative Method','cg')
+    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Preconditioning')) &
+      CALL ListAddString(SolverParams,'Linear System Preconditioning','ILU0')
+    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Max Iterations')) &
+      CALL ListAddInteger(SolverParams,'Linear System Max Iterations',500)
+    IF(.NOT. ListCheckPresent(SolverParams,'Linear System Convergence Tolerance')) &
+      CALL ListAddConstReal(SolverParams,'Linear System Convergence Tolerance',1.0e-8_dp)
+
+!------------------------------------------------------------------------------
+  END SUBROUTINE VorticitySolver_Init
 !------------------------------------------------------------------------------
 

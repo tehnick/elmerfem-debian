@@ -38,6 +38,19 @@
 ! *
 ! *****************************************************************************/
 
+!> \defgroup Solvers Dynamically linked solvers
+
+!> \defgroup UDF Dynamically linked functions
+
+!> \defgroup Programs Utility programs
+
+!> \degroup ElmerLib Elmer library routines
+
+!> \ingroup ElmerLib
+!> \{
+
+!------------------------------------------------------------------------------
+!> The main program for Elmer. Solves the equations as defined by the input files.
 !------------------------------------------------------------------------------
    SUBROUTINE ElmerSolver(initialize)
 !------------------------------------------------------------------------------
@@ -107,9 +120,15 @@
 #include "../config.h"
        ! -----------------------
        CALL Info( 'MAIN', ' ', Level=3 )
-       CALL Info( 'MAIN', '==========================================', Level=3 )
-       CALL Info( 'MAIN', ' E L M E R  S O L V E R  S T A R T I N G',  Level=3  )
-       CALL Info( 'MAIN', ' Library version: ' // VERSION &
+       CALL Info( 'MAIN', '=============================================================',Level=3 )
+       CALL Info( 'MAIN', 'ElmerSolver finite element software, Welcome!                ',Level=3 )
+!_L_M_E_R  S_O_L_V_E_R, W_E_L_C_O_M_E     ',  Level=3  )
+!       CALL Info( 'MAIN', 'E_L_M_E_R  S_O_L_V_E_R, W_E_L_C_O_M_E     ',  Level=3  )
+       CALL Info( 'MAIN', 'This program is free software; you can redistribute it and/or',Level=3 )
+       CALL Info( 'MAIN', 'modify it under the terms of the GNU General Public License'  ,Level=3 )
+       CALL Info( 'MAIN', 'Copyright 1st April 1995 - , CSC - IT Center for Science Ltd.',Level=3 )
+       CALL Info( 'MAIN', 'Webpage http://www.csc.fi/elmer, Email elmeradm@csc.fi       ',Level=3 )
+       CALL Info( 'MAIN', 'Library version: ' // VERSION &
 #ifdef REVISION
                     // ' (Rev: ' // REVISION // ')' , Level=3 )
 #else
@@ -130,7 +149,7 @@
 #ifdef HAVE_PARDISO
        CALL Info( 'MAIN', ' PARDISO library linked in.', Level=3 )
 #endif
-       CALL Info( 'MAIN', '==========================================', Level=3 )
+       CALL Info( 'MAIN', '=============================================================',Level=3 )
 
        IF ( IARGC() > 0 ) THEN
          CALL getarg( 1,OptionString )
@@ -265,16 +284,16 @@
                        'Timestep Intervals', GotIt )
 
          IF ( .NOT.GotIt ) THEN
-           CALL Fatal( ' ', 'Keyword [Timestep Intervals] MUST be ' //  &
-                   'defined for time dependent simulations' )
+           CALL Fatal( ' ', 'Keyword > Timestep Intervals < MUST be ' //  &
+                   'defined for transient and scanning simulations' )
          END IF 
-
          TimestepSizes => ListGetConstRealArray( CurrentModel % Simulation, &
                                'Timestep Sizes', GotIt )
+
          IF ( .NOT.GotIt ) THEN
-           IF( Scanning ) THEN
-             ALLOCATE(TimestepSizes(1,1))
-             TimestepSizes(1,1) = 1.0_dp
+           IF( Scanning .OR. ListCheckPresent( CurrentModel % Simulation,'Timestep Size') ) THEN
+             ALLOCATE(TimestepSizes(SIZE(Timesteps),1))
+             TimestepSizes = 1.0_dp
            ELSE
              CALL Fatal( ' ', 'Keyword [Timestep Sizes] MUST be ' //  &
                  'defined for time dependent simulations' )
@@ -499,6 +518,8 @@
 
 
 !------------------------------------------------------------------------------
+!> Adds coordinate and time variables to the current mesh structure. 
+!------------------------------------------------------------------------------
   SUBROUTINE AddMeshCoordinatesAndTime
 !------------------------------------------------------------------------------
      TYPE(Variable_t), POINTER :: DtVar
@@ -536,6 +557,8 @@
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
+!> Sets initial conditions for the fields. 
 !------------------------------------------------------------------------------
    SUBROUTINE SetInitialConditions
 !------------------------------------------------------------------------------
@@ -853,7 +876,7 @@
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-!    Check if we are restarting
+!> Check if we are restarting are if yes, read in field values.
 !------------------------------------------------------------------------------
    SUBROUTINE Restart
 !------------------------------------------------------------------------------
@@ -901,6 +924,8 @@
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
+!> Execute the individual solvers in defined sequence. 
 !------------------------------------------------------------------------------
    SUBROUTINE ExecSimulation(TimeIntervals,  CoupledMinIter, &
               CoupledMaxIter, OutputIntervals, Transient, Scanning)
@@ -951,14 +976,21 @@
        RealTimestep = 1
        DO timestep = 1,Timesteps(interval)
 
+         cum_Timestep = cum_Timestep + 1
+         sStep(1) = cum_Timestep
+
          dtfunc = ListGetConstReal( CurrentModel % Simulation, &
                   'Timestep Function', gotIt)
+         IF(GotIt) THEN
+	   CALL Warn('ExecSimulation','Obsolite keyword > Timestep Function < , use > Timestep Size < instead')
+         ELSE	
+           dtfunc = ListGetCReal( CurrentModel % Simulation, &
+                  'Timestep Size', gotIt)
+         END IF
          IF(GotIt) dt = dtfunc
 
 !------------------------------------------------------------------------------
-         cum_Timestep = cum_Timestep + 1
          sTime(1) = sTime(1) + dt
-         sStep(1) = cum_Timestep
 
          ! Move the old timesteps one step down the ladder
          IF(timestep > 1 .OR. interval > 1) THEN
@@ -1252,6 +1284,8 @@
 
 
 !------------------------------------------------------------------------------
+!> Saves current timestep to external files.
+!------------------------------------------------------------------------------
   SUBROUTINE SaveCurrent( CurrentStep )
 !------------------------------------------------------------------------------
     INTEGER :: i, CurrentStep,nlen
@@ -1353,9 +1387,9 @@
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-  SUBROUTINE SaveToPost(CurrentStep)
+!> Saves results file to post processing file of ElmerPost format, if requested.
 !------------------------------------------------------------------------------
-!    Convert results file to post processing file, if requested
+  SUBROUTINE SaveToPost(CurrentStep)
 !------------------------------------------------------------------------------
     TYPE(Variable_t), POINTER :: Var
     LOGICAL :: EigAnal = .FALSE., Found
@@ -1542,6 +1576,8 @@
 
 
 !------------------------------------------------------------------------------
+!> Release a mesh from the list of meshes.
+!------------------------------------------------------------------------------
   RECURSIVE SUBROUTINE FreeMesh(Mesh)
 !------------------------------------------------------------------------------
     TYPE(Mesh_t), POINTER :: Mesh
@@ -1562,6 +1598,8 @@
 
 
 !------------------------------------------------------------------------------
+!> Releases structures related to the Solver. 
+!------------------------------------------------------------------------------
   SUBROUTINE FreeSolver(Solver)
 !------------------------------------------------------------------------------
     TYPE(Solver_t) :: Solver
@@ -1575,6 +1613,8 @@
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
+!> Releases value list which includes all the sif definitions, for example.
 !------------------------------------------------------------------------------
   SUBROUTINE FreeValueList(List)
 !------------------------------------------------------------------------------
@@ -1594,6 +1634,8 @@
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
+!> Releases the whole model. 
 !------------------------------------------------------------------------------
  SUBROUTINE FreeModel(Model)
 !------------------------------------------------------------------------------
@@ -1665,3 +1707,5 @@
 !------------------------------------------------------------------------------
   END SUBROUTINE ElmerSolver
 !------------------------------------------------------------------------------
+
+!> \} ElmerLib

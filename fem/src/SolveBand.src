@@ -23,10 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  Call LAPACK band matrix solvers.
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Juha Ruokolainen
 ! *  Email:   Juha.Ruokolainen@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -38,13 +34,20 @@
 ! *
 ! *****************************************************************************/
 
+!> \ingroup ElmerLib
+
+!----------------------------------------------------------------------------
+!>  Call LAPACK band matrix solvers.
+!----------------------------------------------------------------------------
+
+
       SUBROUTINE SolveBandLapack( N,M,A,X,Subband,Band )
 
       USE Types
       IMPLICIT NONE
  
 
-      INTEGER :: N,M,Subband,Band,i,j
+      INTEGER :: N,M,Subband,Band
       REAL(KIND=dp) :: A(Band,N),X(M,N)
 
       INTEGER :: IPIV(N),iINFO
@@ -73,7 +76,7 @@
       USE Types
       IMPLICIT NONE
 
-      INTEGER :: N,M,Subband,Band,i,j
+      INTEGER :: N,M,Subband,Band
       COMPLEX(KIND=dp) :: A(Band,N),X(M,N)
 
       INTEGER :: IPIV(N),iINFO
@@ -95,3 +98,7 @@
         END IF
 
       END
+
+!> \}
+	  
+	  

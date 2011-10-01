@@ -23,10 +23,6 @@
 !
 !/******************************************************************************
 ! *
-! *  Adaptive meshing routines.
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Juha Ruokolainen, Mikko Lyly
 ! *  Email:   Juha.Ruokolainen@csc.fi, Mikko.Lyly@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -38,7 +34,14 @@
 ! *
 ! *****************************************************************************/
 
+!> \ingroup ElmerLib 
+!> \{
 
+!--------------------------------------------------------------------------------------------------------
+!> Module for adaptive meshing routines. The adaptivity is based on solver-specific error indicators that
+!> are used to create a field with the desired mesh density. This may be used by some mesh generators to
+!> create a more optimal mesh. 
+!--------------------------------------------------------------------------------------------------------
 MODULE Adaptive
 
   USE GeneralUtils
@@ -515,7 +518,7 @@ CONTAINS
           IF ( ASSOCIATED( NewVar % Perm ) ) THEN
              k = COUNT( NewVar % Perm > 0 )
           END IF
-          IF ( NewVar % Name == 'flow solution' ) THEN
+          IF ( GetVarName( NewVar ) == 'flow solution' ) THEN
              NewVar % Norm = 0.0d0
              DO i=1,NewMesh % NumberOfNodes
                 DO j=1,NewVar % DOFs-1
@@ -2044,3 +2047,5 @@ use crsmatrix
 !------------------------------------------------------------------------------
 END MODULE Adaptive
 !-----------------------------------------------------------------------------
+
+!> \} 

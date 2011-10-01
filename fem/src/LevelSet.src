@@ -42,29 +42,13 @@
 
 
 !------------------------------------------------------------------------------
+!>  Solve the advection equation for the Levelset-function using stabilization
+!>  or bubbless. For the accuracy it is advisable to use 2nd order time-stepping
+!>  and courant number smaller than one. 
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
    SUBROUTINE LevelSetSolver( Model,Solver,Timestep,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Solve the advection equation for the Levelset-function using stabilization
-!  or bubbless. For the accuracy it is advisable to use 2nd order time-stepping
-!  and courant number smaller than one. 
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear equation solver options
-!
-!  REAL(KIND=dp) :: Timestep,
-!     INPUT: Timestep size for time dependent simulations
-!
-!  LOGICAL :: TransientSimulation
-!     INPUT: Steady state or transient simulation
-!
-!******************************************************************************
      USE Types
      USE DefUtils
      USE SolverUtils
@@ -72,13 +56,11 @@
      USE Integration
 
      IMPLICIT NONE
-!------------------------------------------------------------------------------
- 
+!------------------------------------------------------------------------------ 
      TYPE(Model_t), TARGET :: Model
      TYPE(Solver_t) :: Solver
      REAL(KIND=dp) :: Timestep
      LOGICAL :: TransientSimulation
- 
 !------------------------------------------------------------------------------
 !    Local variables
 !------------------------------------------------------------------------------
@@ -96,7 +78,7 @@
      REAL(KIND=dp), ALLOCATABLE :: LocalMassMatrix(:,:),&
        LocalStiffMatrix(:,:),Load(:),LocalForce(:),TimeForce(:)
      INTEGER :: NSDOFs,NonlinearIter,body_id,mat_id,dim
-     REAL(KIND=dp) :: NonlinearTol,dt, r, ct, DsMax
+     REAL(KIND=dp) :: dt, r, ct, DsMax
      REAL(KIND=dp), ALLOCATABLE :: ElemVelo(:,:), SurfaceFlux(:)
 
      SAVE LocalMassMatrix,LocalStiffMatrix,Load, &
@@ -113,7 +95,6 @@
      CALL Info( 'LevelSetSolver','-------------------------------------', Level=4 )
      CALL Info( 'LevelSetSolver', 'Solving for the levelset function', Level=4 )
      CALL Info( 'LevelSetSolver','-------------------------------------', Level=4 )
-
 
      IF ( .NOT. ASSOCIATED( Solver % Matrix ) ) RETURN
 
@@ -158,9 +139,6 @@
 !------------------------------------------------------------------------------
 
      Stabilize = ListGetLogical( Solver % Values,'Stabilize',GotIt )
-
-     NonlinearTol = ListGetConstReal( Solver % Values, &
-           'Nonlinear System Convergence Tolerance',GotIt )
 
      NonlinearIter = ListGetInteger( Solver % Values, &
         'Nonlinear System Max Iterations',GotIt )
@@ -271,8 +249,8 @@
 !------------------------------------------------------------------------------
 !    Dirichlet boundary conditions
 !------------------------------------------------------------------------------
-       CALL SetDirichletBoundaries( Model, StiffMatrix, ForceVector, &
-          ComponentName(Solver % Variable),1,1,SurfPerm )
+       CALL DefaultDirichletBCs()
+
 !------------------------------------------------------------------------------
      CALL Info( 'LevelSetSolver', 'Assembly done', Level=4 )
      at = CPUTime() - at
@@ -283,8 +261,7 @@
 !------------------------------------------------------------------------------
      st = CPUTime()
 
-     CALL SolveSystem( StiffMatrix, ParMatrix, ForceVector, &
-         Surface, Norm, 1, Solver )
+     Norm = DefaultSolve()
      RelativeChange = Solver % Variable % NonlinChange
 
      st = CPUTIme()-st
@@ -299,7 +276,7 @@
      WRITE( Message, * ) 'Relative Change : ',RelativeChange
      CALL Info( 'LevelSetSolver', Message, Level=4 )
      
-     IF(RelativeChange < NonlinearTol) EXIT
+     IF( Solver % Variable % NonlinConverged == 1 ) EXIT
 
 !------------------------------------------------------------------------------
    END DO ! of the nonlinear iteration
@@ -525,37 +502,29 @@ CONTAINS
    END SUBROUTINE LocalMatrix
 !------------------------------------------------------------------------------
 
-
 !------------------------------------------------------------------------------
  END SUBROUTINE LevelSetSolver
 !------------------------------------------------------------------------------
 
 
-
-
+!------------------------------------------------------------------------------
+!>  Renormalizes the levelset function using straight-forward geometric search
+!>  Also includes an option to do the covection at the same time as an alternavtive
+!>  for using a separate solver for the advection.
+!> \ingroup Solvers
 !------------------------------------------------------------------------------
    SUBROUTINE LevelSetDistance( Model,Solver,Timestep,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Renormalizes the levelset function using straight-forward geometric search
-!  Also includes an option to do the covection at the same time as an alternavtive
-!  for using a separate solver for the advection.
-!
-!******************************************************************************
-
      USE SolverUtils
      USE MaterialModels
      USE Integration
 
      IMPLICIT NONE
-!------------------------------------------------------------------------------
- 
+!------------------------------------------------------------------------------ 
      TYPE(Model_t), TARGET :: Model
      TYPE(Solver_t) :: Solver 
      REAL(KIND=dp) :: Timestep
      LOGICAL :: TransientSimulation
- 
 !------------------------------------------------------------------------------
 !    Local variables
 !------------------------------------------------------------------------------
@@ -760,6 +729,8 @@ CONTAINS
 CONTAINS
 
 
+!------------------------------------------------------------------------------
+!> Extract the zero levelset as defined by the levelset function.
 !------------------------------------------------------------------------------
   SUBROUTINE ExtractZeroLevel()
 !------------------------------------------------------------------------------
@@ -978,9 +949,9 @@ CONTAINS
  
 
 !------------------------------------------------------------------------------
-   SUBROUTINE TriangleIsoLineWeights( NX,NY,NZ,S,w0,w1,Found )
+!> This subroutine extracts the zero line of one triangular element. 
 !------------------------------------------------------------------------------
-! This subroutine extracts the zero line of one triangular element 
+   SUBROUTINE TriangleIsoLineWeights( NX,NY,NZ,S,w0,w1,Found )
 !------------------------------------------------------------------------------
       IMPLICIT NONE
       REAL(KIND=dp) :: NX(:),NY(:),NZ(:),S(:),w0(3),w1(3)
@@ -1042,9 +1013,9 @@ CONTAINS
 
  
 !------------------------------------------------------------------------------
-   FUNCTION ComputeDistance(xp,yp,zp) RESULT(dist)
+!> Computes the distance from the given zero levelset given by ZeroNodes. 
 !------------------------------------------------------------------------------
-! Computes the distance from the given zero levelset given by ZeroNodes. 
+   FUNCTION ComputeDistance(xp,yp,zp) RESULT(dist)
 !------------------------------------------------------------------------------
      REAL(KIND=dp) :: xp,yp,zp,dist
 !------------------------------------------------------------------------------
@@ -1081,9 +1052,9 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-   FUNCTION ComputeDistanceWithDirection(xp,yp,zp,prevdist) RESULT(mindist)
+!> Computes the signed distance from the given zero levelset given by ZeroNodes. 
 !------------------------------------------------------------------------------
-! Computes the distance from the given zero levelset given by ZeroNodes. 
+   FUNCTION ComputeDistanceWithDirection(xp,yp,zp,prevdist) RESULT(mindist)
 !------------------------------------------------------------------------------
      REAL(KIND=dp) :: xp,yp,zp,prevdist,mindist
 !------------------------------------------------------------------------------
@@ -1152,109 +1123,6 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
-
-!------------------------------------------------------------------------------
-   FUNCTION Solve3rd( Element,Nodes,n,dist,which ) RESULT(val)
-!------------------------------------------------------------------------------
-
-     REAL(KIND=dp) :: dist(3),val
-     INTEGER :: n, which
-     TYPE(Nodes_t) :: Nodes
-     TYPE(Element_t), POINTER :: Element
-!------------------------------------------------------------------------------
- 
-     REAL(KIND=dp) :: Basis(n), dBasisdx(n,3), ddBasisddx(1,1,1), detJ, &
-         a,b,c,dx,dy,s,s1,s2,t,u,x0,x1,y0,y1,cosp,ta,tb
-
-     LOGICAL :: stat
-     INTEGER :: i,k
-!------------------------------------------------------------------------------
-
-     stat = ElementInfo( Element, Nodes, 1.0d0/3.0d0, 1.0d0/3.0d0, 0.0d0, &
-         detJ, Basis, dBasisdx, ddBasisddx, .FALSE., .FALSE. )
-     
-     dx = 0
-     dy = 0
-     DO i=1,n
-       IF ( i /= Which ) THEN
-         dx = dx + dBasisdx(i,1) * dist(i)
-         dy = dy + dBasisdx(i,2) * dist(i)
-       END IF
-     END DO
-     
-     a = dBasisdx(Which,1)**2 + dBasisdx(Which,2)**2
-     b = 2*( dBasisdx(Which,1) * dx + dBasisdx(Which,2) * dy )
-     c = dx**2 + dy**2 - 1
-     
-     val = HUGE(val)
-     s = b**2 - 4*a*c
-     IF ( s < -1.0d-10 ) THEN
-       RETURN
-     ELSE
-       IF ( s < 0  ) THEN
-         s1 = -b / (2*a)
-         s2 = -b / (2*a)
-       ELSE
-         IF ( b>0 ) THEN
-           s1 = 2*c/(-b-SQRT(s))
-           s2 = (-b-SQRT(s))/(2*a)
-         ELSE
-           s1 = (-b+SQRT(s))/(2*a)
-           s2 = 2*c/(-b+SQRT(s))
-         END IF
-       END IF
-     END IF
-     
-     val = MAX( s1, s2 )
-     
-     SELECT CASE(Which)
-     CASE(1)
-       x0 = Nodes % x(2) - Nodes % x(1)
-       y0 = Nodes % y(2) - Nodes % y(1)
-       
-       x1 = Nodes % x(3) - Nodes % x(1)
-       y1 = Nodes % y(3) - Nodes % y(1)
-       
-       ta = Dist(2); tb = Dist(3)
-     CASE(2)
-       x0 = Nodes % x(1) - Nodes % x(2)
-       y0 = Nodes % y(1) - Nodes % y(2)
-       
-       x1 = Nodes % x(3) - Nodes % x(2)
-       y1 = Nodes % y(3) - Nodes % y(2)
-       
-       ta = Dist(1); tb = Dist(3)
-     CASE(3)
-       x0 = Nodes % x(1) - Nodes % x(3)
-       y0 = Nodes % y(1) - Nodes % y(3)
-       
-       x1 = Nodes % x(2) - Nodes % x(3)
-       y1 = Nodes % y(2) - Nodes % y(3)
-       ta = Dist(1); tb = Dist(2)
-     END SELECT
-     
-     a = SQRT( x0**2 + y0**2 )
-     b = SQRT( x1**2 + y1**2 )
-     
-     dx = dx + dBasisdx(Which,1) * val
-     dy = dy + dBasisdx(Which,2) * val
-     s = SQRT(dx**2 + dy**2)
-     
-     s1 =  (x0*y1 - y0*x1) / (a*b)
-     s2 = -(x0*dy - y0*dx) / (s*a)
-     
-     IF ( s1 < 0 ) THEN
-       s1 = -s1;
-       s2 = -s2;
-     END IF
-     
-     IF ( s2 < 0 .OR. s2 > s1 ) THEN
-       val = MIN( a + ta, b + tb )
-     END IF
-!------------------------------------------------------------------------------
-   END FUNCTION Solve3rd
-!------------------------------------------------------------------------------
-  
 !------------------------------------------------------------------------------
  END SUBROUTINE LevelSetDistance
 !------------------------------------------------------------------------------
@@ -1263,16 +1131,14 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+!>  Compute the volume and area in 3D or area and line intgral in 2D over the 
+!>  levelset function. This is better done within a dedicated solver since 
+!>  it is crucial for the accuracy that the Heaviside and Delta function are
+!>  computed at Gaussian integration points.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
    SUBROUTINE LevelSetIntegrate( Model,Solver,Timestep,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Compute the volume and area in 3D or area and line intgral in 2D over the 
-!  levelset function. This is better done within a dedicated solver since 
-!  it is crucial for the accuracy that the Heaviside and Delta function are
-!  computed at Gaussian integration points.
-!
-!******************************************************************************
      USE SolverUtils
      USE MaterialModels
      USE Integration
@@ -1548,25 +1414,21 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+!>  Computes the curvature from the level set function. Additional diffusion may 
+!>  be added in order to limit the singular curvature peaks.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
    SUBROUTINE LevelSetCurvature( Model,Solver,Timestep,TransientSimulation )
 !------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  Computes the curvature from the level set function. Additional diffusion may 
-!  be added in order to limit the singular curvature peaks.
-!
-!******************************************************************************
      USE SolverUtils
      USE Integration
 
      IMPLICIT NONE
-!------------------------------------------------------------------------------
- 
+!------------------------------------------------------------------------------ 
      TYPE(Model_t), TARGET :: Model
      TYPE(Solver_t) :: Solver
      REAL(KIND=dp) :: Timestep
      LOGICAL :: TransientSimulation
- 
 !------------------------------------------------------------------------------
 !    Local variables
 !------------------------------------------------------------------------------
@@ -2002,8 +1864,10 @@ END SUBROUTINE LevelSetCurvature
 !------------------------------------------------------------------------------
 
 
-
-
+!------------------------------------------------------------------------------
+!> Determines a timestep based on the maximum local Courant number. 
+!> \ingroup UDF
+!------------------------------------------------------------------------------
 FUNCTION LevelSetTimestep( Model ) RESULT( dt )
   USE Types
   USE Lists

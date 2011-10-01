@@ -1,10 +1,5 @@
 !/******************************************************************************
 ! *
-! * Subroutine for saving data on a uniform mesh. This could be of use for 
-! * light-weight visualization of glyphs in a otherwise heavy simulation.
-! *
-! ******************************************************************************
-! *
 ! *  Authors: Peter Råback & Juha Ruokolainen
 ! *  Email:   Peter.Raback@csc.fi & Juha.Ruokolainen@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
@@ -17,29 +12,12 @@
 ! *****************************************************************************/
 
 
-
-!------------------------------------------------------------------------------
-SUBROUTINE SaveGridData( Model,Solver,dt,TransientSimulation )
-!------------------------------------------------------------------------------
-!******************************************************************************
-!
-!  This subroutine saves scalar values to a matrix.
-!
-!  ARGUMENTS:
-!
-!  TYPE(Model_t) :: Model,  
-!     INPUT: All model information (mesh, materials, BCs, etc...)
-!
-!  TYPE(Solver_t) :: Solver
-!     INPUT: Linear & nonlinear equation solver options
-!
-!  REAL(KIND=dp) :: dt,
-!     INPUT: Timestep size for time dependent simulations
-!
-!  LOGICAL :: TransientSimulation
-!     INPUT: Steady state or transient simulation
-!
-!******************************************************************************
+!-------------------------------------------------------------------------
+!> This subroutine provides a shared library handle to the internal subroutine
+!> in order to enable more flexible use of the routine.
+!> \ingroup Solvers
+!-------------------------------------------------------------------------
+SUBROUTINE ParticleOutputSolver( Model,Solver,dt,TransientSimulation )
   USE DefUtils
   USE ParticleUtils
 
@@ -49,6 +27,29 @@ SUBROUTINE SaveGridData( Model,Solver,dt,TransientSimulation )
   TYPE(Model_t) :: Model
   REAL(KIND=dp) :: dt
   LOGICAL :: TransientSimulation
+
+  CALL SaveParticleData( Model,Solver,dt,TransientSimulation )
+
+END SUBROUTINE ParticleOutputSolver
+
+
+!------------------------------------------------------------------------------
+!>  This subroutine is used to save results in a uniform grid.
+!>  This is achieved by first creating particles at the positions,
+!>  and then saving them with more generic routines.
+!> \ingroup Solvers
+!------------------------------------------------------------------------------
+SUBROUTINE SaveGridData( Model,Solver,dt,TransientSimulation )
+!------------------------------------------------------------------------------
+  USE DefUtils
+  USE ParticleUtils
+
+  IMPLICIT NONE
+!------------------------------------------------------------------------------
+  TYPE(Solver_t) :: Solver  !< Linear & nonlinear equation solver options
+  TYPE(Model_t) :: Model    !< All model information (mesh, materials, BCs, etc...)
+  REAL(KIND=dp) :: dt       !< Timestep size for time dependent simulations
+  LOGICAL :: TransientSimulation      !< Steady state or transient simulation
 !------------------------------------------------------------------------------
 ! Local variables
 !------------------------------------------------------------------------------
@@ -56,13 +57,14 @@ SUBROUTINE SaveGridData( Model,Solver,dt,TransientSimulation )
   TYPE(Mesh_t), POINTER :: Mesh
   TYPE(ValueList_t), POINTER :: Params
   LOGICAL :: GotIt, Structured, Visited = .FALSE.
+  CHARACTER(LEN=MAX_NAME_LEN) :: FileFormat
+  LOGICAL :: Found,VtiFormat, VtuFormat, TableFormat, AnyFormat
   INTEGER :: Extent(6)
   REAL(KIND=dp) :: Origin(3), Dx(3)
   INTEGER, POINTER :: GridIndex(:,:,:)
   TYPE( Particle_t), POINTER :: Particles  
 
   SAVE Visited, GridIndex, Origin, Dx, Extent
-!Particles
 
 !------------------------------------------------------------------------------
 
@@ -72,10 +74,27 @@ SUBROUTINE SaveGridData( Model,Solver,dt,TransientSimulation )
   Particles => GlobalParticles
   Params => Solver % Values
   Mesh => Solver % Mesh
-  Structured = GetLogical( Params,'VTI Format',GotIt )
+
+  TableFormat = ListGetLogical( Params,'Table Format',Found)
+  VtuFormat = ListGetLogical( Params,'Vtu Format',Found)
+  VtiFormat = GetLogical( Params,'Vti Format',GotIt )
+
+  FileFormat = ListGetString( Params,'Output Format',Found) 
+  IF( Found ) THEN
+    IF( FileFormat == 'vtu') VtuFormat = .TRUE.
+    IF( FileFormat == 'table') TableFormat = .TRUE.
+    IF( FileFormat == 'vti') VtiFormat = .TRUE.
+  END IF
+
+  AnyFormat = VtuFormat .OR. TableFormat .OR. VtiFormat 
+  IF( .NOT. AnyFormat ) THEN
+    CALL Warn('SaveGridData','No active file format given!')
+    RETURN
+  END IF
 
   ! Initialize the particles on the first calling
   !------------------------------------------------------------------------
+  Structured = VtiFormat
   IF( .NOT. Visited ) THEN
     Particles % TimeOrder = 0
     Particles % dim = CoordinateSystemDimension()
@@ -84,15 +103,12 @@ SUBROUTINE SaveGridData( Model,Solver,dt,TransientSimulation )
     Visited = .TRUE.
   END IF
   
-
   ! The calling is split to two since the 1st one requires totally different 
-  ! data structure. This could be made prettier...
+  ! data structure. 
   !--------------------------------------------------------------------------
-  IF( GetLogical( Params,'VTI Format',GotIt ) ) THEN
-    CALL ParticleOutputVti( Particles, Extent, Origin, Dx, GridIndex )
-  ELSE
-    CALL ParticleOutput( Particles )     
-  END IF
+  IF( VtiFormat ) CALL ParticleOutputVti( Particles, Extent, Origin, Dx, GridIndex )
+  IF( TableFormat ) CALL ParticleOutputTable( Particles )
+  IF( VtuFormat ) CALL ParticleOutputVtu( Particles ) 
 
   CALL Info('SaveGridData','All done',Level=4)
   CALL Info('SaveGridData', '-----------------------------------------', Level=4 )
