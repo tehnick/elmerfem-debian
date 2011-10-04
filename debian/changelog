@@ -1,3 +1,9 @@
+elmerfem (6.1.0.svn.5396.dfsg-2) unstable; urgency=low
+
+  * New binary package elmergui-samples.
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Tue, 04 Oct 2011 11:35:49 -0400
+
 elmerfem (6.1.0.svn.5396.dfsg-1) unstable; urgency=low
 
   * New upstream revision.

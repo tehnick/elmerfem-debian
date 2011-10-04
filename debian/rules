@@ -180,6 +180,9 @@ stamp-build: patch
 	mv debian/tmp/usr/bin/ElmerGUI debian/tmp/usr/bin/ElmerGUI.real
 	cp -a debian/ElmerGUI debian/tmp/usr/bin/ElmerGUI
 	chmod gou+x debian/tmp/usr/bin/ElmerGUI
+# Install elmergui-samples files
+	install -d debian/elmergui-samples/usr/share/ElmerGUI
+	cp -a ElmerGUI/samples debian/elmergui-samples/usr/share/ElmerGUI/
 	touch $@
 
 binary-indep: patch
