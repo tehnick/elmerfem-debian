@@ -50,7 +50,8 @@ MISSING_FILES = eio/NEWS eio/README eio/AUTHORS eio/ChangeLog \
   elmergrid/COPYING elmergrid/INSTALL elmergrid/src/metis/Makefile.am \
   post/NEWS post/AUTHORS post/ChangeLog post/COPYING post/INSTALL
 
-clean:
+# This needs patch because otherwise ElmerGUI clean won't work
+clean: patch
 	dh_testdir
 	for elmermodule in $(ELMER_MODULES); do \
 	  if [ -e $$elmermodule/Makefile ]; then \
