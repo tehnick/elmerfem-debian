@@ -152,6 +152,7 @@ Description: finite element multiphysics suite - development files
 Package: elmergui-samples
 Architecture: all
 Section: science
+Depends: ${misc:Depends}
 Recommends: elmer-doc
 Suggests: elmer
 Description: ElmerGUI samples directory
