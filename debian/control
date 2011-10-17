@@ -152,7 +152,8 @@ Description: finite element multiphysics suite - development files
 Package: elmergui-samples
 Architecture: all
 Section: science
-Suggests: elmer-doc, elmer
+Recommends: elmer-doc
+Suggests: elmer
 Description: ElmerGUI samples directory
  The Elmer multiphysics simulation package includes physical models of
  fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
