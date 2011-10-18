@@ -153,8 +153,7 @@ Package: elmergui-samples
 Architecture: all
 Section: science
 Depends: ${misc:Depends}
-Recommends: elmer-doc
-Suggests: elmer
+Suggests: elmer, elmer-doc
 Description: ElmerGUI samples directory
  The Elmer multiphysics simulation package includes physical models of
  fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
