@@ -1,5 +1,5 @@
-Have ElmerGUI use PythonQt, build against Debian's default Python version, and
-update VTK version.
+Have ElmerGUI use PythonQt, build against Debian's default Python version,
+update VTK version, and build using OCE.
 
 Index: elmerfem/ElmerGUI/ElmerGUI.pri
 ===================================================================
@@ -43,3 +43,12 @@ Index: elmerfem/ElmerGUI/ElmerGUI.pri
                -lvtkRendering \
                -lvtkViews \
                -lvtkVolumeRendering \
+@@ -139,7 +138,7 @@
+ # OpenCASCADE library:
+ #------------------------------------------------------------------------------
+ unix {
+-   OCC_INCLUDEPATH = /usr/include/opencascade
++   OCC_INCLUDEPATH = /usr/include/oce
+    OCC_LIBPATH = /usr/lib
+    OCC_LIBS = -lTKSTL \
+               -lTKBRep \

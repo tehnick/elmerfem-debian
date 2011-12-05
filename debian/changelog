@@ -1,8 +1,9 @@
 elmerfem (6.1.0.svn.5396.dfsg-3) UNRELEASED; urgency=low
 
   * Added BLAS/LAPACK -dev libraries and gfortran to libelmer-dev Depends.
+  * Changed opencascade to oce.
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Tue, 18 Oct 2011 16:48:50 -0400
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 05 Dec 2011 18:35:38 -0500
 
 elmerfem (6.1.0.svn.5396.dfsg-2) unstable; urgency=low
 
