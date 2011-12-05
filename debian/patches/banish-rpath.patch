@@ -7,7 +7,7 @@ Index: elmerfem/fem/src/Makefile.am
 ===================================================================
 --- elmerfem.orig/fem/src/Makefile.am
 +++ elmerfem/fem/src/Makefile.am
-@@ -77,7 +77,7 @@
+@@ -76,7 +76,7 @@
  if IBM_AIX
  	$(SH_LD2) $(RPATH_ELMER) $(SH_LDFLAGS) $(B64FLAGS) $(LDFLAGS) -o libelmersolver-$(VERSION)$(SHL_EXT) $(SOLVEROBJS) $(SOLVER_LIBS) -L. -Lbinio -lbinio
  else
@@ -16,7 +16,7 @@ Index: elmerfem/fem/src/Makefile.am
  endif
  endif
  	$(LN) -s libelmersolver-$(VERSION)$(SHL_EXT) $@
-@@ -101,7 +101,7 @@
+@@ -100,7 +100,7 @@
  		   Solver$(OBJ_EXT) -L. -lelmersolver $(MPI_LIBS) $(EXTRA_LIBS)
  else
  ElmerSolver_mpi$(EXE_EXT): Solver$(OBJ_EXT) libelmersolver$(SHL_EXT)
@@ -25,7 +25,7 @@ Index: elmerfem/fem/src/Makefile.am
  	      -o ElmerSolver_mpi$(EXE_EXT) Solver$(OBJ_EXT) \
  	      -L. -lelmersolver $(MPI_LIBS) $(EXTRA_LIBS)
  endif
-@@ -110,7 +110,7 @@
+@@ -109,7 +109,7 @@
  
  
  ElmerSolver$(EXE_EXT): Solver$(OBJ_EXT) libelmersolver$(SHL_EXT) mpi_stubs$(OBJ_EXT)
@@ -34,7 +34,7 @@ Index: elmerfem/fem/src/Makefile.am
  	      -o ElmerSolver$(EXE_EXT) Solver$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
  	      -L. -lelmersolver $(EXTRA_LIBS) 
  
-@@ -120,13 +120,13 @@
+@@ -119,13 +119,13 @@
  	      -o ViewFactors$(EXE_EXT) ViewFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
  	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS) $(BLAS_LIBS)
  else
@@ -50,7 +50,7 @@ Index: elmerfem/fem/src/Makefile.am
  	      -o GebhardtFactors$(EXE_EXT) GebhardtFactors$(OBJ_EXT) mpi_stubs$(OBJ_EXT) \
  	      -L. -lelmersolver viewaxis/libviewaxis.a view3d/libview3d.a $(EXTRA_LIBS)
  
-@@ -135,7 +135,7 @@
+@@ -134,7 +134,7 @@
  if USE_WINDOWS_COMPILER
  else
  ResultToResult$(EXE_EXT): libelmersolver$(SHL_EXT) ResultToResult$(OBJ_EXT)
