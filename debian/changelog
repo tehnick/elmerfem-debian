@@ -3,8 +3,9 @@ elmerfem (6.1.0.svn.5396.dfsg-3) unstable; urgency=low
   * Added BLAS/LAPACK -dev libraries and gfortran to libelmer-dev Depends.
   * Changed opencascade to oce.
   * Refreshed two patches for line shifts in upstream changes.
+  * Bumped VTK version to 5.8.
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 05 Dec 2011 18:49:51 -0500
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 05 Dec 2011 20:12:04 -0500
 
 elmerfem (6.1.0.svn.5396.dfsg-2) unstable; urgency=low
 
