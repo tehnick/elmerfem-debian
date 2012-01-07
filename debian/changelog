@@ -1,3 +1,9 @@
+elmerfem (6.1.0.svn.5396.dfsg-4) unstable; urgency=low
+
+  * Added libparpack2-dev to Build-Depends (closes: #652061).
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Sat, 07 Jan 2012 11:45:38 -0800
+
 elmerfem (6.1.0.svn.5396.dfsg-3) unstable; urgency=low
 
   * Added BLAS/LAPACK -dev libraries and gfortran to libelmer-dev Depends.
