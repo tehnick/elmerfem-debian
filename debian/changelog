@@ -1,3 +1,10 @@
+elmerfem (6.1.0.svn.5396.dfsg-5) unstable; urgency=low
+
+  * Have libelmer-dev conflict with older versions of elmer providing elmerf90
+    etc. (closes: #659190).
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 13 Feb 2012 15:19:54 -0500
+
 elmerfem (6.1.0.svn.5396.dfsg-4) unstable; urgency=low
 
   * Added libparpack2-dev to Build-Depends (closes: #652061).

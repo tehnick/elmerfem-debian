@@ -133,7 +133,7 @@ Depends: elmer (= ${binary:Version}), libelmersolver-6.1 (= ${binary:Version}),
  libhypre-dev, libsuitesparse-dev, libarpack2-dev, libmumps-scotch-dev,
  libblas-dev | libblas-3gf.so, liblapack-dev | liblapack-3gf.so,
  mpi-default-dev, mpi-default-bin, gfortran, ${misc:Depends}
-Conflicts: elmer-common (<< 5.5.0.svn.4499.dfsg-1)
+Conflicts: elmer-common (<< 5.5.0.svn.4499.dfsg-1), elmer (<< 5.5.0.svn.5210.dfsg-1)
 Section: libdevel
 Description: finite element multiphysics suite - development files
  The Elmer multiphysics simulation package includes physical models of
