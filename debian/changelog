@@ -1,3 +1,13 @@
+elmerfem (6.1.0.svn.5396.dfsg-6) UNRELEASED; urgency=low
+
+  [ Joe Dalton ]
+  * New Danish debconf translation (closes: #660894).
+
+  [ Jeroen Schot ]
+  * New Dutch debconf translation (closes: #661126).
+
+ -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 27 Feb 2012 17:57:28 -0500
+
 elmerfem (6.1.0.svn.5396.dfsg-5) unstable; urgency=low
 
   * Have libelmer-dev conflict with older versions of elmer providing elmerf90
