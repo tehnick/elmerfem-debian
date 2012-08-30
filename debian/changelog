@@ -1,12 +1,22 @@
-elmerfem (6.1.0.svn.5396.dfsg-6) UNRELEASED; urgency=low
+elmerfem (6.1.0.svn.5396.dfsg-5.2) unstable; urgency=low
 
-  [ Joe Dalton ]
-  * New Danish debconf translation (closes: #660894).
+  * Non-maintainer upload.
 
-  [ Jeroen Schot ]
-  * New Dutch debconf translation (closes: #661126).
+  [ Tormod Volden ]
+  * debian/patches/glu.patch:
+    - Fix FTBFS by linking with GLU (Closes: #663944, #671907).
 
- -- "Adam C. Powell, IV" <hazelsct@debian.org>  Mon, 27 Feb 2012 17:57:28 -0500
+ -- Luca Falavigna <dktrkranz@debian.org>  Sat, 26 May 2012 00:51:10 +0200
+
+elmerfem (6.1.0.svn.5396.dfsg-5.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Fix pending l10n issues. Debconf translations:
+    - Danish (Joe Hansen).  Closes: #660894
+    - Dutch; (Jeroen Schot).  Closes: #661126
+    - Polish (Michał Kułach).  Closes: #667943
+
+ -- Christian Perrier <bubulle@debian.org>  Sat, 14 Apr 2012 08:52:33 +0200
 
 elmerfem (6.1.0.svn.5396.dfsg-5) unstable; urgency=low
 
