@@ -1,3 +1,17 @@
+elmerfem (6.1.0.svn.5396.dfsg2-1) unstable; urgency=low
+
+  * Team upload.
+  * Delete non-free and unnecessary files from tarball:
+    - ElmerGUI/Application/plugins/tetgen.h
+    - misc/tetgen_plugin/plugin/*
+    (Closes: #687954)
+  * Add debian/patches/no-tetgen.patch: fix build without tetgen plugin.
+  * Update debian/copyright:
+    - update debian/copyright in according to Copyright format 1.0
+    - add missed copyright holders and licenses
+
+ -- Boris Pek <tehnick-8@mail.ru>  Thu, 20 Sep 2012 22:08:37 +0300
+
 elmerfem (6.1.0.svn.5396.dfsg-5.2) unstable; urgency=low
 
   * Non-maintainer upload.
