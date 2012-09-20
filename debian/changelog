@@ -3,7 +3,7 @@ elmerfem (6.1.0.svn.5396.dfsg2-1) unstable; urgency=low
   * Team upload.
   * Delete non-free and unnecessary files from tarball:
     - ElmerGUI/Application/plugins/tetgen.h
-    - misc/tetgen_plugin/plugin/*
+    - misc/tetgen_plugin/*
     (Closes: #687954)
   * Add debian/patches/no-tetgen.patch: fix build without tetgen plugin.
   * Update debian/copyright:
