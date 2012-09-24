@@ -1,3 +1,10 @@
+elmerfem (6.1.0.svn.5396.dfsg2-1ppa1~quantal1) quantal; urgency=low
+
+  * Package in Launchpad was sync with package in Debian.
+  * Changelog was cleaned.
+
+ -- Boris Pek <tehnick-8@mail.ru>  Tue, 25 Sep 2012 00:49:09 +0300
+
 elmerfem (6.1.0.svn.5396.dfsg2-1) unstable; urgency=low
 
   * Team upload.
