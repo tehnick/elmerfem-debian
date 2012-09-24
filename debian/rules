@@ -2,6 +2,8 @@
 # Made with the aid of debmake, by Christoph Lameter,
 # based on the sample debian/rules file for GNU hello by Ian Jackson.
 
+DEB_VER = $(shell dpkg-parsechangelog | sed -ne 's/^Version: \(\([0-9]\+\):\)\?\(.*\)-[0-9]*/\3/p')
+
 package=elmer
 
 # Support multiple makes at once
@@ -222,3 +224,6 @@ binary-arch:
 binary: binary-arch binary-indep
 
 .PHONY: build binary-indep binary-arch binary
+
+get-orig-source:
+	$(CURDIR)/debian/elmerfem_get-orig-source.sh $(DEB_VER)
