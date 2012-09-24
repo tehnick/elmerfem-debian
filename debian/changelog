@@ -6,11 +6,14 @@ elmerfem (6.1.0.svn.5396.dfsg2-1) unstable; urgency=low
     - misc/tetgen_plugin/*
     (Closes: #687954)
   * Add debian/patches/no-tetgen.patch: fix build without tetgen plugin.
+  * Add script debian/elmerfem_get-orig-source.sh.
+  * Add get-orig-source section in debian/rules.
   * Update debian/copyright:
     - update debian/copyright in according to Copyright format 1.0
     - add missed copyright holders and licenses
+    - add info how to repack orig tarball
 
- -- Boris Pek <tehnick-8@mail.ru>  Thu, 20 Sep 2012 22:08:37 +0300
+ -- Boris Pek <tehnick-8@mail.ru>  Mon, 24 Sep 2012 20:21:17 +0300
 
 elmerfem (6.1.0.svn.5396.dfsg-5.2) unstable; urgency=low
 
