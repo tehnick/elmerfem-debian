@@ -10,8 +10,16 @@ Source: http://www.csc.fi/english/pages/elmer/sources
  or redundant with other Debian packages (mathlibs and umfpack; TrueType
  contains ttf-freefont files). Notes about these packages were also removed from
  the quote below of the upstream copyright statement, which you can see in full
- in the LICENSES file.  And the file elmergrid/acx_metis.m4 was removed because
- some consider the QPL non-free.
+ in the LICENSES file. File elmergrid/acx_metis.m4 was removed because some
+ consider the QPL non-free. Files misc/tetgen_plugin/plugin/tetgen.* and
+ ElmerGUI/Application/plugins/tetgen.h were removed because TetGen uses non-free
+ license (MIT license with exceptions regarding copyright attribution and
+ commercial use).
+ .
+ Also few unnecessary files were removed: */*.cache, post/src/*/*.cache and
+ misc/tetgen_plugin/*.
+ .
+ You can use script debian/elmerfem_get-orig-source.sh to repack orig tarball.
 
 Files: *
 Copyright: 1995- , CSC - IT Center for Science Ltd.
