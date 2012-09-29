@@ -1,3 +1,9 @@
+elmerfem (7.0.svn.5845+dfsg-0ppa1~quantal1) quantal; urgency=low
+
+  * New upstream revision.
+
+ -- Boris Pek <tehnick-8@mail.ru>  Sat, 29 Sep 2012 23:16:49 +0300
+
 elmerfem (6.1.0.svn.5396.dfsg2-1ppa1~quantal1) quantal; urgency=low
 
   * Package in Launchpad was sync with package in Debian.
