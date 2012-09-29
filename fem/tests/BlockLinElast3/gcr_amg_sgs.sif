@@ -67,7 +67,7 @@ Solver 1
 ! Linear system solver for outer loop
 !-----------------------------------------
   Outer: Linear System Solver = string "Iterative"
-  Outer: Linear System Convergence Tolerance = real 1e-8
+  Outer: Linear System Convergence Tolerance = real 1e-10
   Outer: Linear System Iterative Method = string GCR
   Outer: Linear System GCR Restart = Integer 50
   Outer: Linear System Residual Output = integer 1

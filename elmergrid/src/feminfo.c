@@ -2518,11 +2518,16 @@ int LoadElmergrid(struct GridType **grid,int *nogrids,char *prefix,Real relh,int
       if(strstr(params,"FALSE")) 
 	matcactive = FALSE;
       else {
+#ifndef DISABLE_MATC
 	matcactive = TRUE;
 	mtc_init(NULL, stdout, stderr);
 	strcpy(command, "format( 12 )");	
 	mtc_domath(command);	 
 	printf("MATC language activated with 12 digit accuracy.\n");	
+#else
+        matcactive = FALSE;
+        printf("Unable to activate matc as it is not even compiled.\n");
+#endif 
       }
     }
     
@@ -2695,7 +2700,7 @@ int LoadElmergrid(struct GridType **grid,int *nogrids,char *prefix,Real relh,int
     }
      
     else if(strstr(command,"REVOLVE")) {
-      printf("rovolve: %s %s\n",command,params);
+      if(0) printf("revolve: %s %s\n",command,params);
 
       if(strstr(command,"REVOLVE RADIUS")) {
 	(*grid)[k].rotate = TRUE;

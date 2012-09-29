@@ -41,6 +41,9 @@
 !> Basic utilities used by individual solvers. 
 !------------------------------------------------------------------------------
 
+!> \ingroup ElmerLib
+!> \{
+
 
 MODULE SolverUtils
 
@@ -73,46 +76,46 @@ CONTAINS
 
 !> Initialize matrix structure and vector to zero initial value.
 !------------------------------------------------------------------------------
-   SUBROUTINE InitializeToZero( StiffMatrix, ForceVector )
+   SUBROUTINE InitializeToZero( A, ForceVector )
 !------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix  !< Matrix to be initialized
+     TYPE(Matrix_t), POINTER :: A  !< Matrix to be initialized
      REAL(KIND=dp) :: ForceVector(:)         !< vector to be initialized
 !------------------------------------------------------------------------------
      INTEGER :: i,dim
      TYPE(Solver_t), POINTER :: Solver
 !------------------------------------------------------------------------------
 
-     IF ( ASSOCIATED( StiffMatrix ) ) THEN
-       SELECT CASE( StiffMatrix % FORMAT )
+     IF ( ASSOCIATED( A ) ) THEN
+       SELECT CASE( A % FORMAT )
          CASE( MATRIX_CRS )
-           CALL CRS_ZeroMatrix( StiffMatrix )
+           CALL CRS_ZeroMatrix( A )
 
          CASE( MATRIX_BAND,MATRIX_SBAND )
-           CALL Band_ZeroMatrix( StiffMatrix )
+           CALL Band_ZeroMatrix( A )
        END SELECT
 
-       IF ( ASSOCIATED( StiffMatrix % MassValues ) ) THEN
-         StiffMatrix % MassValues(:) = 0.d0
+       IF ( ASSOCIATED( A % MassValues ) ) THEN
+         A % MassValues(:) = 0.d0
        END IF
 
-       IF ( ASSOCIATED( StiffMatrix % DampValues ) ) THEN
-         StiffMatrix % DampValues(:) = 0.d0
+       IF ( ASSOCIATED( A % DampValues ) ) THEN
+         A % DampValues(:) = 0.d0
        END IF
 
-       IF ( ASSOCIATED( StiffMatrix % Force ) ) THEN
-         StiffMatrix % Force(:,1) = 0.0d0
+       IF ( ASSOCIATED( A % Force ) ) THEN
+         A % Force(:,1) = 0.0d0
        END IF
 
-       IF ( ASSOCIATED( StiffMatrix % BulkRHS ) )  THEN
-         StiffMatrix % BulkRHS(:) = 0.0d0
+       IF ( ASSOCIATED( A % BulkRHS ) )  THEN
+         A % BulkRHS(:) = 0.0d0
        END IF
 
-       IF ( ASSOCIATED( StiffMatrix % RHS_im ) )  THEN
-         StiffMatrix % RHS_im(:) = 0.0d0
+       IF ( ASSOCIATED( A % RHS_im ) )  THEN
+         A % RHS_im(:) = 0.0d0
        END IF
 
-       IF ( ASSOCIATED( StiffMatrix % BulkValues ) )  THEN
-         StiffMatrix % BulkValues(:) = 0.0d0
+       IF ( ASSOCIATED( A % BulkValues ) )  THEN
+         A % BulkValues(:) = 0.0d0
        END IF
      END IF
 
@@ -145,23 +148,27 @@ CONTAINS
 
 !> Sets the matrix element to a desired value. 
 !------------------------------------------------------------------------------
-   SUBROUTINE SetMatrixElement( StiffMatrix, i, j, Value )
+   SUBROUTINE SetMatrixElement( A, i, j, VALUE )
 !------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix  !< Structure holding the matrix
+     TYPE(Matrix_t) :: A  !< Structure holding the matrix
      INTEGER :: i                            !< Row index
      INTEGER :: j                            !< Column index
-     REAL(KIND=dp) :: Value                  !< Value to be obtained
+     REAL(KIND=dp) :: VALUE                  !< Value to be obtained
 !------------------------------------------------------------------------------
 
-     SELECT CASE( StiffMatrix % FORMAT )
+     SELECT CASE( A % FORMAT )
        CASE( MATRIX_CRS )
-         CALL CRS_SetMatrixElement( StiffMatrix, i, j, Value )
+         CALL CRS_SetMatrixElement( A, i, j, VALUE )
+         IF(A % FORMAT == MATRIX_LIST) THEN
+           CALL List_toListMatrix(A)
+           CALL List_SetMatrixElement( A % ListMatrix, i, j, VALUE )
+         END IF
 
        CASE( MATRIX_LIST )
-         CALL List_SetMatrixElement( StiffMatrix % ListMatrix, i, j, Value )
+         CALL List_SetMatrixElement( A % ListMatrix, i, j, VALUE )
 
        CASE( MATRIX_BAND,MATRIX_SBAND )
-         CALL Band_SetMatrixElement( StiffMatrix, i, j, Value )
+         CALL Band_SetMatrixElement( A, i, j, VALUE )
      END SELECT
 !------------------------------------------------------------------------------
    END SUBROUTINE SetMatrixElement
@@ -169,23 +176,23 @@ CONTAINS
 
 !> Gets a matrix element. 
 !------------------------------------------------------------------------------
-   FUNCTION GetMatrixElement( StiffMatrix, i, j ) RESULT ( Value )
+   FUNCTION GetMatrixElement( A, i, j ) RESULT ( VALUE )
 !------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix  !< Structure holding the matrix
+     TYPE(Matrix_t) :: A  !< Structure holding the matrix
      INTEGER :: i                            !< Row index
      INTEGER :: j                            !< Column index
-     REAL(KIND=dp) :: Value                  !< Value to be obtained
+     REAL(KIND=dp) :: VALUE                  !< Value to be obtained
 !------------------------------------------------------------------------------
 
-     SELECT CASE( StiffMatrix % FORMAT )
+     SELECT CASE( A % FORMAT )
        CASE( MATRIX_CRS )
-         Value = CRS_GetMatrixElement( StiffMatrix, i, j )
+         VALUE = CRS_GetMatrixElement( A, i, j )
 
       CASE( MATRIX_LIST )
-         Value = List_GetMatrixElement( StiffMatrix % ListMatrix, i, j )
+         VALUE = List_GetMatrixElement( A % ListMatrix, i, j )
 
        CASE( MATRIX_BAND,MATRIX_SBAND )
-         Value = Band_GetMatrixElement( StiffMatrix, i, j )
+         VALUE = Band_GetMatrixElement( A, i, j )
      END SELECT
 !------------------------------------------------------------------------------
    END FUNCTION GetMatrixElement
@@ -193,16 +200,16 @@ CONTAINS
 
 !> Changes the value of a given matrix element.
 !------------------------------------------------------------------------------
-   FUNCTION ChangeMatrixElement( StiffMatrix, i, j, NewValue ) RESULT ( OldValue )
+   FUNCTION ChangeMatrixElement( A, i, j, NewValue ) RESULT ( OldValue )
 !------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix
+     TYPE(Matrix_t) :: A
      INTEGER :: i,j
      REAL(KIND=dp) :: NewValue, OldValue
 !------------------------------------------------------------------------------
 
-     SELECT CASE( StiffMatrix % FORMAT )
+     SELECT CASE( A % FORMAT )
        CASE( MATRIX_CRS )
-         OldValue = CRS_ChangeMatrixElement( StiffMatrix, i, j, NewValue )
+         OldValue = CRS_ChangeMatrixElement( A, i, j, NewValue )
 
        CASE DEFAULT
          CALL Warn('ChangeMatrixElement','Not implemented for this type')
@@ -215,22 +222,26 @@ CONTAINS
 
 !> Adds to the value of a given matrix element.
 !------------------------------------------------------------------------------
-   SUBROUTINE AddToMatrixElement( StiffMatrix, i, j,Value )
+   SUBROUTINE AddToMatrixElement( A, i, j,VALUE )
 !------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix
+     TYPE(Matrix_t) :: A
      INTEGER :: i,j
-     REAL(KIND=dp) :: Value
+     REAL(KIND=dp) :: VALUE
 !------------------------------------------------------------------------------
 
-     SELECT CASE( StiffMatrix % FORMAT )
+     SELECT CASE( A % FORMAT )
        CASE( MATRIX_CRS )
-         CALL CRS_AddToMatrixElement( StiffMatrix, i, j, Value )
+         CALL CRS_AddToMatrixElement( A, i, j, VALUE )
+         IF(A % FORMAT == MATRIX_LIST) THEN
+           CALL List_toListMatrix(A)
+           CALL List_AddToMatrixElement( A % ListMatrix, i, j, VALUE )
+         END IF
 
       CASE( MATRIX_LIST )
-         CALL List_AddToMatrixElement( StiffMatrix % ListMatrix, i, j, Value )
+         CALL List_AddToMatrixElement( A % ListMatrix, i, j, VALUE )
 
        CASE( MATRIX_BAND,MATRIX_SBAND )
-         CALL Band_AddToMatrixElement( StiffMatrix, i, j, Value )
+         CALL Band_AddToMatrixElement( A, i, j, VALUE )
      END SELECT
 !------------------------------------------------------------------------------
    END SUBROUTINE AddToMatrixElement
@@ -239,15 +250,15 @@ CONTAINS
 
 !> Moves a matrix element from one position adding it to the value of another one.
 !------------------------------------------------------------------------------
-   SUBROUTINE MoveMatrixElement( StiffMatrix, i1, j1, i2, j2 )
+   SUBROUTINE MoveMatrixElement( A, i1, j1, i2, j2 )
 !------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix
+     TYPE(Matrix_t) :: A
      INTEGER :: i1,j1,i2,j2
 !------------------------------------------------------------------------------
-     REAL(KIND=dp) :: Value
+     REAL(KIND=dp) :: VALUE
 
-     Value = ChangeMatrixElement(StiffMatrix, i1, j1, 0.0_dp)
-     CALL AddToMatrixElement(StiffMatrix, i2, j2, Value )
+     VALUE = ChangeMatrixElement(A, i1, j1, 0.0_dp)
+     CALL AddToMatrixElement(A, i2, j2, VALUE )
      
 !------------------------------------------------------------------------------
    END SUBROUTINE MoveMatrixElement
@@ -256,21 +267,21 @@ CONTAINS
 
 !> Zeros a row in matrix.
 !------------------------------------------------------------------------------
-   SUBROUTINE ZeroRow( StiffMatrix, n )
+   SUBROUTINE ZeroRow( A, n )
 !------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix  !< Structure holding the matrix 
+     TYPE(Matrix_t) :: A  !< Structure holding the matrix 
       INTEGER :: n                           !< Row to be zerored.
 !------------------------------------------------------------------------------
 
-     SELECT CASE( StiffMatrix % FORMAT )
+     SELECT CASE( A % FORMAT )
        CASE( MATRIX_CRS )
-         CALL CRS_ZeroRow( StiffMatrix,n )
+         CALL CRS_ZeroRow( A,n )
 
        CASE( MATRIX_LIST )
-         CALL List_ZeroRow( StiffMatrix % ListMatrix, n )
+         CALL List_ZeroRow( A % ListMatrix, n )
 
        CASE( MATRIX_BAND,MATRIX_SBAND )
-         CALL Band_ZeroRow( StiffMatrix,n )
+         CALL Band_ZeroRow( A,n )
      END SELECT
 !------------------------------------------------------------------------------
    END SUBROUTINE ZeroRow
@@ -279,26 +290,26 @@ CONTAINS
 !> Moves a row and and sumes it with the values of a second one, optionally 
 !> multiplying with a constant.
 !------------------------------------------------------------------------------
-   SUBROUTINE MoveRow( StiffMatrix, n1, n2, Coeff )
+   SUBROUTINE MoveRow( A, n1, n2, Coeff )
 !------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix
+     TYPE(Matrix_t) :: A
      INTEGER :: n1, n2
      REAL(KIND=dp), OPTIONAL :: Coeff
 !------------------------------------------------------------------------------
 
-     SELECT CASE( StiffMatrix % FORMAT )
+     SELECT CASE( A % FORMAT )
        CASE( MATRIX_CRS )
          IF( PRESENT( Coeff ) ) THEN
-           CALL CRS_MoveRow( StiffMatrix,n1,n2,Coeff )
+           CALL CRS_MoveRow( A,n1,n2,Coeff )
          ELSE
-           CALL CRS_MoveRow( StiffMatrix,n1,n2 )  
+           CALL CRS_MoveRow( A,n1,n2 )  
          END IF
 
        CASE( MATRIX_LIST )
          IF( PRESENT( Coeff ) ) THEN
-           CALL List_MoveRow( StiffMatrix % ListMatrix,n1,n2,Coeff )
+           CALL List_MoveRow( A % ListMatrix,n1,n2,Coeff )
          ELSE
-           CALL List_MoveRow( StiffMatrix % ListMatrix,n1,n2 )
+           CALL List_MoveRow( A % ListMatrix,n1,n2 )
          END IF
 
        CASE DEFAULT
@@ -312,22 +323,22 @@ CONTAINS
 
 !> Glues a local matrix to the global one.
 !------------------------------------------------------------------------------
-   SUBROUTINE GlueLocalSubMatrix( StiffMatrix,row0,col0,Nrow,Ncol,RowInds,ColInds,&
+   SUBROUTINE GlueLocalSubMatrix( A,row0,col0,Nrow,Ncol,RowInds,ColInds,&
        RowDofs,ColDofs,LocalMatrix )
 !------------------------------------------------------------------------------
      REAL(KIND=dp) :: LocalMatrix(:,:)
-     TYPE(Matrix_t) :: StiffMatrix
+     TYPE(Matrix_t) :: A
      INTEGER :: Nrow,Ncol,RowDofs,ColDofs,Col0,Row0,RowInds(:),ColInds(:)
 !------------------------------------------------------------------------------
 
-     SELECT CASE( StiffMatrix % FORMAT )
+     SELECT CASE( A % FORMAT )
 
        CASE( MATRIX_CRS )       
-         CALL CRS_GlueLocalSubMatrix( StiffMatrix,row0,col0,Nrow,Ncol,RowInds,ColInds,&
+         CALL CRS_GlueLocalSubMatrix( A,row0,col0,Nrow,Ncol,RowInds,ColInds,&
              RowDofs,ColDofs,LocalMatrix )
       
        CASE( MATRIX_LIST )
-         CALL List_GlueLocalSubMatrix( StiffMatrix % ListMatrix,row0,col0,Nrow,Ncol,RowInds,ColInds,&
+         CALL List_GlueLocalSubMatrix( A % ListMatrix,row0,col0,Nrow,Ncol,RowInds,ColInds,&
              RowDofs,ColDofs,LocalMatrix )
         
        CASE DEFAULT
@@ -341,19 +352,19 @@ CONTAINS
 
 !> Matrix vector multiplication of sparse matrices.
 !------------------------------------------------------------------------------
-   SUBROUTINE MatrixVectorMultiply( StiffMatrix,u,v )
+   SUBROUTINE MatrixVectorMultiply( A,u,v )
 !------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix
+     TYPE(Matrix_t) :: A
      INTEGER :: n
      REAL(KIND=dp), DIMENSION(:) CONTIG :: u,v
 !------------------------------------------------------------------------------
 
-     SELECT CASE( StiffMatrix % FORMAT )
+     SELECT CASE( A % FORMAT )
      CASE( MATRIX_CRS )
-       CALL CRS_MatrixVectorMultiply( StiffMatrix,u,v )
+       CALL CRS_MatrixVectorMultiply( A,u,v )
 
      CASE( MATRIX_BAND,MATRIX_SBAND )
-       CALL Band_MatrixVectorMultiply( StiffMatrix,u,v )
+       CALL Band_MatrixVectorMultiply( A,u,v )
 
      CASE( MATRIX_LIST )
        CALL Warn('MatrixVectorMultiply','Not implemented for List matrix type')
@@ -458,7 +469,8 @@ CONTAINS
 !------------------------------------------------------------------------------
 
    
-!>    Check if the current element has been defined passive.
+!------------------------------------------------------------------------------
+!> Check if the current element has been defined passive.
 !> This is done by inspecting a looking an the values of "varname Passive"
 !> in the Body Force section. It is determined to be passive if it has 
 !> more positive than negative hits in an element.
@@ -516,39 +528,21 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
 !>  For time dependent simulations add the time derivative coefficient terms
-!>  to the matrix containing other coefficients.
+!>  to the local matrix containing other coefficients.
 !------------------------------------------------------------------------------
    SUBROUTINE Add1stOrderTime( MassMatrix, StiffMatrix,  &
           Force, dt, n, DOFs, NodeIndexes, Solver )
 !------------------------------------------------------------------------------
-!
-! REAL(KIND=dp) :: MassMatrix(:,:)
-!   INPUT:
-!
-! REAL(KIND=dp) :: StiffMatrix(:,:)
-!   INOUT:
-!   
-! REAL(KIND=dp) :: Force(:)
-!   INOUT:
-!   
-! REAL(KIND=dp) :: dt
-!   INPUT: Simulation timestep size
-!
-! INTEGER :: n
-!   INPUT: number of element nodes
-!
-! INTEGER :: DOFs
-!   INPUT: variable degrees of freedom
-!
-! TYPE(Solver_t), POINTER :: Solver
-!   INPUT: solver parameter list (used to get some options for time integration)
-! 
-!------------------------------------------------------------------------------
-     TYPE(Solver_t) :: Solver
-     REAL(KIND=dp) :: MassMatrix(:,:),StiffMatrix(:,:),Force(:),dt
-     INTEGER :: n,DOFs
-     INTEGER :: NodeIndexes(:)
+     REAL(KIND=dp) :: MassMatrix(:,:)   !< Local mass matrix.
+     REAL(KIND=dp) :: StiffMatrix(:,:)  !< Local stiffness matrix.
+     REAL(KIND=dp) :: Force(:)          !< Local right-hand-side vector.
+     REAL(KIND=dp) :: dt                !< Simulation timestep size
+     INTEGER :: n                       !< number of element nodes
+     INTEGER :: DOFs                    !< variable degrees of freedom
+     INTEGER :: NodeIndexes(:)          !< element nodes
+     TYPE(Solver_t) :: Solver           !< Solver structure.
 !------------------------------------------------------------------------------
      LOGICAL :: GotIt
      INTEGER :: i,j,k,l,m,Order
@@ -653,46 +647,111 @@ CONTAINS
    END SUBROUTINE Add1stOrderTime
 !------------------------------------------------------------------------------
 
+!------------------------------------------------------------------------------
+!>  For time dependent simulations add the time derivative coefficient terms
+!>  to the global matrix containing other coefficients.
+!------------------------------------------------------------------------------
+   SUBROUTINE Add1stOrderTime_CRS( Matrix, Force, dt, Solver )
+!------------------------------------------------------------------------------
+     TYPE(Matrix_t), POINTER :: Matrix  !< Global matrix (including stiffness and mass)
+     REAL(KIND=dp) :: Force(:)          !< Global right-hand-side vector.
+     REAL(KIND=dp) :: dt                !< Simulation timestep size
+     TYPE(Solver_t) :: Solver           !< Solver structure.
+!------------------------------------------------------------------------------
+     LOGICAL :: GotIt
+     INTEGER :: i,j,k,l,m,n,Order
+     REAL(KIND=dp) :: s, t, msum
+     CHARACTER(LEN=MAX_NAME_LEN) :: Method
+     TYPE(Variable_t), POINTER :: DtVar
+     REAL(KIND=dp) :: Dts(Solver % Order)
+     REAL(KIND=dp), POINTER :: PrevSol(:,:), ML(:)
+     INTEGER, POINTER :: Rows(:), Cols(:)
+     LOGICAL :: ConstantDt, Lumped, Found, IsFCT
+!------------------------------------------------------------------------------
+
+     CALL Info('Add1stOrderTime_CRS','Adding time discretization to CRS matrix')
+
+!     IF ( Matrix % Lumped ) THEN
+
+     IsFCT =  ListGetLogical( Solver % Values,'Linear System FCT',Found ) 
+
+     IF( IsFCT ) THEN
+       PRINT *,'Performing time-integration with mass lumping'
+       n = SIZE( Force ) 
+       IF( .NOT. ASSOCIATED( Matrix % MassValuesLumped ) ) THEN         
+         ALLOCATE( Matrix % MassValuesLumped( n ) )
+       END IF
+       ML => Matrix % MassValuesLumped 
+       Matrix % Lumped = .TRUE. 
+
+       ! Compute rowsum of mass matrix to obtain lumped mass matrix
+       Rows => Matrix % Rows
+       Cols => Matrix % Cols
+       DO i=1,n
+         msum = 0.0_dp
+         ! lumped mass
+         DO j=Rows(i),Rows(i+1)-1
+           msum = msum + Matrix % MassValues(j)
+         END DO
+         ML(i) = msum 
+       END DO
+
+       PRINT *,'SUMs:',SUM(ML),SUM(Matrix % MassValues)
+     END IF
+
+!------------------------------------------------------------------------------
+     Order = MIN(Solver % DoneTime, Solver % Order)
+     Method = ListGetString( Solver % Values, 'Timestepping Method', GotIt )
+     PrevSol => Solver % Variable % PrevValues
+
+     SELECT CASE( Method )
+
+!     CASE( 'fs' ) 
+!       CALL FractionalStep( n*DOFs, dt, MassMatrix, StiffMatrix, Force, &
+!                   PrevSol(:,1), Solver % Beta, Solver )
+     CASE('bdf')
+       Dts(1) = Dt
+       ConstantDt = .TRUE.
+       IF(Order > 1) THEN
+         DtVar => VariableGet( Solver % Mesh % Variables, 'Timestep size' )
+         DO i=2,Order
+           Dts(i) = DtVar % PrevValues(1,i-1)
+           IF(ABS(Dts(i)-Dts(1)) > 1.0d-6 * Dts(1)) ConstantDt = .FALSE.
+         END DO
+       END IF
+
+       IF(ConstantDt) THEN
+         CALL BDF_CRS( dt, Matrix, Force, PrevSol, Order )
+       ELSE     
+         CALL VBDF_CRS( dts, Matrix, Force, PrevSol, Order )
+       END IF
+
+     CASE DEFAULT
+       CALL NewmarkBeta_CRS( dt, Matrix, Force, PrevSol(:,1), Solver % Beta )
+
+     END SELECT
+
+!------------------------------------------------------------------------------
+   END SUBROUTINE Add1stOrderTime_CRS
+!------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
 !>  For time dependent simulations add the time derivative coefficient terms
 !>  to the matrix containing other coefficients.
 !------------------------------------------------------------------------------
    SUBROUTINE Add2ndOrderTime( MassMatrix, DampMatrix, StiffMatrix,  &
          Force, dt, n, DOFs, NodeIndexes, Solver )
 !------------------------------------------------------------------------------
-!
-! REAL(KIND=dp) :: MassMatrix(:,:)
-!   INPUT:
-!
-! REAL(KIND=dp) :: DampMatrix(:,:)
-!   INPUT:
-!
-! REAL(KIND=dp) :: StiffMatrix(:,:)
-!   INOUT:
-!   
-! REAL(KIND=dp) :: Force(:)
-!   INOUT:
-!   
-! REAL(KIND=dp) :: dt
-!   INPUT: Simulation timestep size
-!
-! INTEGER :: n
-!   INPUT: number of element nodes
-!
-! INTEGER :: DOFs
-!   INPUT: variable degrees of freedom
-!
-! TYPE(Solver_t) :: Solver
-!   INPUT: solver parameter list (used to get some options for time integration)
-! 
-!------------------------------------------------------------------------------
-     TYPE(Solver_t) :: Solver
-
-     REAL(KIND=dp) :: MassMatrix(:,:),DampMatrix(:,:), &
-                  StiffMatrix(:,:),Force(:),dt
-     INTEGER :: n,DOFs
-     INTEGER :: NodeIndexes(:)
+     REAL(KIND=dp) :: MassMatrix(:,:)   !< Local mass matrix.
+     REAL(KIND=dp) :: DampMatrix(:,:)   !< Local damping matrix.
+     REAL(KIND=dp) :: StiffMatrix(:,:)  !< Local stiffness matrix.
+     REAL(KIND=dp) :: Force(:)          !< Local right-hand-side vector.
+     REAL(KIND=dp) :: dt                !< Simulation timestep size
+     INTEGER :: n                       !< number of element nodes
+     INTEGER :: DOFs                    !< variable degrees of freedom
+     INTEGER :: NodeIndexes(:)          !< element nodes
+     TYPE(Solver_t) :: Solver           !< Solver structure.
 !------------------------------------------------------------------------------
      LOGICAL :: GotIt
      INTEGER :: i,j,k,l
@@ -797,7 +856,6 @@ CONTAINS
      CALL UpdateGlobalForce( Solver % Matrix % Force(:,1), LForce, &
                   n, DOFs, NodeIndexes )
 !------------------------------------------------------------------------------
-!------------------------------------------------------------------------------
      Method = ListGetString( Solver % Values, 'Timestepping Method', GotIt )
      SELECT CASE(Method)
      CASE DEFAULT
@@ -810,35 +868,19 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+!> Update the right-hand-side of the global equation by adding the local entry. 
+!------------------------------------------------------------------------------
    SUBROUTINE UpdateTimeForce( StiffMatrix, &
            ForceVector, LocalForce, n, NDOFs, NodeIndexes )
 !------------------------------------------------------------------------------
-! 
-! TYPE(Matrix_t), POINTER :: StiffMatrix
-!   INOUT: The global matrix
-!
-! REAL(KIND=dp) :: ForceVector(:)
-!   INOUT: The global RHS vector
-!
-! REAL(KIND=dp) :: LocalForce(:)
-!   INPUT: Element local force vector
-!
-! INTEGER :: n, NDOFs
-!   INPUT :: number of nodes / element and number of DOFs / node
-!
-! INTEGER :: NodeIndexes(:)
-!   INPUT: Element node to global node numbering mapping
-! 
-!------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix
-
-     REAL(KIND=dp) :: LocalForce(:),ForceVector(:)
-
-     INTEGER :: n, NDOFs, NodeIndexes(:)
+     TYPE(Matrix_t), POINTER :: StiffMatrix  !< Global stiffness matrix.
+     REAL(KIND=dp) :: LocalForce(:)     !< Local right-hand-side vector.
+     REAL(KIND=dp) :: ForceVector(:)    !< Global right-hand-side vector.
+     INTEGER :: n                       !< number of element nodes
+     INTEGER :: nDOFs                   !< variable degrees of freedom
+     INTEGER :: NodeIndexes(:)          !< Element node to global node numbering mapping.
 !------------------------------------------------------------------------------
      INTEGER :: i,j,k
-!------------------------------------------------------------------------------
-!    Update rhs vector....
 !------------------------------------------------------------------------------
      CALL UpdateGlobalForce( StiffMatrix % Force(:,1), LocalForce, &
                      n, NDOFs, NodeIndexes )
@@ -849,37 +891,20 @@ CONTAINS
 
 
 
+!------------------------------------------------------------------------------
 !> Add element local matrices & vectors to global matrices and vectors.
 !------------------------------------------------------------------------------
    SUBROUTINE UpdateGlobalEquations( StiffMatrix, LocalStiffMatrix, &
       ForceVector, LocalForce, n, NDOFs, NodeIndexes, RotateNT )
 !------------------------------------------------------------------------------
-!
-! TYPE(Matrix_t), POINTER :: StiffMatrix
-!   INOUT: The global matrix
-!
-! REAL(KIND=dp) :: LocalStiffMatrix(:,:)
-!   INPUT: Local matrix to be added to the global matrix
-!
-! REAL(KIND=dp) :: ForceVector(:)
-!   INOUT: The global RHS vector
-!
-! REAL(KIND=dp) :: LocalForce(:)
-!   INPUT: Element local force vector
-!
-! INTEGER :: n, NDOFs
-!   INPUT :: number of nodes / element and number of DOFs / node
-!
-! INTEGER :: NodeIndexes(:)
-!   INPUT: Element node to global node numbering mapping
-! 
-!------------------------------------------------------------------------------
-     TYPE(Matrix_t), POINTER :: StiffMatrix
-
-     REAL(KIND=dp) :: LocalStiffMatrix(:,:),LocalForce(:),ForceVector(:)
-
-     LOGICAL, OPTIONAL :: RotateNT
-     INTEGER :: n, NDOFs, NodeIndexes(:)
+     TYPE(Matrix_t), POINTER :: StiffMatrix  !< The global matrix
+     REAL(KIND=dp) :: LocalStiffMatrix(:,:)  !< Local matrix to be added to the global matrix.
+     REAL(KIND=dp) :: LocalForce(:)          !< Element local force vector.
+     REAL(KIND=dp) :: ForceVector(:)         !< The global RHS vector.
+     INTEGER :: n                            !< Number of nodes.
+     INTEGER :: NDOFs                        !< Number of element nodes. 
+     INTEGER :: NodeIndexes(:)               !< Element node to global node numbering mapping.
+     LOGICAL, OPTIONAL :: RotateNT           !< Should the global equation be done in local normal-tangential coordinates.
 !------------------------------------------------------------------------------
      INTEGER :: i,j,k,dim, Indexes(n)
      LOGICAL :: Rotate
@@ -900,7 +925,7 @@ CONTAINS
 
      Element => CurrentModel % CurrentElement
      dim = CoordinateSystemDimension()	
-     IF ( Rotate .AND. NormalTangentialNOFNodes > 0 .and. ndofs>=dim) THEN
+     IF ( Rotate .AND. NormalTangentialNOFNodes > 0 .AND. ndofs>=dim) THEN
        Indexes = 0
        Indexes(1:Element % TYPE % NumberOfNodes) = &
              BoundaryReorder(Element % NodeIndexes)
@@ -912,6 +937,10 @@ CONTAINS
        SELECT CASE( StiffMatrix % FORMAT )
        CASE( MATRIX_CRS )
          CALL CRS_GlueLocalMatrix( StiffMatrix,n,NDOFs,NodeIndexes, &
+                          LocalStiffMatrix )
+
+       CASE( MATRIX_LIST )
+         CALL List_GlueLocalMatrix( StiffMatrix % ListMatrix,n,NDOFs,NodeIndexes, &
                           LocalStiffMatrix )
 
        CASE( MATRIX_BAND,MATRIX_SBAND )
@@ -934,34 +963,18 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
 !> Update the global vector with the local vector entry.
 !------------------------------------------------------------------------------
    SUBROUTINE UpdateGlobalForce(ForceVector, LocalForce, n, &
              NDOFs, NodeIndexes, RotateNT )
 !------------------------------------------------------------------------------
-!
-! TYPE(Matrix_t), POINTER :: StiffMatrix
-!   INOUT: The global matrix
-!
-! REAL(KIND=dp) :: LocalStiffMatrix(:,:)
-!   INPUT: Local matrix to be added to the global matrix
-!
-! REAL(KIND=dp) :: ForceVector(:)
-!   INOUT: The global RHS vector
-!
-! REAL(KIND=dp) :: LocalForce(:)
-!   INPUT: Element local force vector
-!
-! INTEGER :: n, NDOFs
-!   INPUT :: number of nodes / element and number of DOFs / node
-!
-! INTEGER :: NodeIndexes(:)
-!   INPUT: Element node to global node numbering mapping
-! 
-!------------------------------------------------------------------------------
-     REAL(KIND=dp) :: LocalForce(:),ForceVector(:)
-     LOGICAL, OPTIONAL :: RotateNT
-     INTEGER :: n, NDOFs, NodeIndexes(:)
+     REAL(KIND=dp) :: LocalForce(:)          !< Element local force vector.
+     REAL(KIND=dp) :: ForceVector(:)         !< The global RHS vector.
+     INTEGER :: n                            !< Number of nodes.
+     INTEGER :: NDOFs                        !< Number of element nodes. 
+     INTEGER :: NodeIndexes(:)               !< Element node to global node numbering mapping.
+     LOGICAL, OPTIONAL :: RotateNT           !< Should the global equation be done in local normal-tangential coordinates.
 !------------------------------------------------------------------------------
      TYPE(Element_t), POINTER :: Element
      INTEGER :: i,j,k, dim,indexes(n)
@@ -1000,7 +1013,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
-
+!> Updates the mass matrix only.
 !------------------------------------------------------------------------------
    SUBROUTINE UpdateMassMatrix( StiffMatrix, LocalMassMatrix, &
                   n, NDOFs, NodeIndexes )
@@ -1045,6 +1058,10 @@ CONTAINS
      SELECT CASE( StiffMatrix % FORMAT )
         CASE( MATRIX_CRS )
            CALL CRS_GlueLocalMatrix( StiffMatrix, &
+                n, NDOFs, NodeIndexes, LocalMassMatrix )
+
+        CASE( MATRIX_LIST )
+           CALL List_GlueLocalMatrix( StiffMatrix % ListMatrix, &
                 n, NDOFs, NodeIndexes, LocalMassMatrix )
 
        CASE( MATRIX_BAND,MATRIX_SBAND )
@@ -1315,50 +1332,25 @@ CONTAINS
    SUBROUTINE SetDirichletBoundaries( Model, A, b, Name, DOF, NDOFs, Perm, &
        PermOffSet, OffDiagonalMatrix )
 !------------------------------------------------------------------------------
-!
-! TYPE(Model_t) :: Model
-!   INPUT: the current model structure
-!
-! TYPE(Matrix_t), POINTER :: A
-!   INOUT: The global matrix
-!
-! REAL(KIND=dp) :: b
-!   INOUT: The global RHS vector
-! 
-! CHARACTER(LEN=*) :: Name
-!   INPUT: name of the dof to be set
-!
-! INTEGER :: DOF, NDOFs
-!   INPUT: The order number of the dof and the total number of DOFs for
-!          this equation
-!
-! INTEGER :: Perm(:)
-!   INPUT: The node reordering info, this has been generated at the
-!          beginning of the simulation for bandwidth optimization
-!
-! INTEGER :: PermOffSet
-!   INPUT: If the matrix and permutation vectors are not in sync the offset may
-!          used as a remedy. Needed in fully coupled systems.
-!
-! LOGICA :: OffDiagonalMatrix
-!  INPUT: For block systems the only the diagonal matrix should be given non-zero
-!         entries for matrix and r.h.s., for off-diagonal matrices just set the row
-!         to zero.
-!
-!------------------------------------------------------------------------------
-    TYPE(Model_t) :: Model
-    TYPE(Matrix_t), POINTER :: A
-    REAL(KIND=dp) :: b(:)
-    CHARACTER(LEN=*) :: Name 
-    INTEGER :: DOF, NDOFs, Perm(:)
-    INTEGER, OPTIONAL :: PermOffSet
-    LOGICAL, OPTIONAL :: OffDiagonalMatrix
+    TYPE(Model_t) :: Model          !< The current model structure
+    TYPE(Matrix_t), POINTER :: A    !< The global matrix
+    REAL(KIND=dp) :: b(:)           !< The global RHS vector
+    CHARACTER(LEN=*) :: Name        !< Name of the dof to be set
+    INTEGER :: DOF                  !< The order number of the dof
+    INTEGER :: NDOFs                !< The total number of DOFs for this equation
+    INTEGER :: Perm(:)              !< The node reordering info, this has been generated at the beginning of the 
+                                    !< simulation for bandwidth optimization
+    INTEGER, OPTIONAL :: PermOffSet  !< If the matrix and permutation vectors are not in sync the offset may used as a remedy. 
+                                     !< Needed in fully coupled systems.
+    LOGICAL, OPTIONAL :: OffDiagonalMatrix  !< For block systems the only the diagonal matrix should be given non-zero 
+                                            !< entries for matrix and r.h.s., for off-diagonal matrices just set the row to zero.
 !------------------------------------------------------------------------------
     TYPE(Element_t), POINTER :: Element
     INTEGER, POINTER :: NodeIndexes(:), IndNodes(:)
     INTEGER, ALLOCATABLE :: Indexes(:), PassPerm(:)
     INTEGER :: BC,i,j,k,l,m,n,t,k1,k2,OffSet
     LOGICAL :: GotIt, periodic, OrderByBCNumbering
+    REAL(KIND=dp), POINTER :: MinDist(:)
     REAL(KIND=dp), POINTER :: WorkA(:,:,:) => NULL()
     REAL(KIND=dp) ::  s
 
@@ -1371,8 +1363,8 @@ CONTAINS
 
     INTEGER :: NoNodes,NoDims,bf_id,nlen, NOFNodesFound, dim, &
         bndry_start, bndry_end, Upper
-    REAL(KIND=dp), POINTER :: CoordNodes(:,:), Condition(:), Work(:)
-    REAL(KIND=dp) :: MinDist,Dist, Eps
+    REAL(KIND=dp), POINTER :: CoordNodes(:,:), Condition(:), Work(:),DiagScaling(:)
+    REAL(KIND=dp) :: GlobalMinDist,Dist, Eps
     LOGICAL, ALLOCATABLE :: ActivePart(:), ActiveCond(:), ActivePartAll(:)
     TYPE(ValueList_t), POINTER :: ValueList, Params
     LOGICAL :: NodesFound, Passive, OffDiagonal
@@ -1382,6 +1374,12 @@ CONTAINS
 !------------------------------------------------------------------------------
 ! These logical vectors are used to minimize extra effort in setting up different BCs
 !------------------------------------------------------------------------------
+
+    DiagScaling => A % DiagScaling
+    IF (.NOT.ASSOCIATED(DiagScaling)) THEN
+      ALLOCATE(DiagScaling(A % NumberOFRows))
+      DiagScaling = 1._dp
+    END IF
 
     nlen = LEN_TRIM(Name)
     n = MAX( Model % NumberOfBodyForces,Model % NumberOfBCs)
@@ -1501,7 +1499,10 @@ CONTAINS
           n = Element % TYPE % NumberOfNodes
           DO j=1,n
             k = BoundaryReorder(Element % NodeIndexes(j))
-            IF (k>0) NTzeroing_done(k,:) = .FALSE.
+            IF (k>0) THEN
+              NTelement(k,:)=0
+              NTzeroing_done(k,:) = .FALSE.
+            END IF
           END DO
         END DO
       END IF
@@ -1620,7 +1621,6 @@ CONTAINS
 ! Note that it is best that the coordinates are transformed to nodes using 
 ! the right variable. Otherwise it could point to nodes that are not active.
 !------------------------------------------------------------------------------
-
      
     DO BC=1,Model % NumberOfBCs
       
@@ -1637,6 +1637,7 @@ CONTAINS
           IF ( .NOT. GotIt ) THEN
             Eps = HUGE(Eps)
           ELSE
+            ! We are looking at square of distance
             Eps = Eps**2
           END IF
 
@@ -1644,11 +1645,10 @@ CONTAINS
           NoDims = SIZE(CoordNodes,2)
           
           IF(NoNodes > 0) THEN               
-            ALLOCATE( IndNodes(NoNodes) )
+            ALLOCATE( IndNodes(NoNodes), MinDist(NoNodes) )
             IndNodes = -1
+            MinDist = HUGE( Dist )
             DO j=1,NoNodes
-              MinDist = HUGE(Dist)
-              
               DO i=1,Model % NumberOfNodes
                 IF( Perm(i) == 0) CYCLE
                 
@@ -1657,17 +1657,27 @@ CONTAINS
                 IF(NoDims == 3) Dist = Dist + (Model % Mesh % Nodes % z(i) - CoordNodes(j,3))**2
                 Dist = SQRT(Dist)
                 
-                IF(Dist < MinDist .AND. Dist <= Eps ) THEN
-                  MinDist = Dist
+                IF(Dist < MinDist(j) .AND. Dist <= Eps ) THEN
+                  MinDist(j) = Dist
                   IndNodes(j) = i
                 END IF
               END DO
             END DO
 
+            ! In parallel case eliminate all except the nearest node. 
+            ! This relies on the fact that for each node partition the 
+            ! distance to nearest node is computed accurately. 
+            DO j=1,NoNodes
+              GlobalMinDist = ParallelReduction( MinDist(j), 1 )
+              IF( ABS( GlobalMinDist - MinDist(j) ) > TINY(Dist) ) THEN
+                IndNodes(j) = 0
+              END IF
+            END DO
+
             NOFNodesFound = 0
             DO j=1,NoNodes
                IF ( IndNodes(j)>0 ) THEN
-                 NOFNodesFound=NOFNodesFound+1
+                 NOFNodesFound = NOFNodesFound+1
                  IndNodes(NOFNodesFound) = IndNodes(j)
                END IF
             END DO
@@ -1676,16 +1686,30 @@ CONTAINS
             IF ( NOFNodesFound > 0 ) THEN
               CALL ListAddIntegerArray( ValueList,'Target Nodes', &
                   NOFNodesFound, IndNodes) 
-              DEALLOCATE(IndNodes)
-              NodesFound = .TRUE.               
+              NodesFound = .TRUE.            
+            ELSE
+              ! If no nodes found, add still an empty list and make sure the 
+              ! zero is not treated later on. Otherwise this search would be 
+              ! retreated each time. 
+              CALL ListAddIntegerArray( ValueList,'Target Nodes', &
+                  1, IndNodes) 
             END IF
+
+            ! Finally deallocate the temporal vectors
+            DEALLOCATE( IndNodes, MinDist ) 
           END IF
         END IF
       END IF
       
+      ! If the target coordinates has already been assigned to an empty list 
+      ! cycle over it by testing the 1st node. 
+      IF( NodesFound ) THEN
+        NodeIndexes => ListGetIntegerArray( ValueList,'Target Nodes')
+        IF( NodeIndexes(1) == 0 ) NodesFound = .FALSE. 
+      END IF
+
       IF(NodesFound) THEN           
         Conditional = ListCheckPresent( ValueList, CondName )      
-        NodeIndexes => ListGetIntegerArray( ValueList,'Target Nodes')
         n = SIZE(NodeIndexes)
         CALL SetPointValues(n)
       END IF
@@ -1780,13 +1804,16 @@ CONTAINS
               m=NDOFs*(k-1)+l
               CALL ZeroRow(A,m)
               A % Values(A % Diag(m))=1._dp
-              b(m)=Solver % Variable % Values(m)
+              b(m)=Solver % Variable % Values(m)/DiagScaling(m)
             END DO
           END DO
         END IF
       END DO
     END IF
+
+    IF(.NOT.ASSOCIATED(A % DiagScaling,DiagScaling)) DEALLOCATE(DiagScaling)
     
+
 !------------------------------------------------------------------------------
 
   CONTAINS
@@ -1897,7 +1924,7 @@ CONTAINS
                         NTZeroing_done(m,k) = .TRUE.
                       END IF
 	              IF( .NOT. OffDiagonal ) THEN
-                        b(l) = b(l) + RotVec(k) * Work(j)
+                        b(l) = b(l) + RotVec(k) * Work(j)/DiagScaling(l)
 	              END IF
                     END IF
                   END IF
@@ -1907,12 +1934,12 @@ CONTAINS
                 IF ( A % FORMAT == MATRIX_SBAND ) THEN
                   CALL SBand_SetDirichlet( A,b,k,Work(j) )
                 ELSE IF ( A % FORMAT == MATRIX_CRS .AND. A % Symmetric ) THEN
-                  CALL CRS_SetSymmDirichlet( A,b,k,Work(j) )
+                  CALL CRS_SetSymmDirichlet( A,b,k,Work(j)/DiagScaling(k) )
                 ELSE
                   CALL ZeroRow( A,k )
                   IF( .NOT. OffDiagonal ) THEN
                     CALL SetMatrixElement( A,k,k,1.0d0 )
-                    b(k) = Work(j)
+                    b(k) = Work(j)/DiagScaling(k)
                   END IF
                 END IF
               END IF
@@ -1923,13 +1950,13 @@ CONTAINS
                   CALL SBand_SetDirichlet( A,b,k1,WorkA(l,1,j) )
                 ELSE IF ( A % FORMAT == MATRIX_CRS .AND. A % Symmetric ) THEN
                   IF( .NOT. OffDiagonal ) THEN
-                    CALL CRS_SetSymmDirichlet( A,b,k1,WorkA(l,1,j) )
+                    CALL CRS_SetSymmDirichlet( A,b,k1,WorkA(l,1,j)/DiagScaling(k1) )
                   END IF
                 ELSE
                   CALL ZeroRow( A,k1 )
 	          IF( .NOT. OffDiagonal ) THEN
                     CALL SetMatrixElement( A,k1,k1,1.0d0 )
-                    b(k1) = WorkA(l,1,j)
+                    b(k1) = WorkA(l,1,j)/DiagScaling(k1)
                   END IF
                 END IF
               END DO
@@ -1979,12 +2006,12 @@ CONTAINS
               IF ( A % FORMAT == MATRIX_SBAND ) THEN
                 CALL SBand_SetDirichlet( A,b,k,Work(j) )
               ELSE IF ( A % FORMAT == MATRIX_CRS .AND. A % Symmetric ) THEN
-                CALL CRS_SetSymmDirichlet( A,b,k,Work(j) )
+                CALL CRS_SetSymmDirichlet( A,b,k,Work(j)/DiagScaling(k) )
               ELSE
                 CALL ZeroRow( A,k )
                 IF( .NOT. OffDiagonal ) THEN
                   CALL SetMatrixElement( A,k,k,1.0d0 )
-                  b(k) = Work(j)
+                  b(k) = Work(j)/DiagScaling(k)
                 END IF
               END IF
             ELSE
@@ -1994,13 +2021,13 @@ CONTAINS
                   CALL SBand_SetDirichlet( A,b,k1,WorkA(l,1,j) )
                 ELSE IF ( A % FORMAT == MATRIX_CRS .AND. A % Symmetric ) THEN
                   IF( .NOT. OffDiagonal ) THEN
-                    CALL CRS_SetSymmDirichlet( A,b,k1,WorkA(l,1,j) )
+                    CALL CRS_SetSymmDirichlet( A,b,k1,WorkA(l,1,j)/DiagScaling(k1))
                   END IF
                 ELSE
                   CALL ZeroRow( A,k1 )
                   IF(.NOT. OffDiagonal ) THEN
                     CALL SetMatrixElement( A,k1,k1,1.0d0 )
-                    b(k1) = WorkA(l,1,j)
+                    b(k1) = WorkA(l,1,j)/DiagScaling(k1)
                   END IF
                 END IF
               END DO
@@ -2032,12 +2059,12 @@ CONTAINS
           IF ( A % FORMAT == MATRIX_SBAND ) THEN
             CALL SBand_SetDirichlet( A,b,k,Work(j) )
           ELSE IF ( A % FORMAT == MATRIX_CRS .AND. A % Symmetric ) THEN
-            CALL CRS_SetSymmDirichlet( A,b,k,Work(j) )
+            CALL CRS_SetSymmDirichlet( A,b,k,Work(j)/DiagScaling(k) )
           ELSE
             CALL ZeroRow( A,k )
             IF( .NOT. OffDiagonal ) THEN
               CALL SetMatrixElement( A,k,k,1.0d0 )
-              b(k) = Work(j)
+              b(k) = Work(j)/DiagScaling(k)
             END IF
           END IF
         END DO
@@ -2045,101 +2072,28 @@ CONTAINS
 
     END SUBROUTINE SetLimiterValues
 
+
+!> At first pass sum together the rows related to the periodic dofs.
 !------------------------------------------------------------------------------
-  END SUBROUTINE SetDirichletBoundaries
-!------------------------------------------------------------------------------
-
-
-!> Sets just one Dirichlet point in contrast to setting the whole field.
-!> This is a lower order routine that the previous one. 
-!------------------------------------------------------------------------------
-  SUBROUTINE SetDirichletPoint( StiffMatrix, ForceVector,DOF, NDOFs, &
-      Perm, NodeIndex, NodeValue) 
-!------------------------------------------------------------------------------
-
-    IMPLICIT NONE
-
-    TYPE(Matrix_t), POINTER :: StiffMatrix
-    REAL(KIND=dp) :: ForceVector(:), NodeValue
-    INTEGER :: DOF, NDOFs, Perm(:), NodeIndex
-!------------------------------------------------------------------------------
-
-    INTEGER :: PermIndex
-    REAL(KIND=dp) :: s
-
-!------------------------------------------------------------------------------
-
-    PermIndex = Perm(NodeIndex)
-    
-    IF ( PermIndex > 0 ) THEN
-      PermIndex = NDOFs * (PermIndex-1) + DOF
-      
-      IF ( StiffMatrix % FORMAT == MATRIX_SBAND ) THEN
-        
-        CALL SBand_SetDirichlet( StiffMatrix,ForceVector,PermIndex,NodeValue )
-        
-      ELSE IF ( StiffMatrix % FORMAT == MATRIX_CRS .AND. &
-          StiffMatrix % Symmetric ) THEN
-        
-        CALL CRS_SetSymmDirichlet(StiffMatrix,ForceVector,PermIndex,NodeValue)
-        
-      ELSE                  
-        
-        s = StiffMatrix % Values(StiffMatrix % Diag(PermIndex))
-        ForceVector(PermIndex) = NodeValue * s
-        CALL ZeroRow( StiffMatrix,PermIndex )
-        CALL SetMatrixElement( StiffMatrix,PermIndex,PermIndex,1.0d0*s )
-        
-      END IF
-    END IF
-    
-!------------------------------------------------------------------------------
-  END SUBROUTINE SetDirichletPoint
-!------------------------------------------------------------------------------
-
-
-
-
-!> At fisrt pass sum together the rows related to the periodic dofs.
-!------------------------------------------------------------------------------
-   SUBROUTINE SetPeriodicBoundariesPass1( Model, StiffMatrix, ForceVector, &
+   SUBROUTINE SetPeriodicBoundariesPass1( Model, A, b, &
                       Name, DOF, NDOFs, Perm, This, Done )
 !------------------------------------------------------------------------------
-!
-! TYPE(Model_t) :: Model
-!   INPUT: the current model structure
-!
-! TYPE(Matrix_t), POINTER :: StiffMatrix
-!   INOUT: The global matrix
-!
-! REAL(KIND=dp) :: ForceVector(:)
-!   INOUT: The global RHS vector
-! 
-! CHARACTER(LEN=*) :: Name
-!   INPUT: name of the dof to be set
-!
-! INTEGER :: DOF, NDOFs
-!   INPUT: The order number of the dof and the total number of DOFs for
-!          this equation
-!
-! INTEGER :: Perm(:)
-!   INPUT: The node reordering info, this has been generated at the
-!          beginning of the simulation for bandwidth optimization
-!------------------------------------------------------------------------------
-    TYPE(Model_t) :: Model
-    TYPE(Matrix_t), POINTER :: StiffMatrix
-
-    REAL(KIND=dp) :: ForceVector(:)
-
-    CHARACTER(LEN=*) :: Name
-    LOGICAL :: Done(:)
-    INTEGER :: This, DOF, NDOFs, Perm(:)
+    TYPE(Model_t) :: Model        !< The current model structure
+    TYPE(Matrix_t), POINTER :: A  !< The global matrix
+    REAL(KIND=dp) :: b(:)         !< The global RHS vector
+    CHARACTER(LEN=*) :: Name      !< name of the dof to be set
+    LOGICAL :: Done(:)            !< Has the node already been done. 
+    INTEGER :: This               !< Number of the current boundary.
+    INTEGER :: DOF                !< The order number of the dof
+    INTEGER :: NDOFs              !< the total number of DOFs for this equation
+    INTEGER :: Perm(:)            !< The node reordering info, this has been generated at the
+                                  !< beginning of the simulation for bandwidth optimization
 !------------------------------------------------------------------------------
 
     INTEGER :: p,q,i,j,k,l,m,n,nn,ii,nlen
     LOGICAL :: GotIt, Found
     REAL(KIND=dp) :: Scale
-    TYPE(Matrix_t), POINTER :: A, B, Projector, Projector1
+    TYPE(Matrix_t), POINTER :: F, G, Projector, Projector1
     TYPE(Variable_t), POINTER :: Var
 !------------------------------------------------------------------------------
 
@@ -2173,18 +2127,18 @@ CONTAINS
         k = Perm(ii)
         IF ( .NOT. Done(ii) .AND. k>0 ) THEN
           k = NDOFs * (k-1) + DOF
-          CALL ZeroRow( StiffMatrix,k )
+          CALL ZeroRow( A,k )
 
-          CALL AddToMatrixElement( StiffMatrix, k, k, 1.0_dp )
-          ForceVector(k) = 0.0_dp
+          CALL AddToMatrixElement( A, k, k, 1.0_dp )
+          b(k) = 0.0_dp
 
           DO l = Projector % Rows(i), Projector % Rows(i+1)-1
             IF ( Projector % Cols(l) <= 0 ) CYCLE
             m = Perm( Projector % Cols(l) )
             IF ( m > 0 ) THEN
               m = NDOFs * (m-1) + DOF
-              ForceVector(k) = ForceVector(k) - Scale * Projector % Values(l) * &
-                  Var % Values( m  )
+              b(k) = b(k) - Scale * Projector % Values(l) * &
+                  Var % Values(m)/DiagScaling(k)
              END IF
           END DO
         END IF
@@ -2193,86 +2147,86 @@ CONTAINS
     ELSE IF ( ListGetLogical( Model % BCs(This) % Values,  &
          'Periodic BC Use Lagrange Coefficient', Found ) ) THEN
 
-      B => NULL()
-      A => StiffMatrix % ConstraintMatrix
-      DO WHILE(ASSOCIATED(A))
-        B => Projector % Child
-        DO WHILE(ASSOCIATED(B))
-          IF (ASSOCIATED(A,B)) EXIT
-          B => B % Child
+      G => NULL()
+      F => A % ConstraintMatrix
+      DO WHILE(ASSOCIATED(F))
+        G => Projector % Child
+        DO WHILE(ASSOCIATED(G))
+          IF (ASSOCIATED(F,G)) EXIT
+          G => G % Child
         END DO
-        IF (ASSOCIATED(A,B)) EXIT
-        A => A % ConstraintMatrix
+        IF (ASSOCIATED(F,G)) EXIT
+        F => F % ConstraintMatrix
       END DO
 
-      IF ( .NOT.ASSOCIATED(A,B) ) THEN
-        A => AllocateMatrix()
-        A % ConstraintMatrix => StiffMatrix % ConstraintMatrix
-        StiffMatrix % ConstraintMatrix => A
+      IF ( .NOT.ASSOCIATED(F,G) ) THEN
+        F => AllocateMatrix()
+        F % ConstraintMatrix => A % ConstraintMatrix
+        A % ConstraintMatrix => F
 
-        A % Child => Projector % Child
-        Projector % Child => A
+        F % Child => Projector % Child
+        Projector % Child => F
 
         n = NDOFs*Projector % NumberOfRows
-        A % NumberOfRows = n
+        F % NumberOfRows = n
 
-        ALLOCATE( A % RHS(n), A % Rows(n+1), &
-            A % Cols(SIZE(Projector % Cols)*NDOFs**2+n),  &
-            A % Values(SIZE(Projector % Values)*NDOFs**2+n) )
+        ALLOCATE( F % RHS(n), F % Rows(n+1), &
+            F % Cols(SIZE(Projector % Cols)*NDOFs**2+n),  &
+            F % Values(SIZE(Projector % Values)*NDOFs**2+n) )
 
-         A % Rows(1) = 1
+         F % Rows(1) = 1
          DO i=1,Projector % NumberOfRows
            n = Projector % Rows(i+1)-Projector % Rows(i)
            DO j=1,NDOFs
              k = NDOFs*(i-1)+j
-             A % Rows(k+1)=A % Rows(k)+NDOFs*n+1
+             F % Rows(k+1)=F % Rows(k)+NDOFs*n+1
            END DO
          END DO
 
          DO i=1,Projector % NumberOfRows
            k = Perm(Projector % InvPerm(i))
            DO p=1,NDOFs
-             n = A % Rows(NDOFs*(i-1)+p)
-             A % Cols(n) = NDOFs*(k-1)+p
+             n = F % Rows(NDOFs*(i-1)+p)
+             F % Cols(n) = NDOFs*(k-1)+p
 
              DO j=Projector % Rows(i),Projector % Rows(i+1)-1
                m = Perm(Projector % Cols(j))
                IF ( m>0 ) THEN
                  DO q=1,NDOFs
                    n = n + 1
-                   A % Cols(n) = NDOFs*(m-1)+q
+                   F % Cols(n) = NDOFs*(m-1)+q
                  END DO
                END IF
              END DO
            END DO
          END DO
-         CALL CRS_SortMatrix(A)
+         CALL CRS_SortMatrix(F)
 
-         A % RHS = 0._dp
-         A % Values = 0._dp
+         F % RHS = 0._dp
+         F % Values = 0._dp
       END IF
 
       DO i=1,Projector % NumberOfRows
         k = Perm(Projector % InvPerm(i))
         IF ( k<=0 ) CYCLE
 
-        CALL ZeroRow(A,NDOFS*(i-1)+DOF)
-        CALL SetMatrixElement( A, NDOFs*(i-1)+DOF, &
+        CALL ZeroRow(F,NDOFS*(i-1)+DOF)
+        CALL SetMatrixElement( F, NDOFs*(i-1)+DOF, &
                NDOFs*(k-1)+DOF, Scale )
 
         DO j=Projector % Rows(i),Projector % Rows(i+1)-1
           m = Perm(Projector % Cols(j))
           IF ( m>0 ) THEN
-            CALL SetMatrixElement( A, NDOFs*(i-1)+DOF, &
+            CALL SetMatrixElement( F, NDOFs*(i-1)+DOF, &
                NDOFs*(m-1)+DOF, Projector % Values(j) )
           END IF
         END DO
       END DO
     ELSE
-      ALLOCATE(A)
-      A = StiffMatrix
-      A % RHS => A % BulkRHS
-      A % Values => A % BulkValues
+      ALLOCATE(F)
+      F = A
+      F % RHS => F % BulkRHS
+      F % Values => F % BulkValues
       DO i=1,Projector % NumberOfRows
          ii = Projector % InvPerm(i)
          k = Perm(ii)
@@ -2284,24 +2238,26 @@ CONTAINS
               m = Perm(Projector % Cols(l))
               IF ( m > 0 ) THEN
                 m = NDOFs*(m-1) + DOF
-                DO nn=StiffMatrix % Rows(k),StiffMatrix % Rows(k+1)-1
-                   CALL AddToMatrixElement( StiffMatrix, m, StiffMatrix % Cols(nn), &
-                          Projector % Values(l) * StiffMatrix % Values(nn) )
-                   IF (ASSOCIATED(A % Values)) THEN
-                     CALL AddToMatrixElement( A, m, A % Cols(nn), &
-                           Projector % Values(l) * A % Values(nn) )
+                DO nn=A % Rows(k),A % Rows(k+1)-1
+                   CALL AddToMatrixElement( A, m, A % Cols(nn), &
+                          Projector % Values(l) * A % Values(nn) / &
+                          DiagScaling(k) * DiagScaling(m))
+                   IF (ASSOCIATED(F % Values)) THEN
+                     CALL AddToMatrixElement( F, m, F % Cols(nn), &
+                          Projector % Values(l) * F % Values(nn) )
                    END IF
                 END DO
-                ForceVector(m)=ForceVector(m)+Projector % Values(l)*ForceVector(k)
-                IF (ASSOCIATED(A % RHS)) THEN
-                  A % RHS(m) = A % RHS(m) + Projector % Values(l)*A % RHS(k)
+                b(m)=b(m)+Projector % Values(l)*b(k)*&
+                   DiagScaling(m) / DiagScaling(k)
+                IF (ASSOCIATED(F % RHS)) THEN
+                  F % RHS(m) = F % RHS(m) + Projector % Values(l)*F % RHS(k)
                 END IF
               END IF
             END DO
          END IF
          Done(ii) = .TRUE.
       END DO
-      DEALLOCATE(A)
+      DEALLOCATE(F)
     END IF
 !------------------------------------------------------------------------------
    END SUBROUTINE SetPeriodicBoundariesPass1
@@ -2311,40 +2267,19 @@ CONTAINS
 !> At second pass add the [...1 .. -1 ...] row structure that results to the 
 !> equality of the periodic dofs. 
 !------------------------------------------------------------------------------
-   SUBROUTINE SetPeriodicBoundariesPass2( Model, StiffMatrix, ForceVector, &
+   SUBROUTINE SetPeriodicBoundariesPass2( Model, A, b, &
                       Name, DOF, NDOFs, Perm, This, Done )
 !------------------------------------------------------------------------------
-!
-! TYPE(Model_t) :: Model
-!   INPUT: the current model structure
-!
-! TYPE(Matrix_t), POINTER :: StiffMatrix
-!   INOUT: The global matrix
-!
-! REAL(KIND=dp) :: ForceVector(:)
-!   INOUT: The global RHS vector
-! 
-! CHARACTER(LEN=*) :: Name
-!   INPUT: name of the dof to be set
-!
-! INTEGER :: DOF, NDOFs
-!   INPUT: The order number of the dof and the total number of DOFs for
-!          this equation
-!
-! INTEGER :: Perm(:)
-!   INPUT: The node reordering info, this has been generated at the
-!          beginning of the simulation for bandwidth optimization
+    TYPE(Model_t) :: Model        !< The current model structure
+    TYPE(Matrix_t), POINTER :: A  !< The global matrix
+    REAL(KIND=dp) :: b(:)         !< The global RHS vector
+    CHARACTER(LEN=*) :: Name      !< name of the dof to be set
+    LOGICAL :: Done(:)            !< Has the node already been done. 
+    INTEGER :: This               !< Number of the current boundary.
+    INTEGER :: DOF                !< The order number of the dof
+    INTEGER :: NDOFs              !< the total number of DOFs for this equation
+    INTEGER :: Perm(:)            !< The node reordering info, this has been generated at the
 !------------------------------------------------------------------------------
-    TYPE(Model_t) :: Model
-    TYPE(Matrix_t), POINTER :: StiffMatrix
-
-    REAL(KIND=dp) :: ForceVector(:)
-
-    CHARACTER(LEN=*) :: Name
-    LOGICAL :: Done(:)
-    INTEGER :: This, DOF, NDOFs, Perm(:)
-!------------------------------------------------------------------------------
-
     INTEGER :: i,j,k,l,m,n,nn,ii,nlen
     LOGICAL :: GotIt
     REAL(KIND=dp) :: Scale,s,ValueOffset
@@ -2385,18 +2320,19 @@ CONTAINS
        k = Perm( ii )
        IF ( .NOT. Done(ii) .AND. k > 0 ) THEN
           k = NDOFs * (k-1) + DOF
-          CALL ZeroRow( StiffMatrix,k )
+          CALL ZeroRow( A,k )
           DO l = Projector % Rows(i), Projector % Rows(i+1)-1
              IF ( Projector % Cols(l) <= 0 ) CYCLE
              m = Perm( Projector % Cols(l) )
              IF ( m > 0 ) THEN
                m = NDOFs * (m-1) + DOF
-               CALL AddToMatrixElement( StiffMatrix,k,m,Projector % Values(l) )
+               CALL AddToMatrixElement( A,k,m,Projector % Values(l) * &
+                    DiagScaling(m) / DiagScaling(k))
              END IF
           END DO
 
-          ForceVector(k) = -ValueOffset 
-          CALL AddToMatrixElement( StiffMatrix,k,k,scale )
+          b(k) = -ValueOffset / DiagScaling(k)
+          CALL AddToMatrixElement( A,k,k,scale )
        END IF
        Done(ii) = .TRUE.
     END DO
@@ -2405,38 +2341,77 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
+  END SUBROUTINE SetDirichletBoundaries
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+!> Sets just one Dirichlet point in contrast to setting the whole field.
+!> This is a lower order routine that the previous one. 
+!------------------------------------------------------------------------------
+  SUBROUTINE SetDirichletPoint( StiffMatrix, ForceVector,DOF, NDOFs, &
+      Perm, NodeIndex, NodeValue) 
+!------------------------------------------------------------------------------
+
+    IMPLICIT NONE
+
+    TYPE(Matrix_t), POINTER :: StiffMatrix
+    REAL(KIND=dp) :: ForceVector(:)
+    REAL(KIND=dp) :: NodeValue
+    INTEGER :: DOF, NDOFs, Perm(:), NodeIndex
+!------------------------------------------------------------------------------
+
+    INTEGER :: PermIndex
+    REAL(KIND=dp) :: s
+
+!------------------------------------------------------------------------------
+
+    PermIndex = Perm(NodeIndex)
+    
+    IF ( PermIndex > 0 ) THEN
+      PermIndex = NDOFs * (PermIndex-1) + DOF
+      
+      IF ( StiffMatrix % FORMAT == MATRIX_SBAND ) THEN
+        
+        CALL SBand_SetDirichlet( StiffMatrix,ForceVector,PermIndex,NodeValue )
+        
+      ELSE IF ( StiffMatrix % FORMAT == MATRIX_CRS .AND. &
+          StiffMatrix % Symmetric ) THEN
+        
+        CALL CRS_SetSymmDirichlet(StiffMatrix,ForceVector,PermIndex,NodeValue)
+        
+      ELSE                  
+        
+        s = StiffMatrix % Values(StiffMatrix % Diag(PermIndex))
+        ForceVector(PermIndex) = NodeValue * s
+        CALL ZeroRow( StiffMatrix,PermIndex )
+        CALL SetMatrixElement( StiffMatrix,PermIndex,PermIndex,1.0d0*s )
+        
+      END IF
+    END IF
+    
+!------------------------------------------------------------------------------
+  END SUBROUTINE SetDirichletPoint
+!------------------------------------------------------------------------------
+
+
+
+!------------------------------------------------------------------------------
 !> Sets nodal loads directly to the matrix structure. 
 !> The intended use for this, is for example, in multiphysics coupling where
 !> the nodal loads may have been computed by another solver. 
 !------------------------------------------------------------------------------
    SUBROUTINE SetNodalLoads( Model, A, b, Name, DOF, NDOFs, Perm )
 !------------------------------------------------------------------------------
-!
-! TYPE(Model_t) :: Model
-!   INPUT: the current model structure
-!
-! TYPE(Matrix_t), POINTER :: A
-!   INOUT: The global matrix
-!
-! REAL(KIND=dp) :: b
-!   INOUT: The global RHS vector
-! 
-! CHARACTER(LEN=*) :: Name
-!   INPUT: name of the dof to be set
-!
-! INTEGER :: DOF, NDOFs
-!   INPUT: The order number of the dof and the total number of DOFs for
-!          this equation
-!
-! INTEGER :: Perm(:)
-!   INPUT: The node reordering info, this has been generated at the
-!          beginning of the simulation for bandwidth optimization
-!------------------------------------------------------------------------------
-    TYPE(Model_t) :: Model
-    TYPE(Matrix_t), POINTER :: A
-    REAL(KIND=dp) :: b(:)
-    CHARACTER(LEN=*) :: Name 
-    INTEGER :: DOF, NDOFs, Perm(:)
+    TYPE(Model_t) :: Model         !< The current model structure
+    TYPE(Matrix_t), POINTER :: A   !< The global matrix
+    REAL(KIND=dp) :: b(:)          !< The global RHS vector
+    CHARACTER(LEN=*) :: Name       !< Name of the dof to be set
+    INTEGER :: DOF                 !< The order number of the dof
+    INTEGER :: NDOFs               !< The total number of DOFs for this equation
+    INTEGER :: Perm(:)             !< The node reordering info, this has been generated at the
+                                   !< beginning of the simulation for bandwidth optimization.
 !------------------------------------------------------------------------------
 
     TYPE(Element_t), POINTER :: Element
@@ -2452,7 +2427,7 @@ CONTAINS
 
     INTEGER, POINTER :: IndNodes(:)
     INTEGER :: NoNodes,NoDims,bf_id,nlen
-    REAL(KIND=dp), POINTER :: CoordNodes(:,:)
+    REAL(KIND=dp), POINTER :: CoordNodes(:,:), DiagScaling(:)
     REAL(KIND=dp) :: MinDist,Dist
     LOGICAL, ALLOCATABLE :: ActivePart(:), ActivePartAll(:), DoneLoad(:)
     LOGICAL :: NodesFound
@@ -2461,6 +2436,8 @@ CONTAINS
     LoadName = TRIM(Name) // ' Load'
     nlen = LEN_TRIM(LoadName)
     
+    CALL Info('SetNodalLoads','Checking loads for: '//TRIM(Name),Level=10)
+
     n = MAX(Model % NumberOfBCs, Model % NumberOFBodyForces) 
     ALLOCATE( ActivePart(n), ActivePartAll(n) )
 
@@ -2468,6 +2445,12 @@ CONTAINS
 !------------------------------------------------------------------------------
 ! Go through the boundaries
 !------------------------------------------------------------------------------
+
+    DiagScaling => A % DiagScaling
+    IF (.NOT.ASSOCIATED(DiagScaling)) THEN
+      ALLOCATE(DiagScaling(A % NumberOFRows))
+      DiagScaling=1._dp
+    END IF
 
     ActivePart = .FALSE.
     ActivePartAll = .FALSE.
@@ -2479,6 +2462,7 @@ CONTAINS
     END DO
 
     IF ( ANY(ActivePart) .OR. ANY(ActivePartAll) ) THEN
+      CALL Info('SetNodalLoads','Setting nodal loads on boundaries: '//TRIM(Name),Level=9)
       ALLOCATE(DoneLoad( SIZE(b)/NDOFs) )
       DoneLoad = .FALSE.
 
@@ -2518,6 +2502,7 @@ CONTAINS
     END DO
 
     IF ( ANY( ActivePart ) .OR. ANY(ActivePartAll) ) THEN
+      CALL Info('SetNodalLoads','Setting nodal loads on bulk: '//TRIM(Name),Level=9)
       IF(.NOT. ALLOCATED(DoneLoad)) ALLOCATE(DoneLoad( SIZE(b)/NDOFs) )      
       DoneLoad = .FALSE.
 
@@ -2588,6 +2573,7 @@ CONTAINS
       END IF
       
       IF(NodesFound) THEN           
+        CALL Info('SetNodalLoads','Setting nodal loads on target nodes: '//TRIM(Name),Level=9)
         NodeIndexes => ListGetIntegerArray( Model % BCs(BC) % Values,'Target Nodes')
         n = SIZE(NodeIndexes)
         ValueList => Model % BCs(BC) % Values
@@ -2598,6 +2584,7 @@ CONTAINS
     END DO
 
     DEALLOCATE( Indexes )
+    IF(.NOT.ASSOCIATED(A % DiagScaling,DiagScaling)) DEALLOCATE(DiagScaling)
 
 
 CONTAINS
@@ -2628,11 +2615,11 @@ CONTAINS
            IF ( k > 0 ) THEN
              IF ( DOF>0 ) THEN
                k = NDOFs * (k-1) + DOF
-               b(k) = b(k) + Work(j)
+               b(k) = b(k) + Work(j) * DiagScaling(k)
              ELSE
                DO l=1,MIN( NDOFs, SIZE(Worka,1) )
                  k1 = NDOFs * (k-1) + l
-                 b(k1) = b(k1) + WorkA(l,1,j)
+                 b(k1) = b(k1) + WorkA(l,1,j) * DiagScaling(k1)
                END DO
              END IF
            END IF
@@ -2663,11 +2650,11 @@ CONTAINS
            IF ( k > 0 ) THEN
              IF ( DOF>0 ) THEN
                k = NDOFs * (k-1) + DOF
-               b(k) = b(k) + Work(j)
+               b(k) = b(k) + Work(j) * DiagScaling(k)
              ELSE
                DO l=1,MIN( NDOFs, SIZE(WorkA,1) )
                  k1 = NDOFs * (k-1) + l
-                 b(k1) = b(k1) + WorkA(l,1,j)
+                 b(k1) = b(k1) + WorkA(l,1,j) * DiagScaling(k1)
                END DO
              END IF
            END IF
@@ -2806,8 +2793,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
-
-
+!------------------------------------------------------------------------------
 !> Check if Normal / Tangential vector boundary conditions present and
 !> allocate space for normals, and if in 3D for two tangent direction
 !> vectors.
@@ -2971,7 +2957,7 @@ CONTAINS
                  801, MPI_COMM_WORLD, status, ierr )
 
              DO j=1,n
-               k = SearchNodeL( Mesh % ParallelInfo, gbuff(j) )
+               k = SearchNodeL( Mesh % ParallelInfo, gbuff(j), Mesh % NumberOfNodes )
                IF ( k>0 ) THEN
                  IF ( BoundaryReorder(k)<= 0 ) THEN
                    NumberOfBoundaryNodes = NumberOfBoundaryNodes + 1
@@ -3014,6 +3000,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
 !> Average boundary normals for nodes. The average boundary normals
 !> may be beneficial as they provide more continuous definition of normal
 !> over curved boundaries. 
@@ -3032,11 +3019,11 @@ CONTAINS
 
     CHARACTER(LEN=*) :: VariableName
 !------------------------------------------------------------------------------
-    TYPE(Element_t), POINTER :: CurrentElement
+    TYPE(Element_t), POINTER :: Element
     TYPE(Nodes_t) :: ElementNodes
     INTEGER :: i,j,k,l,m,n,t, iBC, ierr, proc
     LOGICAL :: GotIt, Found, PeriodicNormals, Conditional
-    REAL(KIND=dp) :: s,Bu,Bv
+    REAL(KIND=dp) :: s,Bu,Bv,Nrm(3),Basis(32),DetJ
     INTEGER, POINTER :: NodeIndexes(:)
     TYPE(Matrix_t), POINTER :: Projector
     REAL(KIND=dp), ALLOCATABLE :: Condition(:)
@@ -3060,6 +3047,8 @@ CONTAINS
     TYPE(Buff_t), ALLOCATABLE :: n_index(:)
     REAL(KIND=dp), ALLOCATABLE :: nbuff(:)
     INTEGER, ALLOCATABLE :: n_count(:), gbuff(:), n_comp(:)
+
+    LOGICAL :: MassConsistent
 
     TYPE(Mesh_t), POINTER :: Mesh
 !------------------------------------------------------------------------------
@@ -3100,11 +3089,11 @@ CONTAINS
 
         DO t=Model % NumberOfBulkElements + 1, Model % NumberOfBulkElements + &
                       Model % NumberOfBoundaryElements
-          CurrentElement => Model % Elements(t)
-          IF ( CurrentElement % TYPE  % ElementCode < 200 ) CYCLE
+          Element => Model % Elements(t)
+          IF ( Element % TYPE  % ElementCode < 200 ) CYCLE
 
-          n = CurrentElement % TYPE % NumberOfNodes
-          NodeIndexes => CurrentElement % NodeIndexes
+          n = Element % TYPE % NumberOfNodes
+          NodeIndexes => Element % NodeIndexes
 
           ElementNodes % x(1:n) = Model % Nodes % x(NodeIndexes)
           ElementNodes % y(1:n) = Model % Nodes % y(NodeIndexes)
@@ -3113,28 +3102,32 @@ CONTAINS
           ALLOCATE(Condition(n))
 
           DO i=1,Model % NumberOfBCs
-            IF ( CurrentElement % BoundaryInfo % Constraint == Model % BCs(i) % Tag ) THEN
+            IF ( Element % BoundaryInfo % Constraint == Model % BCs(i) % Tag ) THEN
               IF ( ListGetLogical( Model % BCs(i) % Values,VariableName, gotIt) ) THEN
                 Found = ListGetLogical( Model % BCs(i) % Values, &
                     TRIM(VariableName) // ' Rotate',gotIt)
                 IF ( Found .OR. .NOT. Gotit ) THEN
+                  MassConsistent=ListGetLogical(Model % BCs(i) % Values, &
+                          'Mass Consistent Normals',gotIt)
+
                   Condition(1:n) = ListGetReal( Model % BCs(i) % Values, &
                        TRIM(VariableName) // ' Condition', n, NodeIndexes, Conditional )
-  
-                  DO j=1,CurrentElement % TYPE % NumberOfNodes
+
+                  DO j=1,n
                     IF ( Conditional .AND. Condition(j) < 0._dp ) CYCLE
 
                     k = BoundaryReorder( NodeIndexes(j) )
-                      IF (k>0) THEN
-                      Bu = CurrentElement % TYPE % NodeU(j)
-                      IF ( CurrentElement % TYPE % DIMENSION > 1 ) THEN
-                        Bv = CurrentElement % TYPE % NodeV(j)
+                    IF (k>0) THEN
+                      nrm = 0._dp
+                      IF (MassConsistent) THEN
+                        CALL IntegMassConsistent(j,n,nrm)
                       ELSE
-                        Bv = 0.0D0
+                        Bu = Element % TYPE % NodeU(j)
+                        Bv = Element % TYPE % NodeV(j)
+                        nrm = NormalVector(Element,ElementNodes,Bu,Bv,.TRUE.)
                       END IF
                       n_comp(NodeIndexes(j)) = 1
-                      BoundaryNormals(k,:) = BoundaryNormals(k,:) + &
-                          NormalVector( CurrentElement,ElementNodes,Bu,Bv,.TRUE. )
+                      BoundaryNormals(k,:) = BoundaryNormals(k,:) + nrm
                     END IF
                   END DO
                 END IF
@@ -3284,7 +3277,7 @@ CONTAINS
                     902, MPI_COMM_WORLD, status, ierr )
 
                DO j=1,n
-                 k = SearchNodeL( Mesh % ParallelInfo, gbuff(j) )
+                 k = SearchNodeL( Mesh % ParallelInfo, gbuff(j), Mesh % NumberOfNodes )
                  IF ( k>0 ) THEN
                    n_comp(k) = n_comp(k)+1
                    l = BoundaryReorder(k)
@@ -3323,6 +3316,29 @@ CONTAINS
         END IF
       END DO
     END IF
+
+ CONTAINS
+
+    SUBROUTINE IntegMassConsistent(j,n,nrm)
+      INTEGER :: t,j,n
+      LOGICAL :: stat
+      REAL(KIND=dp) :: detJ,Basis(n),nrm(:),lnrm(3)
+
+      TYPE(GaussIntegrationPoints_t) :: IP
+
+      !----------------------
+      IP = GaussPoints(Element)
+      DO t=1,IP % n
+        stat = ElementInfo(Element, ElementNodes, IP % U(t), &
+               IP % v(t), IP % W(t), detJ, Basis)
+
+        lnrm = NormalVector(Element,ElementNodes, &
+              IP % U(t),IP % v(t),.TRUE.)
+
+        nrm = nrm + IP % s(t) * lnrm * detJ * Basis(j)
+      END DO
+    END SUBROUTINE IntegMassConsistent
+
 !------------------------------------------------------------------------------
   END SUBROUTINE AverageBoundaryNormals
 !------------------------------------------------------------------------------
@@ -3333,13 +3349,13 @@ CONTAINS
 !> Index to Nodes structure. Return value -1 means QueriedNode was
 !> not found.
 !------------------------------------------------------------------------------
-FUNCTION SearchNodeL( ParallelInfo, QueriedNode ) RESULT(Indx)
+FUNCTION SearchNodeL( ParallelInfo, QueriedNode,n ) RESULT(Indx)
 
   USE Types
   IMPLICIT NONE
 
   TYPE (ParallelInfo_t) :: ParallelInfo
-  INTEGER :: QueriedNode, Indx
+  INTEGER :: QueriedNode, Indx,n
 
   ! Local variables
 
@@ -3348,7 +3364,7 @@ FUNCTION SearchNodeL( ParallelInfo, QueriedNode ) RESULT(Indx)
 !------------------------------------------------------------------------------
 
   Indx = -1
-  Upper = SIZE(ParallelInfo % GlobalDOFs)
+  Upper = n
   Lower = 1
 
   ! Handle the special case
@@ -3382,16 +3398,12 @@ END FUNCTION SearchNodeL
 
 
 
-!> Rotate previous force and solution vectors.
+!------------------------------------------------------------------------------
+!> Initialize solver for next timestep.
 !------------------------------------------------------------------------------
   SUBROUTINE InitializeTimestep( Solver )
 !------------------------------------------------------------------------------
-!
-! TYPE(Solver_t) :: Solver
-!   INPUT:
-!
-!------------------------------------------------------------------------------
-     TYPE(Solver_t) :: Solver
+     TYPE(Solver_t) :: Solver  !< Solver to be initialized.
 !------------------------------------------------------------------------------
      CHARACTER(LEN=MAX_NAME_LEN) :: Method
      LOGICAL :: GotIt
@@ -3521,7 +3533,7 @@ END FUNCTION SearchNodeL
 !------------------------------------------------------------------------------
 
 
-
+!------------------------------------------------------------------------------
 !> Update force vector AFTER ALL OTHER ASSEMBLY STEPS BUT BEFORE SETTING
 !> DIRICHLET CONDITIONS. Required only for time dependent simulations..
 !------------------------------------------------------------------------------
@@ -3531,8 +3543,21 @@ END FUNCTION SearchNodeL
     REAL(KIND=dp) :: ForceVector(:)
     CHARACTER(LEN=MAX_NAME_LEN) :: Method, Simulation
     INTEGER :: Order
-    LOGICAL :: Transient
+    LOGICAL :: Found
 !------------------------------------------------------------------------------
+
+    IF ( Solver % Matrix % FORMAT == MATRIX_LIST ) THEN
+      CALL List_toCRSMatrix(Solver % Matrix)
+    END IF
+
+    IF( ListGetLogical( Solver % Values,'Linear System FCT',Found ) ) THEN
+      IF( Solver % Variable % Dofs == 1 ) THEN
+        CALL CRS_FCTLowOrder( Solver % Matrix )
+      ELSE
+        CALL Fatal('FinishAssembly','FCT scheme implemented only for one dof')
+      END IF
+    END IF
+
     Simulation = ListGetString( CurrentModel % Simulation, 'Simulation Type' )
     IF ( Simulation == 'transient' ) THEN
       Method = ListGetString( Solver % Values, 'Timestepping Method' )
@@ -3546,6 +3571,7 @@ END FUNCTION SearchNodeL
                 ( 1 - Solver % Beta ) * Solver % Matrix % Force(:,2)
       END IF
     END IF
+
 !------------------------------------------------------------------------------
   END SUBROUTINE FinishAssembly
 !------------------------------------------------------------------------------
@@ -3644,6 +3670,8 @@ END FUNCTION SearchNodeL
 
 
 !------------------------------------------------------------------------------
+!> Rotate a vector to normal-tangential coordinate system.
+!------------------------------------------------------------------------------
   SUBROUTINE RotateNTSystem( Vec, NodeNumber )
 !------------------------------------------------------------------------------
      REAL(KIND=dp) :: Vec(:)
@@ -3682,6 +3710,9 @@ END FUNCTION SearchNodeL
   END SUBROUTINE RotateNTSystem
 !------------------------------------------------------------------------------
 
+
+!------------------------------------------------------------------------------
+!> Backrotate a solution from normal-tangential coordinate system to cartesian one.
 !------------------------------------------------------------------------------
   SUBROUTINE BackRotateNTSystem( Solution, Perm, NDOFs )
 !------------------------------------------------------------------------------
@@ -3728,6 +3759,47 @@ END FUNCTION SearchNodeL
   END SUBROUTINE BackRotateNTSystem
 !------------------------------------------------------------------------------
 
+
+!------------------------------------------------------------------------------
+  FUNCTION GetSolutionRotation(A,n) RESULT(rotated)
+!------------------------------------------------------------------------------
+    INTEGER :: n
+    LOGICAL :: rotated
+    REAL(KIND=dp) :: A(3,3)
+!------------------------------------------------------------------------------
+    INTEGER :: k,dim
+!------------------------------------------------------------------------------
+    dim = CoordinateSystemDimension()
+
+    Rotated=.FALSE.
+
+    A=0._dp
+    A(1,1)=1._dp
+    A(2,2)=1._dp
+    A(3,3)=1._dp
+    IF (NormalTangentialNOFNodes<=0) RETURN
+
+    k = BoundaryReorder(n)
+    IF (k>0) THEN
+      Rotated = .TRUE.
+      IF (dim==2) THEN
+        A(1,1)= BoundaryNormals(k,1)
+        A(1,2)=-BoundaryNormals(k,2)
+        A(2,1)= BoundaryNormals(k,2)
+        A(2,2)= BoundaryNormals(k,1)
+      ELSE
+        A(:,1)=BoundaryNormals(k,:)
+        A(:,2)=BoundaryTangent1(k,:)
+        A(:,3)=BoundaryTangent2(k,:)
+      END IF
+    END IF
+!------------------------------------------------------------------------------
+  END FUNCTION GetSolutionRotation
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+!> Computes the norm related to a solution vector of the Solver.
 !------------------------------------------------------------------------------
   FUNCTION ComputeNorm(Solver, nin, values) RESULT (Norm)
 !------------------------------------------------------------------------------
@@ -3844,6 +3916,7 @@ END FUNCTION SearchNodeL
 !------------------------------------------------------------------------------
 
   
+!------------------------------------------------------------------------------
 !> When a new field has been computed compare it to the previous one.
 !> Different convergence measures may be used. 
 !> Also performs relaxation if a non-unity relaxation factor is given.
@@ -3854,16 +3927,17 @@ END FUNCTION SearchNodeL
     LOGICAL :: SteadyState
     INTEGER, OPTIONAL :: nsize
     REAL(KIND=dp), OPTIONAL, TARGET :: values(:), values0(:)
+!------------------------------------------------------------------------------
     INTEGER :: i, n, nn, RelaxAfter, IterNo
     TYPE(Matrix_t), POINTER :: A
-    REAL(KIND=dp), POINTER CONTIG :: b(:), x(:), r(:)
-    REAL(KIND=dp), POINTER CONTIG :: x0(:)
+    REAL(KIND=dp), POINTER :: b(:), x(:), r(:)
+    REAL(KIND=dp), POINTER :: x0(:)
     REAL(KIND=dp) :: Norm, PrevNorm, rNorm, bNorm, Change, Relaxation, tmp(1),dt, &
-        Tolerance, MaxNorm, eps
+        Tolerance, MaxNorm, eps, Ctarget
     CHARACTER(LEN=MAX_NAME_LEN) :: ConvergenceType
     INTEGER, TARGET  ::  Dnodes(1)
     INTEGER, POINTER :: Indexes(:)
-    TYPE(Variable_t), POINTER :: iterV, VeloVar, TimestepVar
+    TYPE(Variable_t), POINTER :: iterV, VeloVar, TimestepVar, WeightVar
     CHARACTER(LEN=MAX_NAME_LEN) :: SolverName, str
     LOGICAL :: Stat, ConvergenceAbsolute, Relax, RelaxBefore, DoIt, Skip
 
@@ -3874,11 +3948,6 @@ END FUNCTION SearchNodeL
     TYPE(ValueList_t), POINTER :: SolverParams
 
     SolverParams => Solver % Values
-
-
-
-
-
   
     IF(SteadyState) THEN	
       Skip = ListGetLogical( SolverParams,'Skip Compute Steady State Change',Stat)
@@ -4166,6 +4235,40 @@ END FUNCTION SearchNodeL
     IF( DoIt ) CALL UpdateExportedVariables( Solver )	
 
 
+    ! Optional a posteriori scaling for the computed fields
+    ! May be usefull for some floating systems where one want to impose some intergral 
+    ! constraints without actually using them. Then first use just one Dirichlet point
+    ! and then fix the level a posteriori using this condition. 
+    DoIt = .FALSE.
+    IF( SteadyState ) THEN 
+      DoIt = ListGetLogical( SolverParams,&
+          'Nonlinear System Set Average Solution',Stat)
+    ELSE 
+      DoIt = ListGetLogical( SolverParams,&
+          'Linear System Set Average Solution',Stat)
+    END IF
+    IF( DoIt ) THEN
+      IF( ParEnv % PEs > 1 ) THEN
+        CALL Fatal('ComputeChange','Setting average value not implemented in parallel!')
+      END IF
+      Ctarget = ListGetCReal( SolverParams,'Average Solution Value',Stat)      
+      str = ListGetString( SolverParams,'Average Solution Weight Variable',Stat)
+      IF( Stat ) THEN
+        WeightVar => VariableGet( Solver % Mesh % Variables, str )
+        IF( .NOT. ASSOCIATED( WeightVar ) ) THEN
+          CALL Fatal('ComputeChange','> Average Solution Weight < missing: '//TRIM(str))
+        END IF
+        IF( SIZE(x) /= SIZE(WeightVar % Values ) ) THEN
+          CALL Fatal('ComputeChange','Field and weight size mismatch: '//TRIM(str))          
+        END IF
+        Ctarget = Ctarget - SUM( WeightVar % Values * x ) / SUM( WeightVar % Values )
+      ELSE
+        Ctarget = Ctarget - SUM(x) / SIZE(x)
+      END IF
+      x = x + Ctarget
+    END IF
+
+
     ! Only 1st order velocity computation implemented so far...
     IF ( Solver % TimeOrder == 1 ) THEN
       DoIt = .FALSE.
@@ -4217,6 +4320,7 @@ END FUNCTION SearchNodeL
 !------------------------------------------------------------------------------
     
 
+!------------------------------------------------------------------------------
 !> Checks stepsize of a linear system so that the error has decreased.
 !------------------------------------------------------------------------------
   FUNCTION CheckStepSize(Solver,FirstTrial,PrevResidual,Residual,&
@@ -4230,7 +4334,7 @@ END FUNCTION SearchNodeL
 !------------------------------------------------------------------------------
     INTEGER :: i,n
     TYPE(Matrix_t), POINTER :: A
-    REAL(KIND=dp), POINTER CONTIG :: b(:), x(:), x0(:), r(:)
+    REAL(KIND=dp), POINTER :: b(:), x(:), x0(:), r(:)
     REAL(KIND=dp) :: Norm, PrevNorm, rNorm, bNorm, Relaxation, Alpha, Myy
     INTEGER, POINTER :: Indexes(:)
     TYPE(Variable_t), POINTER :: iterV
@@ -4459,19 +4563,20 @@ END FUNCTION SearchNodeL
 
 
 !------------------------------------------------------------------------------
-!>     Scale system Ax = b as:
-!>       (DAD)y = Db, where D = 1/SQRT(Diag(A)), and y = D^-1 x
+!>  Scale system Ax = b as:
+!>  (DAD)y = Db, where D = 1/SQRT(Diag(A)), and y = D^-1 x
 !------------------------------------------------------------------------------
-  SUBROUTINE ScaleLinearSystem(Solver,A,b,x,DiagScaling,ApplyScaling)
+  SUBROUTINE ScaleLinearSystem(Solver,A,b,x,DiagScaling,ApplyScaling,RhsScaling)
 
     TYPE(Solver_t) :: Solver
     TYPE(Matrix_t) :: A
     REAL(KIND=dp), OPTIONAL :: b(:),x(:)
     REAL(KIND=dp), OPTIONAL, TARGET :: DiagScaling(:)
-    LOGICAL, OPTIONAL :: ApplyScaling 
+    LOGICAL, OPTIONAL :: ApplyScaling, RhsScaling
     INTEGER :: n,i,j
-    REAL(KIND=dp) :: DiagReal, DiagImag, bnorm
-    LOGICAL :: ComplexMatrix
+    REAL(KIND=dp) :: bnorm
+    COMPLEX(KIND=dp) :: DiagC
+    LOGICAL :: ComplexMatrix, DoRHS
     REAL(KIND=dp), POINTER  :: Diag(:)
 
     n = A % NumberOfRows
@@ -4503,14 +4608,12 @@ END FUNCTION SearchNodeL
 
       IF ( ComplexMatrix ) THEN
         DO i=1,n,2
-          DiagReal  =  Diag(i)
-          DiagImag  = -Diag(i+1)
-          IF ( ABS(CMPLX(DiagReal,DiagImag,KIND=dp))/=0.0d0 ) THEN
-            Diag(i)   = 1.0d0/SQRT(ABS(CMPLX(DiagReal,DiagImag,KIND=dp)))
-            Diag(i+1) = 1.0d0/SQRT(ABS(CMPLX(DiagReal,DiagImag,KIND=dp)))
+          DiagC = CMPLX(Diag(i),-Diag(i+1),KIND=dp)
+          IF (ABS(DiagC)/=0._dp) THEN
+            Diag(i)   = 1.0_dp/SQRT(ABS(DiagC))
+            Diag(i+1) = 1.0_dp/SQRT(ABS(DiagC))
           ELSE
-            Diag(i)   = 1.0d0
-            Diag(i+1) = 1.0d0
+            Diag(i)   = 1.0_dp; Diag(i+1) = 1.0_dp
           END IF
         END DO
       ELSE
@@ -4564,7 +4667,13 @@ END FUNCTION SearchNodeL
     !--------------------------------
     IF( PRESENT( b ) ) THEN      
       b(1:n) = b(1:n) * Diag(1:n)
-      bnorm = ParallelReduction(SQRT(SUM(b(1:n)**2)))
+      DoRHS = .TRUE.
+      IF (PRESENT(RhsScaling)) DoRHS = RhsScaling
+      IF (DoRHS) THEN
+        bnorm = ParallelReduction(SQRT(SUM(b(1:n)**2)))
+      ELSE
+        bnorm = 1._dp
+      END IF
       A % RhsScaling = bnorm
 
       Diag(1:n) = Diag(1:n) * bnorm
@@ -4577,9 +4686,119 @@ END FUNCTION SearchNodeL
   END SUBROUTINE ScaleLinearSystem
 
 
+!-----------------------------------------------------------------------------
+!>   Equilibrate the rows of the coefficient matrix A to
+!>   minimize the condition number. The associated rhs vector f is also scaled.
+!------------------------------------------------------------------------------
+  SUBROUTINE RowEquilibration( A, f, Parallel )
+!------------------------------------------------------------------------------
+    TYPE(Matrix_t) :: A
+    REAL(KIND=dp) :: f(:)
+    LOGICAL :: Parallel
+!-----------------------------------------------------------------------------
+    LOGICAL :: ComplexMatrix
+    INTEGER :: i, j, n 
+    REAL(kind=dp) :: norm, tmp
+    INTEGER, POINTER :: Cols(:), Rows(:)
+    REAL(KIND=dp), POINTER :: Values(:), Diag(:)
+!-------------------------------------------------------------------------
+    n = A % NumberOfRows
+    ComplexMatrix = A % COMPLEX
+
+    Rows   => A % Rows
+    Cols   => A % Cols
+    Values => A % Values
+
+    IF( .NOT. ASSOCIATED(A % DiagScaling) ) THEN
+      ALLOCATE( A % DiagScaling(n) ) 
+    END IF
+    Diag => A % DiagScaling    
+    
+    Diag = 0.0d0
+    norm = 0.0d0
+
+    !---------------------------------------------
+    ! Compute 1-norm of each row
+    !---------------------------------------------
+    IF (ComplexMatrix) THEN
+      DO i=1,n,2
+        tmp = 0.0d0
+        DO j=Rows(i),Rows(i+1)-1,2
+          tmp = tmp + ABS( CMPLX( Values(j), -Values(j+1), kind=dp ) )
+        END DO
+
+        IF ( .NOT. Parallel ) THEN
+          IF (tmp > norm) norm = tmp        
+        END IF
+
+        IF (tmp > 0.0d0) THEN
+          Diag(i) = tmp
+          Diag(i+1) = tmp
+        END IF
+      END DO
+    ELSE
+      DO i=1,n
+        tmp = 0.0d0
+        DO j=Rows(i),Rows(i+1)-1        
+          tmp = tmp + ABS(Values(j))          
+        END DO
+
+        IF ( .NOT. Parallel ) THEN
+          IF (tmp > norm) norm = tmp        
+        END IF
+
+        IF (tmp > 0.0d0) Diag(i) = tmp       
+      END DO
+    END IF
+
+    IF (Parallel) THEN
+      CALL ParallelSumVector(A, Diag)
+      norm = ParallelReduction(MAXVAL(Diag(1:n)),2)
+    END IF
+
+    !--------------------------------------------------
+    ! Now, define the scaling matrix by inversion and 
+    ! perform the actual scaling of the linear system
+    !--------------------------------------------------
+    IF (ComplexMatrix) THEN    
+      DO i=1,n,2
+        IF (Diag(i) > 0.0d0) THEN
+          Diag(i) = 1.0d0/Diag(i)
+          Diag(i+1) = 1.0d0/Diag(i+1)
+        ELSE
+          Diag(i) = 1.0d0
+          Diag(i+1) = 1.0d0
+        END IF
+      END DO
+    ELSE
+      DO i=1,n      
+        IF (Diag(i) > 0.0d0) THEN
+          Diag(i) = 1.0d0/Diag(i)
+        ELSE
+          Diag(i) = 1.0d0
+        END IF
+      END DO
+    END IF
+
+    DO i=1,n    
+      DO j=Rows(i),Rows(i+1)-1
+        Values(j) = Values(j) * Diag(i)
+      END DO
+      f(i) = Diag(i) * f(i)
+    END DO
+    
+    WRITE( Message, * ) 'Unscaled matrix norm: ', norm    
+    CALL Info( 'OptimalMatrixScaling', Message, Level=5 )
+
+!------------------------------------------------------------------------------
+  END SUBROUTINE RowEquilibration
+!------------------------------------------------------------------------------
+
+
   
-  !>  Scale the system back to original.
-  !--------------------------------------------------------------
+!--------------------------------------------------------------
+!>  Scale the system back to original.
+!--------------------------------------------------------------
   SUBROUTINE BackScaleLinearSystem(Solver,A,b,x,DiagScaling) 
 
     TYPE(Solver_t) :: Solver
@@ -4658,11 +4877,54 @@ END FUNCTION SearchNodeL
         END DO
       END IF
     END IF
+
+    DEALLOCATE(A % DiagScaling); A % DiagScaling=>NULL()
     
   END SUBROUTINE BackScaleLinearSystem
 
 
+!------------------------------------------------------------------------------
+!> Scale the linear system back to original when the linear
+!> system scaling has been done by row equilibration.
+!------------------------------------------------------------------------------
+  SUBROUTINE ReverseRowEquilibration( A, f )
+!------------------------------------------------------------------------------
+    TYPE(Matrix_t) :: A
+    REAL(KIND=dp) :: f(:)
+!-----------------------------------------------------------------------------
+    INTEGER :: i, j, n
+    INTEGER, POINTER :: Rows(:)
+    REAL(KIND=dp), POINTER :: Values(:), Diag(:)
+!-----------------------------------------------------------------------------
+    n = A % NumberOfRows
+    Diag => A % DiagScaling   
+    Values => A % Values
+    Rows => A % Rows
 
+    IF(.NOT. ASSOCIATED( Diag ) ) THEN
+      CALL Fatal('ReverseRowEquilibration','Diag not associated!')
+    END IF
+    IF( SIZE( Diag ) /= n ) THEN
+      CALL Fatal('ReverseRowEquilibration','Diag of wrong size!')
+    END IF 
+
+    f(1:n) = f(1:n) / Diag(1:n)
+    DO i=1,n    
+      DO j = Rows(i), Rows(i+1)-1
+        Values(j) = Values(j) / Diag(i)
+      END DO
+    END DO
+
+    DEALLOCATE(A % DiagScaling)
+    A % DiagScaling => NULL()
+
+!------------------------------------------------------------------------------
+  END SUBROUTINE ReverseRowEquilibration
+!------------------------------------------------------------------------------
+
+
+
+!------------------------------------------------------------------------------
 !> Solves a linear system and also calls the necessary preconditioning routines.
 !------------------------------------------------------------------------------
   RECURSIVE SUBROUTINE SolveLinearSystem( A, b, &
@@ -4678,7 +4940,7 @@ END FUNCTION SearchNodeL
     TYPE(Variable_t), POINTER :: Var, NodalLoads
     TYPE(Mesh_t), POINTER :: Mesh
     LOGICAL :: Relax,GotIt,Stat,ScaleSystem, EigenAnalysis, HarmonicAnalysis,&
-               BackRotation
+               BackRotation, ApplyRowEquilibration, Parallel
     INTEGER :: n,i,j,k,l,ii,m,DOF,istat,this
     CHARACTER(LEN=MAX_NAME_LEN) :: Method, Prec, ProcName
     INTEGER(KIND=AddrInt) :: Proc
@@ -4703,6 +4965,13 @@ END FUNCTION SearchNodeL
           TYPE(Solver_t) :: Solver
           REAL(KIND=dp) :: x(:), b(:)
        END SUBROUTINE FetiSolver
+
+       SUBROUTINE BlockSolveExt(A,x,b,Solver)
+          USE Types
+          TYPE(Matrix_t), POINTER :: A
+          TYPE(Solver_t) :: Solver
+          REAL(KIND=dp) :: x(:), b(:)
+       END SUBROUTINE BlockSolveExt
     END INTERFACE
 !------------------------------------------------------------------------------
 
@@ -4732,6 +5001,8 @@ END FUNCTION SearchNodeL
         'Linear System Solver', GotIt ) == 'multigrid' )
     Solver % MultiGridTotal = MAX( Solver % MultiGridTotal, &
         ListGetInteger( Params,'MG Levels', GotIt, minv=1 ) )
+    Solver % MultiGridTotal = MAX( Solver % MultiGridTotal, &
+        ListGetInteger( Params,'Multigrid Levels', GotIt, minv=1 ) )
     Solver % MultiGridLevel = Solver % MultigridTotal
 !------------------------------------------------------------------------------
 
@@ -4768,6 +5039,7 @@ END FUNCTION SearchNodeL
 !   If solving eigensystem go there:
 !   --------------------------------
     IF ( EigenAnalysis ) THEN
+
       IF ( ScaleSystem ) CALL ScaleLinearSystem(Solver, A )
      
       CALL SolveEigenSystem( &
@@ -4776,7 +5048,7 @@ END FUNCTION SearchNodeL
           Solver % Variable % EigenVectors, Solver )
       
       IF ( ScaleSystem ) CALL BackScaleLinearSystem( Solver, A ) 
-      IF (BackRotation) CALL BackRotateNTSystem( x, Solver % Variable % Perm, DOFs )
+      IF ( BackRotation ) CALL BackRotateNTSystem( x, Solver % Variable % Perm, DOFs )
       
       Norm = ComputeNorm(Solver,n,x)
       Solver % Variable % Norm = Norm
@@ -4791,9 +5063,14 @@ END FUNCTION SearchNodeL
 !   Convert rhs & initial value to the scaled system:
 !   -------------------------------------------------
 
-
     IF ( ScaleSystem ) THEN
-      CALL ScaleLinearSystem(Solver, A, b, x )
+      ApplyRowEquilibration = ListGetLogical(Params,'Linear System Row Equilibration',GotIt)
+      IF ( ApplyRowEquilibration ) THEN
+        Parallel = ParEnv % PEs > 1
+        CALL RowEquilibration(A, b, Parallel)
+      ELSE
+        CALL ScaleLinearSystem(Solver, A, b, x )
+      END IF
     END IF
 
     Method = ListGetString(Params,'Linear System Solver',GotIt)
@@ -4812,6 +5089,8 @@ END FUNCTION SearchNodeL
       CASE('feti')
         CALL Fatal('SolveLinearSystem', &
             'Feti solver available only in parallel.')
+      CASE('block')
+        CALL BlockSolveExt( A, x, b, Solver )
       CASE DEFAULT
         CALL DirectSolver( A, x, b, Solver )
       END SELECT
@@ -4825,14 +5104,20 @@ END FUNCTION SearchNodeL
             x, b, Solver, A % ParMatrix )
       CASE('feti')
         CALL FetiSolver( A, x, b, Solver )
-      CASE DEFAULT
+      CASE('block')
+        CALL BlockSolveExt( A, x, b, Solver )
+     CASE DEFAULT
         CALL DirectSolver( A, x, b, Solver )
       END SELECT
     END IF
 
 
     IF ( ScaleSystem ) THEN
-      CALL BackScaleLinearSystem( Solver, A, b, x ) 
+      IF ( ApplyRowEquilibration ) THEN
+        CALL ReverseRowEquilibration( A, b )
+      ELSE
+        CALL BackScaleLinearSystem( Solver, A, b, x )
+      END IF
     END IF
 
     NodalLoads => VariableGet( Solver % Mesh % Variables, &
@@ -4862,9 +5147,8 @@ END FUNCTION SearchNodeL
         Energy = 0._dp
         DO i=1,Aaid % NumberOfRows
           IF ( ParEnv % Pes>1 ) THEN
-            j = AAid % Invperm(i)
             IF ( Aaid % ParMatrix % ParallelInfo % &
-                  NeighbourList(j) % Neighbours(1) /= Parenv % MyPE ) CYCLE
+                  NeighbourList(i) % Neighbours(1) /= Parenv % MyPE ) CYCLE
           END IF
           Energy = Energy + x(i)*TempVector(i)
         END DO
@@ -4881,8 +5165,7 @@ END FUNCTION SearchNodeL
       Aaid % Values => SaveValues
       IF ( ParEnv % PEs>1 ) THEN
         DO i=1,Aaid % NumberOfRows
-          j = AAid % Invperm(i)
-          IF ( AAid % ParallelInfo % NeighbourList(j) % Neighbours(1) == ParEnv % Mype ) THEN
+          IF ( AAid % ParallelInfo % NeighbourList(i) % Neighbours(1) == ParEnv % Mype ) THEN
             TempVector(i) = TempVector(i)-TempRHS(i)
           ELSE
             TempVector(i) = 0
@@ -4996,41 +5279,20 @@ END FUNCTION SearchNodeL
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
 !> Solve a system. Various additional utilities are included and 
 !> naturally a call to the linear system solver.
 !------------------------------------------------------------------------------
   RECURSIVE SUBROUTINE SolveSystem( A,ParA,b,x,Norm,DOFs,Solver )
 !------------------------------------------------------------------------------
-!
-! TYPE(Matrix_t), POINTER :: A
-!   INPUT: The coefficient matrix
-!
-! TYPE(ParIterSolverGlobalD_t), POINTER :: ParA
-!   INPUT: holds info for parallel solver, if not executing in parallel
-!          this is just a dummy.
-!
-! REAL(KIND=dp) :: b(:)
-!   INPUT: The RHS vector
-!
-! REAL(KIND=dp) :: x(:)
-!   INOUT: Previous solution on entry, new solution on exit (hopefully)
-!
-! REAL(KIND=dp) :: Norm
-!   OUTPUT: 2-Norm of solution
-!
-! INTEGER :: DOFs
-!   INPUT: Number of degrees of freedom / node for this equation
-!
-! TYPE(Solver_t) :: Solver
-!   INPUT: Holds various solver options
-! 
-!------------------------------------------------------------------------------
-    REAL(KIND=dp) CONTIG :: b(:), x(:)
-    REAL(KIND=dp) :: Norm
-    TYPE(Matrix_t), POINTER :: A
-    INTEGER :: DOFs
-    TYPE(Solver_t), TARGET :: Solver
-    TYPE(SParIterSolverGlobalD_t), POINTER :: ParA
+    REAL(KIND=dp) CONTIG :: b(:)   !< The RHS vector
+    REAL(KIND=dp) :: x(:)   !< Previous solution on entry, new solution on exit (hopefully)
+    REAL(KIND=dp) :: Norm          !< L2 Norm of solution
+    TYPE(Matrix_t), POINTER :: A   !< The coefficient matrix
+    INTEGER :: DOFs                !< Number of degrees of freedom per node for this equation
+    TYPE(Solver_t), TARGET :: Solver                 !< Holds various solver options.
+    TYPE(SParIterSolverGlobalD_t), POINTER :: ParA   !< holds info for parallel solver, 
+                                                     !< if not executing in parallel this is just a dummy.
 !------------------------------------------------------------------------------
     TYPE(Variable_t), POINTER :: Var, NodalLoads
     TYPE(Mesh_t), POINTER :: Mesh, SaveMEsh
@@ -5223,6 +5485,7 @@ END FUNCTION SearchNodeL
 END SUBROUTINE SolveSystem
 !------------------------------------------------------------------------------
 
+!------------------------------------------------------------------------------
 !> Solve a linear eigen system.
 !------------------------------------------------------------------------------
 SUBROUTINE SolveEigenSystem( StiffMatrix, NOFEigen, &
@@ -5242,6 +5505,10 @@ SUBROUTINE SolveEigenSystem( StiffMatrix, NOFEigen, &
     !------------------------------------------------------------------------------
     n = StiffMatrix % NumberOfRows
 
+    ! Set the 'Eigen Analysis' flag to False since internally 
+    ! some strategies rely on it not being set (e.g. 'block'). 
+    CALL ListAddLogical( Solver % Values,'Eigen Analysis',.FALSE.)
+
     IF ( .NOT. Solver % Matrix % COMPLEX ) THEN
       IF ( ParEnv % PEs <= 1 ) THEN
         CALL ArpackEigenSolve( Solver, StiffMatrix, n, NOFEigen, &
@@ -5255,11 +5522,14 @@ SUBROUTINE SolveEigenSystem( StiffMatrix, NOFEigen, &
               NOFEigen, EigenValues, EigenVectors )
     END IF
 
+    CALL ListAddLogical( Solver % Values,'Eigen Analysis',.TRUE.)
+
 !------------------------------------------------------------------------------
 END SUBROUTINE SolveEigenSystem
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
 !> A parser of the variable name that returns the true variablename
 !> where the inline options have been interpreted.
 !------------------------------------------------------------------------------
@@ -5301,8 +5571,7 @@ SUBROUTINE VariableNameParser(var_name, NoOutput, Global, Dofs )
 END SUBROUTINE VariableNameParser
 
 
-
-
+!------------------------------------------------------------------------------
 !> Updates values for exported variables which are typically auxiliary variables derived
 !> from the solution.
 !------------------------------------------------------------------------------
@@ -5338,7 +5607,7 @@ END SUBROUTINE VariableNameParser
     IF( .NOT. ASSOCIATED(ExpVariable)) CYCLE
     
     WRITE(Message,*) 'Trying to set values for variable: '//TRIM(Var_name)
-    CALL Info('UpdateExportedVariables',Message)
+    CALL Info('UpdateExportedVariables',Message,Level=6)
   
     IF( .NOT. AllocationsDone) THEN      
       m = CurrentModel % NumberOFBodyForces
@@ -5368,7 +5637,8 @@ END SUBROUTINE VariableNameParser
       DO bf_id=1,CurrentModel % NumberOFBodyForces
         IF( ListCheckPresent( &
             CurrentModel % BodyForces(bf_id) % Values,TmpName ) ) THEN
-          CALL Info('UpdateExportedVariables','Found a proper definition for state variable')
+          CALL Info('UpdateExportedVariables',&
+              'Found a proper definition for state variable',Level=6)
           Solution = ListGetCReal( CurrentModel % BodyForces(bf_id) % Values,TmpName)
           EXIT
         END IF
@@ -5406,8 +5676,7 @@ END SUBROUTINE VariableNameParser
       
       IF ( .NOT. ANY( ActivePart ) ) CYCLE
 
-      CALL Info('UpdateExportedVariables','Found a proper definition in body forces')
-
+      CALL Info('UpdateExportedVariables','Found a proper definition in body forces',Level=6)
 
       DO t = 1, Solver % NumberOfActiveElements 
         Element => CurrentModel % Elements(Solver % ActiveElements(t) )
@@ -5447,6 +5716,7 @@ END SUBROUTINE VariableNameParser
 END SUBROUTINE UpdateExportedVariables
 
 
+!------------------------------------------------------------------------------
 !> Eliminates bubble degrees of freedom from a local linear system.
 !------------------------------------------------------------------------------
 SUBROUTINE NSCondensate( N, Nb, dim, K, F, F1 )
@@ -5495,10 +5765,12 @@ END SUBROUTINE NSCondensate
 SUBROUTINE Condensate( N, K, F, F1 )
 !------------------------------------------------------------------------------
     USE LinearAlgebra
-    INTEGER :: N, dim
-    REAL(KIND=dp) :: K(:,:),F(:),F1(:),Kbb(N,N), &
-             Kbl(N,N),Klb(N,N),Fb(N)
-
+    INTEGER :: N
+    REAL(KIND=dp) :: K(:,:),F(:)
+    REAL(KIND=dp), OPTIONAL :: F1(:)
+!------------------------------------------------------------------------------    
+    REAL(KIND=dp) :: Kbb(N,N), &
+        Kbl(N,N),Klb(N,N),Fb(N)
     INTEGER :: m, i, j, l, p, Ldofs(N), Bdofs(N)
 
     Ldofs = (/ (i, i=1,n) /)
@@ -5514,42 +5786,29 @@ SUBROUTINE Condensate( N, K, F, F1 )
     F(1:n) = F(1:n) - MATMUL( Klb, MATMUL( Kbb, Fb  ) )
     K(1:n,1:n) = K(1:n,1:n) - MATMUL( Klb, MATMUL( Kbb, Kbl ) )
 
-    Fb  = F1(Bdofs)
-    F1(1:n) = F1(1:n) - MATMUL( Klb, MATMUL( Kbb, Fb  ) )
+    IF( PRESENT( F1 ) ) THEN
+      Fb  = F1(Bdofs)
+      F1(1:n) = F1(1:n) - MATMUL( Klb, MATMUL( Kbb, Fb  ) )
+    END IF
 !------------------------------------------------------------------------------
 END SUBROUTINE Condensate
 !------------------------------------------------------------------------------
 
+!------------------------------------------------------------------------------
 !>     Subroutine for condensation of p element bubbles from linear problem.
 !>     Modifies given stiffness matrix and force vector(s) 
 !------------------------------------------------------------------------------
 SUBROUTINE CondensateP( N, Nb, K, F, F1 )
 !------------------------------------------------------------------------------
-!
-!  ARGUMENTS:
-!    INTEGER :: N
-!      INPUT: Sum of nodal, edge and face degrees of freedom 
-!
-!    INTEGER :: Nb
-!      INPUT: Sum of internal (bubble) degrees of freedom
-!
-!    REAL(Kind=dp) :: K(:,:)
-!      INOUT: Local stiffness matrix
-!
-!    REAL(Kind=dp) :: F(:)
-!      INOUT: Local force vector
-!
-!    REAL(Kind=dp), OPTIONAL :: F1(:)
-!      INOUT: Local second force vector 
-!    
-!------------------------------------------------------------------------------
-
     USE LinearAlgebra
-    INTEGER :: N, Nb
-    REAL(KIND=dp) :: K(:,:),F(:),Kbb(Nb,Nb), &
+    INTEGER :: N               !< Sum of nodal, edge and face degrees of freedom.
+    INTEGER :: Nb              !< Sum of internal (bubble) degrees of freedom.
+    REAL(KIND=dp) :: K(:,:)    !< Local stiffness matrix.
+    REAL(KIND=dp) :: F(:)      !< Local force vector.
+    REAL(KIND=dp), OPTIONAL :: F1(:)  !< Local second force vector.
+!------------------------------------------------------------------------------
+    REAL(KIND=dp) :: Kbb(Nb,Nb), &
     Kbl(Nb,N), Klb(N,Nb), Fb(Nb)
-    REAL(KIND=dp), OPTIONAL :: F1(:)
-
     INTEGER :: m, i, j, l, p, Ldofs(N), Bdofs(Nb)
 
     Ldofs = (/ (i, i=1,n) /)
@@ -5574,23 +5833,23 @@ END SUBROUTINE CondensateP
 
 
 !------------------------------------------------------------------------------
+!> Solves a harmonic system.
+!------------------------------------------------------------------------------
 SUBROUTINE SolveHarmonicSystem( G, Solver )
 !------------------------------------------------------------------------------
     TYPE(Solver_t) :: Solver
     TYPE(Matrix_t), TARGET :: G
 !------------------------------------------------------------------------------
     TYPE(Matrix_t), POINTER :: BMatrix, A => NULL()
-    INTEGER :: Rounds = 1000,i,j,k,n, ILUn, kr, ki, DOFs
+    INTEGER :: Rounds = 1000,i,j,k,n, ILUn, kr, ki, DOFs, ne, niter
     LOGICAL :: stat, Found, OptimizeBW, DirectLinearSolver,Real_given,Imag_given
     CHARACTER(LEN=MAX_NAME_LEN) :: Name
     REAL(KIND=dp) :: Omega = 10, norm, TOL=1.0d-6, s, ILUTol
     REAL(KIND=dp), POINTER :: Freqv(:,:)
     REAL(KIND=dp), ALLOCATABLE :: x(:), b(:)
-    REAL(KIND=dp), TARGET :: matfreqv(1,1)
-    REAL(KIND=dp) :: vecfreqv(1)
+    REAL(KIND=dp) :: frequency
+    INTEGER :: Nfrequency
     TYPE(ValueList_t), POINTER :: BC
-    INTEGER, TARGET :: Dnodes(1)
-    INTEGER, POINTER :: NodeIndexes(:)
 
     DO j=1,Solver % Variable % DOFs
       Name = ComponentName( Solver % Variable % Name, j ) 
@@ -5635,28 +5894,34 @@ SUBROUTINE SolveHarmonicSystem( G, Solver )
     b(1:2*n:2) = G % RHS(1:n)
     b(2:2*n:2) = G % RHS_im(1:n)
 
-    ! This cumbersome way makes it possible to use the same data structure even in the case
-    ! of simulation mode being scanning     
-    IF( ListGetString( CurrentModel % Simulation,'Simulation Type') == 'scanning') THEN
-      NodeIndexes => Dnodes
-      i = 1
-      NodeIndexes(i) = 1   
-      vecfreqv(1:1) = ListGetReal(Solver % Values,'Frequency',i,NodeIndexes)
-      matfreqv(1,1) = vecfreqv(1)
-      freqv => matfreqv
-      CALL ListAddConstReal( CurrentModel % Simulation,'res: Frequency',matfreqv(1,1))
-    ELSE
+
+    Nfrequency = ListGetInteger( Solver % Values,'Harmonic System Values',Found )
+    IF( Nfrequency > 1 ) THEN
       freqv => ListGetConstRealArray( Solver % Values, 'Frequency' )
+    ELSE
+      Frequency = ListGetAngularFrequency( Solver % Values, Found ) / (2*PI)
+      IF( .NOT. Found ) THEN
+        CALL Fatal( 'AddEquation', '> Frequency < must be given for harmonic analysis.' )
+      END IF
+      Nfrequency = 1
     END IF
 
     CALL ListAddLogical( Solver % Values, 'Harmonic Analysis', .FALSE. )
+    niter = MIN(Nfrequency,Solver % NOFEigenValues)
+    ne=Solver % NofEigenValues
+    Solver % NofEigenValues=0
 
-    DO i=1,MIN(SIZE(freqv,1), Solver % NOFEigenValues)
-      WRITE( Message, '(a,i5,e12.3)' ) 'Frequency sweep: ', i, freqv(i,1)
+    DO i=1,niter
+      IF( Nfrequency > 1 ) THEN
+        Frequency = freqv(i,1)
+        WRITE( Message, '(a,i5,e12.3)' ) 'Frequency sweep: ', i, frequency
+      ELSE
+        WRITE( Message, '(a,e12.3)' ) 'Frequency value: ', frequency
+      END IF
       CALL Info( 'HarmonicSolve', ' ' )
       CALL Info( 'HarmonicSolve', Message )
 
-      omega = 2 * PI * freqv(i,1)
+      omega = 2 * PI * Frequency
       DO k=1,n
         kr = A % Rows(2*(k-1)+1)
         ki = A % Rows(2*(k-1)+2)
@@ -5694,6 +5959,7 @@ SUBROUTINE SolveHarmonicSystem( G, Solver )
       END DO
     END DO
 
+    Solver % NOFEigenValues = ne
     CALL ListAddLogical( Solver % Values, 'Harmonic Analysis', .TRUE. )
 
     DEALLOCATE( x, b )
@@ -5712,33 +5978,14 @@ SUBROUTINE SolveHarmonicSystem( G, Solver )
 SUBROUTINE SolveWithLinearRestriction( StiffMatrix, ForceVector, Solution, &
         Norm, DOFs, Solver )
 !------------------------------------------------------------------------------  
-!
-!  TYPE(Matrix_t), POINTER :: StiffMatrix
-!     INPUT: Linear equation matrix information. 
-!            The restriction matrix is assumed to be in the EMatrix-field.
-!
-!  REAL(KIND=dp) :: ForceVector(:)
-!     INPUT: The right hand side of the linear equation
-!
-!  REAL(KIND=dp) :: Solution(:)
-!     INOUT: Previous solution as input, new solution as output.
-!
-!  REAL(KIND=dp) :: Norm
-!     OUTPUT: The 2-norm of the solution.
-!
-!  INTEGER :: DOFs
-!     INPUT: Number of degrees of freedon of the equation.
-!
-!  TYPE(Solver_t), TARGET :: Solver
-!     INPUT: Linear equation solver options.
-!
-!------------------------------------------------------------------------------  
-
   IMPLICIT NONE
-  TYPE(Matrix_t), POINTER :: StiffMatrix
-  REAL(KIND=dp) :: ForceVector(:), Solution(:), Norm
-  INTEGER :: DOFs
-  TYPE(Solver_t), TARGET :: Solver
+  TYPE(Matrix_t), POINTER :: StiffMatrix !< Linear equation matrix information. 
+                                         !< The restriction matrix is assumed to be in the EMatrix-field
+  REAL(KIND=dp) :: ForceVector(:)        !< The right hand side of the linear equation
+  REAL(KIND=dp) :: Solution(:)           !< Previous solution as input, new solution as output.
+  REAL(KIND=dp) :: Norm                  !< The L2 norm of the solution.
+  INTEGER :: DOFs                        !< Number of degrees of freedon of the equation.
+  TYPE(Solver_t), TARGET :: Solver       !< Linear equation solver options.
 !------------------------------------------------------------------------------
   TYPE(Solver_t), POINTER :: SolverPointer
   TYPE(Matrix_t), POINTER :: CollectionMatrix, RestMatrix, &
@@ -6268,3 +6515,6 @@ IF ( tmprow(i) /= collectionmatrix % rows(i+1) ) STOP 1
 
 
 END MODULE SolverUtils
+
+!> \}
+
