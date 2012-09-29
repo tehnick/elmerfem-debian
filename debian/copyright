@@ -127,6 +127,23 @@ License: GPL-2+
  On Debian systems, the complete text of the GNU General Public License
  Version 2 (GPL-2) can be found in file "/usr/share/common-licenses/GPL-2".
 
+Files: eio/src/*
+ hutiter/src/*
+ matc/src/*
+ fem/src/*.c
+ fem/src/*.src
+Copyright: 1995- , CSC - IT Center for Science Ltd.
+License: LGPL-2.1+
+
+Files: fem/src/ViewFactors.src
+ fem/src/ResultToPost.src
+ fem/src/ResultToResult.src
+ fem/src/GebhardtFactors.src
+ fem/src/SParIterGlobals.src
+ fem/src/SolverUtils.src
+Copyright: 1995- , CSC - IT Center for Science Ltd.
+License: GPL-2+
+  
 Files: elmergrid/src/nrutil.*
 Copyright: none
 Comment:
@@ -177,29 +194,6 @@ License: own
 Files: ElmerGUI/PythonQt/*
 Copyright: 2006, MeVis Research GmbH (http://www.mevis.de)
 License: LGPL-2.1+
- This library is free software; you can redistribute it and/or
- modify it under the terms of the GNU Lesser General Public
- License as published by the Free Software Foundation; either
- version 2.1 of the License, or (at your option) any later version.
- .
- This library is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- Lesser General Public License for more details.
- .
- Further, this software is distributed without any warranty that it is
- free of the rightful claim of any third person regarding infringement
- or the like.  Any license provided herein, whether implied or
- otherwise, applies only to this software file.  Patent licenses, if
- any, provided herein do not apply to combinations of this program with
- other software, or any other product whatsoever.
- .
- You should have received a copy of the GNU Lesser General Public
- License along with this library; if not, write to the Free Software
- Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- .
- On Debian systems, the complete text of the GNU Lesser General Public License
- can be found in `/usr/share/common-licenses/LGPL-2.1'.
 
 Files: post/src/glaux/*
  post/src/glaux_mingw/src/*
@@ -337,3 +331,21 @@ License: GPL-2+
  .
  On Debian systems, the complete text of the GNU General Public License
  can be found in `/usr/share/common-licenses/GPL-2'.
+
+License: LGPL-2.1+
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ .
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ .
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public License
+ can be found in `/usr/share/common-licenses/LGPL-2.1'.
