@@ -4,20 +4,20 @@
 ! *
 ! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
 ! * 
-! *  This program is free software; you can redistribute it and/or
-! *  modify it under the terms of the GNU General Public License
-! *  as published by the Free Software Foundation; either version 2
-! *  of the License, or (at your option) any later version.
-! * 
-! *  This program is distributed in the hope that it will be useful,
-! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
-! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-! *  GNU General Public License for more details.
+! *  This library is free software; you can redistribute it and/or
+! *  modify it under the terms of the GNU Lesser General Public
+! *  License as published by the Free Software Foundation; either
+! *  version 2.1 of the License, or (at your option) any later version.
 ! *
-! *  You should have received a copy of the GNU General Public License
-! *  along with this program (in file fem/GPL-2); if not, write to the 
-! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-! *  Boston, MA 02110-1301, USA.
+! *  This library is distributed in the hope that it will be useful,
+! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! *  Lesser General Public License for more details.
+! * 
+! *  You should have received a copy of the GNU Lesser General Public
+! *  License along with this library (in file ../LGPL-2.1); if not, write 
+! *  to the Free Software Foundation, Inc., 51 Franklin Street, 
+! *  Fifth Floor, Boston, MA  02110-1301  USA
 ! *
 ! *****************************************************************************/
 !
@@ -62,6 +62,29 @@ CONTAINS
 !------------------------------------------------------------------------------
      TYPE(Solver_t) :: Solver
      REAL(KIND=dp) :: x(1), b(1)
+
+#ifdef HAVE_HYPRE
+    INTERFACE
+      !! destroy the data structures (should be called when the matrix has
+      !! to be updated and SolveHYPRE1 has to be called again).
+      SUBROUTINE SolveHYPRE4(hypreContainer)
+        USE, intrinsic :: iso_c_binding
+        INTEGER(KIND=C_INTPTR_T) :: hypreContainer
+      END SUBROUTINE SolveHYPRE4
+
+    END INTERFACE
+#endif
+#ifdef HAVE_TRILINOS
+     INTERFACE
+      !! destroy the data structures (should be called when the matrix has
+      !! to be updated and SolveTrilinos1 has to be called again).
+      SUBROUTINE SolveTrilinos4(triliContainer) bind(C,name='SolveTrilinos4')
+        USE, intrinsic :: iso_c_binding
+        INTEGER(KIND=C_INTPTR_T) :: triliContainer
+      END SUBROUTINE SolveTrilinos4
+
+     END INTERFACE
+#endif
 
      IF ( .NOT. ASSOCIATED( Matrix ) ) RETURN
 
@@ -117,6 +140,17 @@ CONTAINS
      CALL FreeMatrix( Matrix % EMatrix )
      CALL FreeMatrix( Matrix % ConstraintMatrix )
 
+#ifdef HAVE_HYPRE
+     IF (Matrix % Hypre /= 0) THEN
+       CALL SolveHypre4(Matrix % Hypre)
+     END IF
+#endif
+
+#ifdef HAVE_TRILINOS
+     IF (Matrix % Trilinos /= 0) THEN
+       CALL SolveTrilinos4(Matrix % Trilinos)
+     END IF
+#endif
      DEALLOCATE( Matrix )
 !------------------------------------------------------------------------------
    END SUBROUTINE FreeMatrix
@@ -403,9 +437,11 @@ CONTAINS
 !               END DO
 
                 Lptr => List_GetMatrixIndex( List,k,m )
-                CList => List( k ) % Head
+                Lptr => List_GetMatrixIndex( List,m,k ) ! keep structure symm.
+                CList => List(k) % Head
                 DO WHILE( ASSOCIATED( CList ) )
                   Lptr => List_GetMatrixIndex( List,m,CList % Index )
+                  Lptr => List_GetMatrixIndex( List,CList % Index,m ) ! keep structure symm.
                   CList => CList % Next
                 END DO
               END IF

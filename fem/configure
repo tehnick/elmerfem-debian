@@ -2339,7 +2339,7 @@ fi
 
 # Define the identity of the package.
  PACKAGE=fem
- VERSION=6.2
+ VERSION=7.0
 
 
 cat >>confdefs.h <<_ACEOF
@@ -6323,6 +6323,7 @@ esac
 printf "int main(int argc, char **argv) { return(1); }" > test.cpp
 
 acx_cxx_verbose_out=`$CXX $acx_cxx_verbose_flag test.cpp 2>&1 |grep -e ' -l'`
+acx_cxx_verbose_out=${acx_cxx_verbose_out//\"/
 acx_cxx_libs=""
 
 for acx_cxx_ldflag in $acx_cxx_verbose_out; do
@@ -10589,7 +10590,7 @@ fi
 LIBS="-L. $LIBS -L$prefix/lib"
 LDFLAGS="-L. $LDFLAGS -L$prefix/lib"
 CFLAGS="$CFLAGS -I$prefix/include"
-FCFLAGS="$FCFLAGS -I. ${INCLUDE_MODULE_FLAG}binio"
+FCFLAGS="$FCFLAGS -I. ${INCLUDE_MODULE_FLAG}binio ${INCLUDE_MODULE_FLAG}../binio"
 FFLAGS="$FFLAGS -I."
 ELMER_HOME="$prefix"
 FCPPFLAGS="$FCPPFLAGS -P $TRADITIONAL_CPP_FLAGS -I. -I$prefix/include -DFULL_INDUCTION -DUSE_ARPACK"
@@ -16931,7 +16932,7 @@ ac_config_files="$ac_config_files src/elmerf90-nosh"
 ac_config_files="$ac_config_files src/elmerld"
 
 
-ac_config_files="$ac_config_files Makefile Makeconf src/Makefile src/view3d/Makefile src/viewaxis/Makefile src/binio/Makefile src/binio/kinds.f90 src/binio/test/Makefile tests/Makefile"
+ac_config_files="$ac_config_files Makefile Makeconf src/Makefile src/modules/Makefile src/view3d/Makefile src/viewaxis/Makefile src/binio/Makefile src/binio/kinds.f90 src/binio/test/Makefile tests/Makefile"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -17603,6 +17604,7 @@ do
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "Makeconf") CONFIG_FILES="$CONFIG_FILES Makeconf" ;;
     "src/Makefile") CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
+    "src/modules/Makefile") CONFIG_FILES="$CONFIG_FILES src/modules/Makefile" ;;
     "src/view3d/Makefile") CONFIG_FILES="$CONFIG_FILES src/view3d/Makefile" ;;
     "src/viewaxis/Makefile") CONFIG_FILES="$CONFIG_FILES src/viewaxis/Makefile" ;;
     "src/binio/Makefile") CONFIG_FILES="$CONFIG_FILES src/binio/Makefile" ;;
