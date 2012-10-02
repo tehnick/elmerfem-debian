@@ -199,7 +199,7 @@ binary-indep: patch
 	dh_installdeb -i
 	dh_gencontrol -i
 	dh_md5sums -i
-	dh_builddeb -i
+	dh_builddeb -i -- -Zbzip2
 
 binary-arch:
 	dh_testdir -a
@@ -219,7 +219,7 @@ binary-arch:
 	dh_shlibdeps -a
 	dh_gencontrol -a
 	dh_md5sums -a
-	dh_builddeb -a
+	dh_builddeb -a -- -Zbzip2
 
 binary: binary-arch binary-indep
 
