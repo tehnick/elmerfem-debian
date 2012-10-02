@@ -39,7 +39,7 @@ else
     echo "SVN_REVISION = ${SVN_REVISION}"
 fi
 
-TARBALL="${PACKAGE}_${SRC_VERSION}.orig.tar.gz"
+TARBALL="${PACKAGE}_${SRC_VERSION}.orig.tar.xz"
 rm -rf "${PACKAGE}-${SRC_VERSION}" "${TARBALL}"
 
 echo "Start svn export, this will take some time..."
@@ -52,7 +52,7 @@ rm -rf */*.cache post/src/*/*.cache
 rm -rf ElmerGUI/Application/plugins/tetgen.h misc/tetgen_plugin/*
 cd ..
 
-GZIP='--best -n' tar -czf ${TARBALL} "${PACKAGE}-${SRC_VERSION}" || exit 1
+tar -cJf ${TARBALL} "${PACKAGE}-${SRC_VERSION}" || exit 1
 rm -rf "${PACKAGE}-${SRC_VERSION}" svn-export.log
 
 echo "${TARBALL} was created."
