@@ -135,6 +135,15 @@ Files: eio/src/*
 Copyright: 1995- , CSC - IT Center for Science Ltd.
 License: LGPL-2.1+
 
+Files: fem/src/ViewFactors.src
+ fem/src/ResultToPost.src
+ fem/src/ResultToResult.src
+ fem/src/GebhardtFactors.src
+ fem/src/SParIterGlobals.src
+ fem/src/SolverUtils.src
+Copyright: 1995- , CSC - IT Center for Science Ltd.
+License: GPL-2+
+  
 Files: elmergrid/src/nrutil.*
 Copyright: none
 Comment:
