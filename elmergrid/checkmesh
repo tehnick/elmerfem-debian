@@ -1,8 +1,0 @@
-#!/bin/tcsh
-# 
-
-cd tests/serial
-./checkserialmesh
-cd ../../tests/parallel
-./checkparallelmesh
-cd ../..

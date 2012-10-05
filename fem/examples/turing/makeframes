@@ -1,6 +1,0 @@
-
-do i 1 1000 {
-   timestep $i
-   display;
-   screensave frame$i.ppm; 
-}

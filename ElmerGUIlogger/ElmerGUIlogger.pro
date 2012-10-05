@@ -1,9 +1,0 @@
-TEMPLATE = app
-TARGET = ElmerGUIlogger
-DEPENDPATH += . src
-INCLUDEPATH += .
-CONFIG += release
-HEADERS += src/mainwindow.h
-SOURCES += src/main.cpp src/mainwindow.cpp
-RESOURCES += ElmerGUIlogger.qrc
-RC_FILE = ElmerGUIlogger.rc

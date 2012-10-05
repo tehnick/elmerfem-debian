@@ -1,5 +1,0 @@
-If this is a fresh CVS checkout, first create build system with:
-
-> sh autogen.sh
-
-Then ./configure ; make ; make install 
