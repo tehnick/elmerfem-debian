@@ -1,3 +1,9 @@
+elmerfem (7.0.svn.5858+dfsg-0ppa2~quantal1) quantal; urgency=low
+
+  * Fix build with using bzip2 compression for the binary packages.
+
+ -- Boris Pek <tehnick-8@mail.ru>  Sat, 06 Oct 2012 15:17:58 +0300
+
 elmerfem (7.0.svn.5858+dfsg-0ppa1~quantal1) quantal; urgency=low
 
   * New upstream revision.
