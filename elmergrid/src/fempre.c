@@ -107,6 +107,7 @@ static void Instructions()
   printf("1)  .grd      : ElmerGrid file format\n");
   printf("2)  .mesh.*   : ElmerSolver format (also partitioned .part format)\n");
   printf("3)  .ep       : ElmerPost format\n");
+  printf("4)  .msh      : Gmsh mesh format\n");
 #if 0
   printf("5)  .inp      : Abaqus input format\n");
   printf("7)  .fidap    : Fidap format\n");
@@ -174,9 +175,9 @@ static void Instructions()
   printf("-partjoin int        : number of partitions in the data to be joined\n");
   printf("-saveinterval int[3] : the first, last and step for fusing parallel data\n");
   printf("-partorder real[3]   : in the above method, the direction of the ordering\n");
-  printf("-partoptim           : apply agressive optimization to node sharing\n");
-  printf("-partbw              : minimize the bandwith of partition-partion couplings\n");
-  printf("-parthypre           : number the nodes continously partitionwise\n");
+  printf("-partoptim           : apply aggressive optimization to node sharing\n");
+  printf("-partbw              : minimize the bandwidth of partition-partion couplings\n");
+  printf("-parthypre           : number the nodes continuously partitionwise\n");
 
   if(0) printf("-names               : conserve name information where applicable\n");
 #if 0
@@ -188,7 +189,7 @@ static void Instructions()
 static void Goodbye()
 {
   printf("\nThank you for using Elmergrid!\n");
-  printf("Send bug reports and feature wishes to peter.raback@csc.fi\n");
+  printf("Send bug reports and feature wishes to elmeradm@csc.fi\n");
   exit(0);
 }
 
@@ -470,9 +471,8 @@ int main(int argc, char *argv[])
       boundaries[nofile][i].created = FALSE; 
       boundaries[nofile][i].nosides = 0;
     }
-    if (LoadUniversalMesh(&(data[nofile]),eg.filesin[nofile],TRUE))
+    if (LoadUniversalMesh(&(data[nofile]),boundaries[nofile],eg.filesin[nofile],TRUE))
       Goodbye();
-    if(1) ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],TRUE,TRUE);
     nomeshes++;
     break;
 
@@ -750,7 +750,11 @@ int main(int argc, char *argv[])
     if(eg.merge) 
       MergeElements(&data[k],boundaries[k],eg.order,eg.corder,eg.cmerge,FALSE,TRUE);
     else if(eg.order == 3) 
+#if PARTMETIS 
       ReorderElementsMetis(&data[k],TRUE);
+#else
+      printf("Cannot order nodes by Metis as it is not even compiled!\n");
+#endif    
     else if(eg.order) 
       ReorderElements(&data[k],boundaries[k],eg.order,eg.corder,TRUE);
     
@@ -921,8 +925,9 @@ int main(int argc, char *argv[])
 
 
   /********************************/
-  printf("\nElmergrid saving data:\n");
-  printf(  "----------------------\n");
+  printf("\nElmergrid saving data with method %d:\n",outmethod);
+  printf(  "-------------------------------------\n");
+
 
 
   switch (outmethod) {
@@ -948,7 +953,7 @@ int main(int argc, char *argv[])
     break;
 
 
-  case 3:
+  case 3: 
       /* Create a variable so that when saving data in ElmerPost format there is something to visualize */
     for(k=0;k<nomeshes;k++) {
       if(data[k].variables == 0) {
@@ -962,16 +967,9 @@ int main(int argc, char *argv[])
     break;
 
   case 4:
-    printf("The output number 4 still refers to ep-file but will become obsolite in time\n");
-    printf("Rather use number 3 for ElmerPost output format\n");
     for(k=0;k<nomeshes;k++) {
-      if(data[k].variables == 0) {
-	CreateVariable(&data[k],1,1,0.0,"Number",FALSE);
-	for(i=1;i<=data[k].alldofs[1];i++)
-	  data[k].dofs[1][i] = (Real)(i);	      
-      }
-      SaveSolutionElmer(&data[k],boundaries[k],eg.saveboundaries ? MAXBOUNDARIES:0,
-			eg.filesout[k],eg.decimals,info);
+      SaveMeshGmsh(&data[k],boundaries[k],eg.saveboundaries ? MAXBOUNDARIES:0,
+		   eg.filesout[k],eg.decimals,info);
     }
     break;
 

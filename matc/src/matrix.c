@@ -1,25 +1,25 @@
 /*****************************************************************************
-*
-*  Elmer, A Finite Element Software for Multiphysical Problems
-*
-*  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
-* 
-*  This program is free software; you can redistribute it and/or
-*  modify it under the terms of the GNU General Public License
-*  as published by the Free Software Foundation; either version 2
-*  of the License, or (at your option) any later version.
-* 
-*  This program is distributed in the hope that it will be useful,
-*  but WITHOUT ANY WARRANTY; without even the implied warranty of
-*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*  GNU General Public License for more details.
-*
-*  You should have received a copy of the GNU General Public License
-*  along with this program (in file matc/GPL-2); if not, write to the 
-*  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-*  Boston, MA 02110-1301, USA.
-*
-*****************************************************************************/
+ *
+ *  Elmer, A Finite Element Software for Multiphysical Problems
+ *
+ *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
+ * 
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library (in file ../LGPL-2.1); if not, write 
+ * to the Free Software Foundation, Inc., 51 Franklin Street, 
+ * Fifth Floor, Boston, MA  02110-1301  USA
+ *
+ *****************************************************************************/
 
 /*******************************************************************************
  *
@@ -536,6 +536,7 @@ void mtr_com_init()
   com_init( "asin"   , TRUE,  TRUE,  (VARIABLE *(*)())asin   , 1, 1, "r=asin(x)" );
   com_init( "acos"   , TRUE,  TRUE,  (VARIABLE *(*)())acos   , 1, 1, "r=acos(x)" );
   com_init( "atan"   , TRUE,  TRUE,  (VARIABLE *(*)())atan   , 1, 1, "r=atan(x)" );
+  com_init( "atan2"  , TRUE,  TRUE,  (VARIABLE *(*)())atan2  , 2, 2, "r=atan2(y,x)" );
   com_init( "sinh"   , TRUE,  TRUE,  (VARIABLE *(*)())sinh   , 1, 1, "r=sinh(x)" );
   com_init( "cosh"   , TRUE,  TRUE,  (VARIABLE *(*)())cosh   , 1, 1, "r=cosh(x)" );
   com_init( "tanh"   , TRUE,  TRUE,  (VARIABLE *(*)())tanh   , 1, 1, "r=tanh(x)" );

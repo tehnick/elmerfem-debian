@@ -345,7 +345,7 @@ int InlineParameters(struct ElmergridType *eg,int argc,char *argv[])
 
     if(strcmp(argv[arg],"-in") ==0 ) {
       if(arg+1 >= argc) {
-	printf("The secondary input file name is required as a paramater\n");
+	printf("The secondary input file name is required as a parameter\n");
 	return(1);
       }
       else {
@@ -357,7 +357,7 @@ int InlineParameters(struct ElmergridType *eg,int argc,char *argv[])
 
     if(strcmp(argv[arg],"-out") == 0) {
       if(arg+1 >= argc) {
-	printf("The output name is required as a paramater\n");
+	printf("The output name is required as a parameter\n");
 	return(2);
       }
       else {
@@ -593,7 +593,7 @@ int InlineParameters(struct ElmergridType *eg,int argc,char *argv[])
     }
     if(strcmp(argv[arg],"-partition") == 0) {
       if(arg+dim >= argc) {
-	printf("The number of partitions in %d dims is required as paramaters.\n",dim);
+	printf("The number of partitions in %d dims is required as parameters.\n",dim);
 	return(13);
       }
       else {
@@ -811,7 +811,7 @@ int InlineParameters(struct ElmergridType *eg,int argc,char *argv[])
     if(strcmp(argv[arg],"-infofile") == 0) {
       eg->timeron = TRUE;
       if(arg+1 >= argc) {
-	printf("The output name is required as a paramater\n");
+	printf("The output name is required as a parameter\n");
 	return(2);
       }
       else {
@@ -2518,11 +2518,16 @@ int LoadElmergrid(struct GridType **grid,int *nogrids,char *prefix,Real relh,int
       if(strstr(params,"FALSE")) 
 	matcactive = FALSE;
       else {
+#ifndef DISABLE_MATC
 	matcactive = TRUE;
 	mtc_init(NULL, stdout, stderr);
 	strcpy(command, "format( 12 )");	
 	mtc_domath(command);	 
 	printf("MATC language activated with 12 digit accuracy.\n");	
+#else
+        matcactive = FALSE;
+        printf("Unable to activate matc as it is not even compiled.\n");
+#endif 
       }
     }
     
@@ -2695,7 +2700,7 @@ int LoadElmergrid(struct GridType **grid,int *nogrids,char *prefix,Real relh,int
     }
      
     else if(strstr(command,"REVOLVE")) {
-      printf("rovolve: %s %s\n",command,params);
+      if(0) printf("revolve: %s %s\n",command,params);
 
       if(strstr(command,"REVOLVE RADIUS")) {
 	(*grid)[k].rotate = TRUE;

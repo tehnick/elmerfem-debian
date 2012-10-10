@@ -4,20 +4,20 @@
 ! *
 ! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
 ! * 
-! *  This program is free software; you can redistribute it and/or
-! *  modify it under the terms of the GNU General Public License
-! *  as published by the Free Software Foundation; either version 2
-! *  of the License, or (at your option) any later version.
-! * 
-! *  This program is distributed in the hope that it will be useful,
-! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
-! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-! *  GNU General Public License for more details.
+! * This library is free software; you can redistribute it and/or
+! * modify it under the terms of the GNU Lesser General Public
+! * License as published by the Free Software Foundation; either
+! * version 2.1 of the License, or (at your option) any later version.
 ! *
-! *  You should have received a copy of the GNU General Public License
-! *  along with this program (in file fem/GPL-2); if not, write to the 
-! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-! *  Boston, MA 02110-1301, USA.
+! * This library is distributed in the hope that it will be useful,
+! * but WITHOUT ANY WARRANTY; without even the implied warranty of
+! * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! * Lesser General Public License for more details.
+! * 
+! * You should have received a copy of the GNU Lesser General Public
+! * License along with this library (in file ../LGPL-2.1); if not, write 
+! * to the Free Software Foundation, Inc., 51 Franklin Street, 
+! * Fifth Floor, Boston, MA  02110-1301  USA
 ! *
 ! *****************************************************************************/
 !
@@ -113,6 +113,7 @@ CONTAINS
 
     IF(Converged) HUTI_INFO = HUTI_CONVERGENCE
     IF(Diverged) HUTI_INFO = HUTI_DIVERGENCE
+    IF ( (.NOT. Converged) .AND. (.NOT. Diverged) ) HUTI_INFO = HUTI_MAXITER
     
   CONTAINS 
  
@@ -190,6 +191,9 @@ CONTAINS
 !------------------------------------------------------------------------------
 !> Jacobi iterative method for linear systems. This is not really of practical
 !> use but may be used for testing, for example. 
+!> Note that if the scaling is performed so that the diagonal entry is one
+!> the division by it is unnecessary. Hence for this method scaling is not 
+!> needed. 
 !------------------------------------------------------------------------------
  SUBROUTINE itermethod_jacobi( xvec, rhsvec, &
       ipar, dpar, work, matvecsubr, pcondlsubr, &
@@ -225,7 +229,7 @@ CONTAINS
 
     IF(Converged) HUTI_INFO = HUTI_CONVERGENCE
     IF(Diverged) HUTI_INFO = HUTI_DIVERGENCE
-   
+    IF ( (.NOT. Converged) .AND. (.NOT. Diverged) ) HUTI_INFO = HUTI_MAXITER   
 
   CONTAINS 
     
@@ -290,6 +294,132 @@ CONTAINS
 !------------------------------------------------------------------------------
   
 
+!------------------------------------------------------------------------------
+!> Richardson iterative method for linear systems. This may of actual use for 
+!> mass matrices. Actually this is not the simple Richardson iteration method
+!> as it is preconditioned with the lumped mass matrix. 
+!> Note that if scaling is performed by the "row equilibrium" method then
+!> lumped mass is by construction unity (assuming all-positive entries).
+!> So for this method scaling is not needed. 
+!------------------------------------------------------------------------------
+ SUBROUTINE itermethod_richardson( xvec, rhsvec, &
+      ipar, dpar, work, matvecsubr, pcondlsubr, &
+      pcondrsubr, dotprodfun, normfun, stopcfun )
+       
+    IMPLICIT NONE
+
+    EXTERNAL matvecsubr, pcondlsubr, pcondrsubr
+    EXTERNAL dotprodfun, normfun, stopcfun
+    REAL(KIND=dp) :: dotprodfun
+    REAL(KIND=dp) :: normfun
+    REAL(KIND=dp) :: stopcfun
+    
+    ! Parameters
+    INTEGER, DIMENSION(HUTI_IPAR_DFLTSIZE) :: ipar
+    REAL(KIND=dp), DIMENSION(HUTI_DPAR_DFLTSIZE) :: dpar
+    REAL(KIND=dp) :: &
+       xvec(HUTI_NDIM),rhsvec(HUTI_NDIM),work(HUTI_WRKDIM,HUTI_NDIM)
+
+    INTEGER :: ndim
+    INTEGER :: Rounds, OutputInterval
+    REAL(KIND=dp) :: MinTol, MaxTol, Residual
+    LOGICAL :: Converged, Diverged
+    
+    ndim = HUTI_NDIM
+    Rounds = HUTI_MAXIT
+    MinTol = HUTI_TOLERANCE
+    MaxTol = HUTI_MAXTOLERANCE
+    OutputInterval = HUTI_DBUGLVL 
+       
+    CALL richardson(ndim, GlobalMatrix, xvec, rhsvec, Rounds, MinTol, MaxTol, Residual, &
+        Converged, Diverged, OutputInterval )
+
+    IF(Converged) HUTI_INFO = HUTI_CONVERGENCE
+    IF(Diverged) HUTI_INFO = HUTI_DIVERGENCE
+    IF ( (.NOT. Converged) .AND. (.NOT. Diverged) ) HUTI_INFO = HUTI_MAXITER   
+
+  CONTAINS 
+    
+    
+    SUBROUTINE Richardson( n, A, x, b, Rounds, MinTolerance, MaxTolerance, Residual, &
+        Converged, Diverged, OutputInterval) 
+!------------------------------------------------------------------------------
+      TYPE(Matrix_t), POINTER :: A
+      INTEGER :: Rounds
+      REAL(KIND=dp) :: x(n),b(n)
+      LOGICAL :: Converged, Diverged
+      REAL(KIND=dp) :: MinTolerance, MaxTolerance, Residual
+      INTEGER :: OutputInterval
+      REAL(KIND=dp) :: bnorm,rnorm,s,q
+      INTEGER, POINTER :: Cols(:),Rows(:)
+      REAL(KIND=dp), POINTER :: Values(:)
+      REAL(KIND=dp), ALLOCATABLE :: R(:), M(:)
+!------------------------------------------------------------------------------
+      INTEGER :: i,j,k,n
+!------------------------------------------------------------------------------
+
+      Rows   => A % Rows
+      Cols   => A % Cols
+      Values => A % Values
+      
+      Converged = .FALSE.
+      Diverged = .FALSE.
+      
+      ALLOCATE( R(n), M(n) )
+      
+      CALL matvecsubr( x, r, ipar )
+      r(1:n) = b(1:n) - r(1:n)
+      
+      bnorm = normfun(n, b, 1)
+      rnorm = normfun(n, r, 1)
+
+      Residual = rnorm / bnorm
+      Converged = (Residual < MinTolerance) 
+      Diverged = (Residual > MaxTolerance)     
+      IF( Converged .OR. Diverged) RETURN
+
+      ! Perform preconditioning by mass lumping
+      DO i=1,n
+        s = 0.0_dp
+        DO j=Rows(i),Rows(i+1)-1
+          s = s + Values( j )
+        END DO
+        M(i) = s 
+      END DO
+
+      DO k=1,Rounds
+        DO i=1,n
+          IF( k == 1 ) THEN
+            x(i) = b(i) / M(i) 
+          ELSE
+            x(i) = x(i) + r(i) / M(i)
+          END IF
+        END DO
+        
+        CALL matvecsubr( x, r, ipar )
+
+        r(1:n) = b(1:n) - r(1:n)
+        rnorm = normfun(n, r, 1)
+        
+        Residual = rnorm / bnorm
+        
+        IF( MOD(k,OutputInterval) == 0) THEN
+          WRITE (*, '(I8, 2E11.4)') k, rnorm, residual
+        END IF
+        
+        Converged = (Residual < MinTolerance) 
+        Diverged = (Residual > MaxTolerance)     
+        IF( Converged .OR. Diverged) EXIT
+      END DO
+      
+      DEALLOCATE( R, M )
+      
+    END SUBROUTINE Richardson
+    
+!------------------------------------------------------------------------------
+  END SUBROUTINE itermethod_richardson
+!------------------------------------------------------------------------------
+  
 
 !------------------------------------------------------------------------------
 !>   This routine solves real linear systems Ax = b by using the BiCGStab(l) algorithm 
@@ -311,30 +441,83 @@ CONTAINS
     ! Parameters
     INTEGER, DIMENSION(HUTI_IPAR_DFLTSIZE) :: ipar
     REAL(KIND=dp), DIMENSION(HUTI_DPAR_DFLTSIZE) :: dpar
-    REAL(KIND=dp) :: &
+    REAL(KIND=dp), target :: &
        xvec(HUTI_NDIM),rhsvec(HUTI_NDIM),work(HUTI_WRKDIM,HUTI_NDIM)
 
     INTEGER :: ndim
     INTEGER :: Rounds, OutputInterval, PolynomialDegree
     REAL(KIND=dp) :: MinTol, MaxTol, Residual
     LOGICAL :: Converged, Diverged
+
+    INTEGER :: nc
+    REAL(KIND=dp), POINTER :: x(:),b(:)
+
+    LOGICAL :: Constrained
+
+    TYPE(Matrix_t), POINTER :: A,CM
+
+    A => GlobalMatrix
+    CM => A % ConstraintMatrix
+    Constrained = ASSOCIATED(CM)
     
     ndim = HUTI_NDIM
+
+    x=>xvec
+    b=>rhsvec
+    nc = 0
+    IF (Constrained) THEN
+      nc=CM % NumberOfRows
+      ALLOCATE(x(ndim+nc),b(ndim+nc))
+      x(1:ndim)=xvec; x(ndim+1:)=0._dp
+      b(1:ndim)=rhsvec; b(ndim+1:)=CM % RHS
+    END IF
+
     Rounds = HUTI_MAXIT
     MinTol = HUTI_TOLERANCE
     MaxTol = HUTI_MAXTOLERANCE
     OutputInterval = HUTI_DBUGLVL 
     PolynomialDegree = HUTI_BICGSTABL_L 
  
-    CALL RealBiCGStabl(ndim, GlobalMatrix, xvec, rhsvec, Rounds, MinTol, MaxTol, &
+    CALL RealBiCGStabl(ndim+nc, A,x,b, Rounds, MinTol, MaxTol, &
         Converged, Diverged, OutputInterval, PolynomialDegree )
+
+    IF(Constrained) THEN
+      xvec=x(1:ndim)
+      rhsvec=b(1:ndim)
+      DEALLOCATE(x,b)
+    END IF
 
     IF(Converged) HUTI_INFO = HUTI_CONVERGENCE
     IF(Diverged) HUTI_INFO = HUTI_DIVERGENCE
-
+    IF ( (.NOT. Converged) .AND. (.NOT. Diverged) ) HUTI_INFO = HUTI_MAXITER
 
   CONTAINS
 
+!-----------------------------------------------------------------------------------
+    SUBROUTINE ConstraintMV(CM,n,u,v)
+!-----------------------------------------------------------------------------------
+      TYPE(Matrix_t) :: CM
+      INTEGER :: n,i,j,nc
+      REAL(KIND=dp) :: u(:),v(:)
+!-----------------------------------------------------------------------------------
+      REAL(KIND=dp) :: s
+!-----------------------------------------------------------------------------------
+      IF(.NOT.Constrained) RETURN
+
+      nc = CM % NumberOfRows
+      s = 1._dp
+      DO i=1,nc
+        v(n-nc+i)=0._dp
+        DO j = CM % Rows(i),CM % Rows(i+1)-1
+          IF(ASSOCIATED(A % DiagScaling)) &
+            s=A % DiagScaling(CM % Cols(j))
+          v(n-nc+i) = v(n-nc+i) + s*CM % Values(j)*u(CM % Cols(j))
+          v(CM % Cols(j)) = v(CM % Cols(j)) + s*CM % Values(j)*u(n-nc+i)
+        END DO
+      END DO
+!-----------------------------------------------------------------------------------
+    END SUBROUTINE ConstraintMV
+!-----------------------------------------------------------------------------------
 
 !-----------------------------------------------------------------------------------
 !>   The subroutine has been written using as a starting point the work of D.R. Fokkema 
@@ -368,7 +551,6 @@ CONTAINS
       
       IF ( ALL(x == 0.0d0) ) x = b
 
-      
       zero = 0.0d0
       one =  1.0d0
 
@@ -387,7 +569,9 @@ CONTAINS
       yl = y0+1
       y = yl+1
     
-      CALL matvecsubr( x, work(1:n,r), ipar )
+      CALL matvecsubr( x, work(:,r), ipar )
+      IF(Constrained) CALL ConstraintMV(cm,n,x,work(:,r))
+
       work(1:n,r) = b(1:n) - work(1:n,r)
       bnrm  = normfun(n, b(1:n), 1 )
       rnrm0 = normfun(n, work(1:n,r), 1 )
@@ -432,8 +616,13 @@ CONTAINS
           DO j=0,k-1
             work(1:n,u+j) = work(1:n,r+j) - beta*work(1:n,u+j)
           ENDDO
-          CALL pcondlsubr( t, work(1:n,u+k-1), ipar )
-          CALL matvecsubr( t, work(1:n,u+k),   ipar )
+
+          CALL pcondlsubr( t, work(1:n-nc,u+k-1), ipar )
+          CALL matvecsubr( t, work(:,u+k),   ipar )
+          IF(Constrained) THEN
+             t(n-nc+1:n)=work(n-nc+1:n,u+k-1)
+             CALL ConstraintMV(cm,n,t,work(:,u+k))
+          END IF
 
           sigma = dotprodfun(n, work(1:n,rr), 1, work(1:n,u+k), 1 )
           IF (sigma == zero) THEN
@@ -444,8 +633,14 @@ CONTAINS
           DO j=0,k-1
             work(1:n,r+j) = work(1:n,r+j) - alpha * work(1:n,u+j+1)
           ENDDO
+
           CALL pcondlsubr( t, work(1:n,r+k-1), ipar )
-          CALL matvecsubr( t, work(1:n,r+k),   ipar )
+          CALL matvecsubr( t, work(:,r+k), ipar )
+          IF(Constrained) THEN
+            t(n-nc+1:n)=work(n-nc+1:n,r+k-1)
+            CALL ConstraintMV(cm,n,t, work(:,r+k))
+          END IF
+
           rnrm = normfun(n, work(1:n,r), 1 )
           mxnrmx = MAX (mxnrmx, rnrm)
           mxnrmr = MAX (mxnrmr, rnrm)
@@ -537,6 +732,11 @@ CONTAINS
           ! PRINT *, 'Performing residual update...'
           CALL pcondlsubr( t, x, ipar )
           CALL matvecsubr( t, work(1:n,r), ipar )
+          IF (Constrained) THEN
+            t(n-nc+1:n)=x(n-nc+1:n)
+            CALL ConstraintMV(cm,n,t,work(:,r))
+          END IF
+
           work(1:n,r) = work(1:n,bp) - work(1:n,r)
           mxnrmr = rnrm
           IF (xpdt) THEN
@@ -556,6 +756,7 @@ CONTAINS
           END IF
         ELSE
           CALL pcondlsubr( t, x, ipar )
+          IF(Constrained) t(n-nc+1:n)=x(n-nc+1:n)
           t(1:n) = t(1:n)+work(1:n,xp)
         END IF
       
@@ -581,6 +782,7 @@ CONTAINS
       !------------------------------------------------------------
       t(1:n) = x(1:n)
       CALL pcondlsubr( x, t, ipar )
+      IF(Constrained) x(n-nc+1:n)=t(n-nc+1:n)
       x(1:n) = x(1:n) + work(1:n,xp)        
 !------------------------------------------------------------------------------
     END SUBROUTINE RealBiCGStabl
@@ -630,7 +832,7 @@ CONTAINS
 
     IF(Converged) HUTI_INFO = HUTI_CONVERGENCE
     IF(Diverged) HUTI_INFO = HUTI_DIVERGENCE
-   
+    IF ( (.NOT. Converged) .AND. (.NOT. Diverged) ) HUTI_INFO = HUTI_MAXITER   
 
   CONTAINS 
     
@@ -658,11 +860,11 @@ CONTAINS
       Diverged = .FALSE.
       
       ALLOCATE( R(n), T1(n), T2(n) )
-      if ( m > 1 ) then
+      IF ( m > 1 ) THEN
          ALLOCATE( S(n,m-1), V(n,m-1) )
          V(1:n,1:m-1) = 0.0d0	
          S(1:n,1:m-1) = 0.0d0
-      end if	
+      END IF	
       
       CALL matvecsubr( x, r, ipar )
       r(1:n) = b(1:n) - r(1:n)
@@ -679,11 +881,11 @@ CONTAINS
 	 !----------------------------------------------
 	 ! Check for restarting
          !--------------------------------------------- 
-	 if ( mod(k,m)==0 ) then
+	 IF ( MOD(k,m)==0 ) THEN
 	    j = m
-	 else
-	    j = mod(k,m)
-	 end if
+	 ELSE
+	    j = MOD(k,m)
+	 END IF
          !----------------------------------------------------------
          ! Perform the preconditioning...
          !---------------------------------------------------------------
@@ -708,13 +910,13 @@ CONTAINS
          beta = dotprodfun(n, T2(1:n), 1, r(1:n), 1 )
          x(1:n) = x(1:n) + beta * T1(1:n)      
          r(1:n) = r(1:n) - beta * T2(1:n)
-	 if ( j /= m ) then
+	 IF ( j /= m ) THEN
             S(1:n,j) = T1(1:n)
             V(1:n,j) = T2(1:n)
 	 ! else
 	 !    CALL matvecsubr( x, r, ipar )
          !    r(1:n) = b(1:n) - r(1:n)
-	 end if       
+	 END IF       
 
          !--------------------------------------------------------------
          ! Check whether the convergence criterion is met 
@@ -733,7 +935,7 @@ CONTAINS
       END DO
       
       DEALLOCATE( R, T1, T2 )
-      if ( m > 1 ) DEALLOCATE( S, V)
+      IF ( m > 1 ) DEALLOCATE( S, V)
       
     END SUBROUTINE GCR
     
@@ -795,6 +997,7 @@ CONTAINS
 
     IF(Converged) HUTI_INFO = HUTI_CONVERGENCE
     IF(Diverged) HUTI_INFO = HUTI_DIVERGENCE
+    IF ( (.NOT. Converged) .AND. (.NOT. Diverged) ) HUTI_INFO = HUTI_MAXITER
    
     !----------------------------------------------
     ! Return the solution as a real vector...
@@ -833,11 +1036,11 @@ CONTAINS
       Diverged = .FALSE.
       
       ALLOCATE( R(n), T1(n), T2(n) )
-      if ( m > 1 ) then
+      IF ( m > 1 ) THEN
          ALLOCATE( S(n,m-1), V(n,m-1) )
          V(1:n,1:m-1) = CMPLX( 0.0d0, 0.0d0, kind=dp)
          S(1:n,1:m-1) = CMPLX( 0.0d0, 0.0d0, kind=dp)
-      end if	
+      END IF	
       
       CALL matvecsubr( x, r, ipar )
       r(1:n) = b(1:n) - r(1:n)
@@ -854,11 +1057,11 @@ CONTAINS
 	 !----------------------------------------------
 	 ! Check for restarting
          !--------------------------------------------- 
-	 if ( mod(k,m)==0 ) then
+	 IF ( MOD(k,m)==0 ) THEN
 	    j = m
-	 else
-	    j = mod(k,m)
-	 end if
+	 ELSE
+	    j = MOD(k,m)
+	 END IF
          !----------------------------------------------------------
          ! Perform the preconditioning...
          !---------------------------------------------------------------
@@ -883,13 +1086,13 @@ CONTAINS
          beta = dotprodfun(n, T2(1:n), 1, r(1:n), 1 )
          x(1:n) = x(1:n) + beta * T1(1:n)      
          r(1:n) = r(1:n) - beta * T2(1:n)
-	 if ( j /= m ) then
+	 IF ( j /= m ) THEN
             S(1:n,j) = T1(1:n)
             V(1:n,j) = T2(1:n)
 	 ! else
 	 !    CALL matvecsubr( x, r, ipar )
          !    r(1:n) = b(1:n) - r(1:n)
-	 end if       
+	 END IF       
 
          !--------------------------------------------------------------
          ! Check whether the convergence criterion is met 
@@ -908,7 +1111,7 @@ CONTAINS
       END DO
       
       DEALLOCATE( R, T1, T2 )
-      if ( m > 1 ) DEALLOCATE( S, V)
+      IF ( m > 1 ) DEALLOCATE( S, V)
       
     END SUBROUTINE GCR_Z
     
@@ -967,6 +1170,7 @@ CONTAINS
 
     IF(Converged) HUTI_INFO = HUTI_CONVERGENCE
     IF(Diverged) HUTI_INFO = HUTI_DIVERGENCE
+    IF ( (.NOT. Converged) .AND. (.NOT. Diverged) ) HUTI_INFO = HUTI_MAXITER
 
     !----------------------------------------------
     ! Return the solution as a real vector...
@@ -1013,10 +1217,10 @@ CONTAINS
 
       IF ( ALL(x == CMPLX(0.0d0,0.0d0,kind=dp)) ) x = b
 
-      zzero = cmplx( 0.0d0,0.0d0, KIND=dp)
-      zone =  cmplx( 1.0d0,0.0d0, KIND=dp)
-      work = cmplx( 0.0d0, 0.0d0, KIND=dp )
-      rwork = cmplx( 0.0d0, 0.0d0, KIND=dp )
+      zzero = CMPLX( 0.0d0,0.0d0, KIND=dp)
+      zone =  CMPLX( 1.0d0,0.0d0, KIND=dp)
+      work = CMPLX( 0.0d0, 0.0d0, KIND=dp )
+      rwork = CMPLX( 0.0d0, 0.0d0, KIND=dp )
 
       rr = 1
       r = rr+1
@@ -1227,7 +1431,7 @@ CONTAINS
     !----------------------------------------------------------
 
 !--------------------------------------------------------------
-  end SUBROUTINE itermethod_z_bicgstabl
+  END SUBROUTINE itermethod_z_bicgstabl
 !--------------------------------------------------------------
 
 END MODULE IterativeMethods

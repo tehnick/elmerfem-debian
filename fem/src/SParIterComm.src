@@ -4,29 +4,24 @@
 ! *
 ! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
 ! * 
-! *  This program is free software; you can redistribute it and/or
-! *  modify it under the terms of the GNU General Public License
-! *  as published by the Free Software Foundation; either version 2
-! *  of the License, or (at your option) any later version.
-! * 
-! *  This program is distributed in the hope that it will be useful,
-! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
-! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-! *  GNU General Public License for more details.
+! * This library is free software; you can redistribute it and/or
+! * modify it under the terms of the GNU Lesser General Public
+! * License as published by the Free Software Foundation; either
+! * version 2.1 of the License, or (at your option) any later version.
 ! *
-! *  You should have received a copy of the GNU General Public License
-! *  along with this program (in file fem/GPL-2); if not, write to the 
-! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-! *  Boston, MA 02110-1301, USA.
+! * This library is distributed in the hope that it will be useful,
+! * but WITHOUT ANY WARRANTY; without even the implied warranty of
+! * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! * Lesser General Public License for more details.
+! * 
+! * You should have received a copy of the GNU Lesser General Public
+! * License along with this library (in file ../LGPL-2.1); if not, write 
+! * to the Free Software Foundation, Inc., 51 Franklin Street, 
+! * Fifth Floor, Boston, MA  02110-1301  USA
 ! *
 ! *****************************************************************************/
 !
 !/******************************************************************************
-! *
-! *  These routines are for parallel version of ELMER solver.
-! *  Subroutines for MPI-communication
-! *
-! ******************************************************************************
 ! *
 ! *  Authors: Jouni Malinen, Juha Ruokolainen
 ! *  Email:   Juha.Ruokolainen@csc.fi
@@ -38,6 +33,14 @@
 ! *  Original Date: 2000
 ! *
 ! *****************************************************************************/
+
+!------------------------------------------------------------------------------
+!>  These routines are for parallel version of ELMER solver.
+!>  Subroutines for MPI-communication
+!------------------------------------------------------------------------------
+!> \ingroup ElmerLib
+!> \{
+
 
 #include "huti_fdefs.h"
 
@@ -106,12 +109,8 @@ CONTAINS
 !-----------------------------------------------------------------
 
 
-  !********************************************************************
-  !********************************************************************
-  !
-  ! Initialize parallel execution environment
-  !
-   
+!------------------------------------------------------------------------
+!> Initialize parallel execution environment
 !-----------------------------------------------------------------------
    FUNCTION ParCommInit( ) RESULT ( ParallelEnv ) 
 !-----------------------------------------------------------------------
@@ -156,9 +155,8 @@ CONTAINS
 !-----------------------------------------------------------------------
 
 
-!********************************************************************
-!********************************************************************
-! Initialize parallel execution environment
+!-----------------------------------------------------------------------
+!> Initialize parallel execution environment
 !-----------------------------------------------------------------------
   SUBROUTINE ParEnvInit( SPMatrix, ParallelInfo, SourceMatrix )
 !-----------------------------------------------------------------------
@@ -198,8 +196,8 @@ CONTAINS
 !-----------------------------------------------------------------------
 
 
-!********************************************************************
-! Find active PEs using ParallelInfo % NeighbourList
+!-----------------------------------------------------------------------
+!> Find active PEs using ParallelInfo % NeighbourList
 !-----------------------------------------------------------------------
   SUBROUTINE FindActivePEs( ParallelInfo, SourceMatrix, JustNeighbours )
 !-----------------------------------------------------------------------
@@ -222,9 +220,9 @@ CONTAINS
     ! Local variables
     INTEGER, DIMENSION(MPI_STATUS_SIZE) :: status
     
-    INTEGER :: i, j, k, n, sz, ierr, proc, MinActive
+    INTEGER :: i, j, k, ii, n, sz, ierr, proc, MinActive
     INTEGER, ALLOCATABLE :: Active(:), buf(:)
-    LOGICAL :: L
+    LOGICAL :: L, Interf
     REAL(KIND=dp) :: RealTime, tstart, tend,s
     LOGICAL(KIND=1), ALLOCATABLE :: NeighAll(:,:)
     !******************************************************************
@@ -242,10 +240,9 @@ CONTAINS
     ! Count the number of real neighbours for this partition
     !------------------------------------------------------------------
     DO i=1,SourceMatrix % NumberOfRows
-       k = SourceMatrix % INVPerm(i)
-       IF ( ASSOCIATED(ParallelInfo % NeighbourList(k) % Neighbours) ) THEN
-         DO j=1,SIZE(ParallelInfo % NeighbourList(k) % Neighbours)
-            proc = ParallelInfo % NeighbourList(k) % Neighbours(j)
+       IF ( ASSOCIATED(ParallelInfo % NeighbourList(i) % Neighbours) ) THEN
+         DO j=1,SIZE(ParallelInfo % NeighbourList(i) % Neighbours)
+            proc = ParallelInfo % NeighbourList(i) % Neighbours(j)
             IF ( ParEnv % Active(proc+1).AND.proc/=ParEnv % MYpe) &
                ParEnv % IsNeighbour(proc+1) = .TRUE.
          END DO
@@ -350,16 +347,21 @@ CONTAINS
     ALLOCATE( Active(SIZE(ParallelInfo % Interface)) )
 
     IF ( .NOT. SourceMatrix % DGMatrix ) THEN
-      DO i=1,MIN( SIZE(ParallelInfo % Interface), SIZE(SourceMatrix % Perm) )
-        Active(i) = HUGE(i)
-        IF ( ParallelInfo % Interface(i) ) THEN
-          sz = SIZE(ParallelInfo % NeighbourList(i) % Neighbours)
+      DO i=1,SIZE(SourceMatrix % Perm)
+        ii = SourceMatrix % Perm(i)
+        Interf=.FALSE.
+        IF(ii>0) THEN
+          Active(ii) = HUGE(i)
+          Interf=ParallelInfo % Interface(ii)
+        END IF
+        IF ( Interf) THEN
+          sz = SIZE(ParallelInfo % NeighbourList(ii) % Neighbours)
           DO j=1,sz
-            k = ParallelInfo % NeighbourList(i) % Neighbours(j)
+            k = ParallelInfo % NeighbourList(ii) % Neighbours(j)
             IF ( k == ParEnv % Mype ) THEN
-              IF ( SourceMatrix % Perm(i)/=0 ) Active(i)=j
+              IF ( SourceMatrix % Perm(i)/=0 ) Active(ii)=j
             ELSE IF ( ParEnv % Active(k+1) ) THEN
-              CALL AddtoNlist( Neighlist(k+1), ParallelInfo % GlobalDOFs(i), &
+              CALL AddtoNlist( Neighlist(k+1), ParallelInfo % GlobalDOFs(ii), &
                          SourceMatrix % Perm(i) )
             END IF
           END DO
@@ -409,7 +411,7 @@ CONTAINS
           CALL MPI_RECV( buf,sz,MPI_INTEGER,proc,20001,MPI_COMM_WORLD,status,ierr)
           DO j=1,sz,2
             IF ( buf(j+1)>0 ) THEN
-              k = SearchNode( ParallelInfo, buf(j) )
+              k = SearchNode( ParallelInfo, buf(j),Order=SourceMatrix % Perm )
               IF ( k>0  ) THEN
                 sz = SIZE(ParallelInfo % NeighbourList(k) % Neighbours)
                 DO n=1,sz
@@ -425,14 +427,17 @@ CONTAINS
         END IF
       END DO
 
-      DO i=1,MIN( SIZE(ParallelInfo % Interface), SIZE(SourceMatrix % Perm) )
-        IF ( ParallelInfo % Interface(i) ) THEN
-          sz = SIZE(ParallelInfo % NeighbourList(i) % Neighbours)
-          IF ( Active(i)>1 .AND. Active(i)<=sz ) THEN
-            n = ParallelInfo % NeighbourList(i) % Neighbours(Active(i))
-            ParallelInfo % NeighbourList(i) % Neighbours(Active(i)) = &
-               ParallelInfo % NeighbourList(j) % Neighbours(1)
-            ParallelInfo % NeighbourList(i) % Neighbours(1) = n
+      DO i=1,SIZE(SourceMatrix % Perm)
+        ii = SourceMatrix % Perm(i)
+        Interf = .FALSE.
+        IF(ii>0) Interf=ParallelInfo % Interface(ii)
+        IF ( Interf ) THEN
+          sz = SIZE(ParallelInfo % NeighbourList(ii) % Neighbours)
+          IF ( Active(ii)>1 .AND. Active(ii)<=sz ) THEN
+            n = ParallelInfo % NeighbourList(ii) % Neighbours(Active(ii))
+            ParallelInfo % NeighbourList(ii) % Neighbours(Active(ii)) = &
+               ParallelInfo % NeighbourList(ii) % Neighbours(1)
+            ParallelInfo % NeighbourList(ii) % Neighbours(1) = n
           END IF
         END IF
       END DO
@@ -485,11 +490,9 @@ CONTAINS
 !-----------------------------------------------------------------------
 
 
-!***********************************************************************
-! Try to agree about global numbering of nodes among active
-! processes.
 !-----------------------------------------------------------------------
-
+!> Try to agree about global numbering of nodes among active
+!> processes.
 !-----------------------------------------------------------------------
   SUBROUTINE AddToCommonList( list, ENTRY )
 !-----------------------------------------------------------------------
@@ -560,13 +563,13 @@ CONTAINS
      TYPE(Edgen_t), ALLOCATABLE :: edgen(:), cccc(:)
 
      INTEGER, ALLOCATABLE :: owned_edges(:), owned_edges2(:), parentnodes(:,:), &
-             tosend(:), toreceive(:), gorder(:), grevorder(:)
+             tosend(:), toreceive(:), gorder(:), grevorder(:),buf(:)
 
      INTEGER  :: p,q,datasize, ierr,status(MPI_STATUS_SIZE)
      INTEGER, ALLOCATABLE ::  gindices(:)
      INTEGER, POINTER :: list1(:),list2(:), commonlist(:), gdofs(:)
 
-     INTEGER :: i,j,k,l,m,n,mm,edofs,maxedofs,retry
+     INTEGER :: i,j,k,l,m,n,mm,edofs,maxedofs,retry,bd,gi,ind
 
      LOGICAL, POINTER :: ig(:)
      TYPE(NeighbourList_t), POINTER :: nb(:)
@@ -1028,7 +1031,7 @@ real(kind=dp) :: realtime,tt
     !------------------------
 
     DEALLOCATE( owned_edges, owned_edges2, &
-      parentnodes, tosend, toreceive )
+      parentnodes, toreceive )
     !-------------------------------------------------------------------
     ! Now, the numbering should be unique. It remains to sort the edges.
     !-------------------------------------------------------------------
@@ -1096,7 +1099,72 @@ real(kind=dp) :: realtime,tt
       Mesh % Edges(i) % ElementIndex = i
     END DO
 
-    DEALLOCATE( gorder, grevorder, gdofs, edgen )
+    ! Max the dofs for the shared edges:
+    ! ----------------------------------
+    tosend=0
+    DO i=1,n
+      IF(Edgen(i) % Interface) THEN
+        DO j=1,SIZE(Edgen(i) % Neighbours)
+          k = Edgen(i) % Neighbours(j)
+          IF(k/=ParEnv % MyPE) &
+            tosend(k+1)=tosend(k+1)+1
+        END DO
+      END IF
+    END DO
+
+    ALLOCATE(buf(MAXVAL(tosend)*2))
+
+    DO i = 1, ParEnv % PEs
+      IF( i-1 == ParEnv % MyPE ) CYCLE
+      IF( .NOT. IsNeighbour(i) ) CYCLE
+
+      mm=0
+      DO l=1,n
+        IF(Edgen(l) % Interface) THEN
+          DO j=1,SIZE(Edgen(l) % Neighbours)
+            k = Edgen(l) % Neighbours(j)
+            IF(k==i-1) THEN
+              mm=mm+1
+              buf(2*mm-1) = gdofs(l)
+              buf(2*mm) = Mesh % Edges(l) % BDOFs
+            END IF
+          END DO
+        END IF
+      END DO
+
+      CALL MPI_BSEND( mm, 1, MPI_INTEGER, &
+           i-1, 400, MPI_COMM_WORLD, ierr )
+
+      IF (mm<=0 ) CYCLE
+
+      CALL MPI_BSEND( buf, mm*2, MPI_INTEGER, &
+           i-1, 401, MPI_COMM_WORLD, ierr )
+    END DO
+
+    DEALLOCATE(buf)
+
+    DO i = 1, ParEnv % PEs
+      IF( i-1 == ParEnv % MyPE ) CYCLE
+      IF( .NOT. IsNeighbour(i) ) CYCLE
+
+      CALL MPI_RECV( DataSize, 1, MPI_INTEGER, &
+       i-1, 400, MPI_COMM_WORLD, status, ierr )
+      IF( DataSize > 0 ) THEN
+        ALLOCATE( buf(DataSize*2) )
+        CALL MPI_RECV( buf, DataSize*2, MPI_INTEGER, &
+           i-1, 401, MPI_COMM_WORLD, status, ierr )
+
+        DO j=1,Datasize
+          gi = buf(2*j-1)
+          bd = buf(2*j)
+          k = SearchIAItem(n,gdofs,gi)
+          Mesh % Edges(k) % BDOFs=MAX(Mesh % Edges(k) % BDOFs,bd)
+        END DO
+        DEALLOCATE(buf)
+      END IF
+    END DO
+
+    DEALLOCATE( gorder, grevorder, gdofs, edgen, tosend )
     IF ( AllM ) DEALLOCATE(IsNeighbour)
     CALL MPI_BARRIER( MPI_COMM_WORLD, ierr )
 !--------------------------------------------------------------------  
@@ -1127,11 +1195,11 @@ real(kind=dp) :: realtime,tt
      TYPE(flist_t) :: list(4)
 
      INTEGER, ALLOCATABLE :: owned_faces(:), owned_faces2(:), &
-      parentnodes(:,:), tosend(:), toreceive(:), gorder(:), grevorder(:)
+      parentnodes(:,:), tosend(:), toreceive(:), gorder(:), grevorder(:),buf(:)
 
      INTEGER, POINTER :: commonlist(:), gindices(:), gdofs(:)
 
-     INTEGER :: i,j,k,l,m,n,mm,nd,edofs,maxedofs, &
+     INTEGER :: i,j,k,l,m,n,mm,nd,edofs,maxedofs,ind,gi,bd, &
                 p,q,r,datasize, ierr,status(MPI_STATUS_SIZE)
 
      LOGICAL, POINTER :: ig(:)
@@ -1466,7 +1534,7 @@ real(kind=dp) :: realtime,tt
     ! Deallocate temp arrays:
     !------------------------
     DEALLOCATE( owned_faces, owned_faces2, &
-       parentnodes, tosend, toreceive )
+       parentnodes, toreceive )
 
     !-------------------------------------------------------------------
     ! Now, the numbering should be unique. It remains to sort the faces.
@@ -1544,6 +1612,71 @@ real(kind=dp) :: realtime,tt
       Mesh % ParallelInfo % FaceNeighbourList(i) % Neighbours => &
              Facen(i) % Neighbours
     END DO
+
+
+    tosend=0
+    DO i=1,n
+      IF(Facen(i) % Interface) THEN
+        DO j=1,SIZE(Facen(i) % Neighbours)
+          k = Facen(i) % Neighbours(j)
+          IF(k/=ParEnv % MyPE) &
+            tosend(k+1)=tosend(k+1)+1
+        END DO
+      END IF
+    END DO
+
+    ALLOCATE(buf(MAXVAL(tosend)*2))
+
+    DO i = 1, ParEnv % PEs
+      IF( i-1 == ParEnv % MyPE ) CYCLE
+      IF( .NOT. IsNeighbour(i) ) CYCLE
+
+      mm=0
+      DO l=1,n
+        IF(Facen(l) % Interface) THEN
+          DO j=1,SIZE(Facen(l) % Neighbours)
+            k = Facen(l) % Neighbours(j)
+            IF(k==i-1) THEN
+              mm=mm+1
+              buf(2*mm-1) = gdofs(l)
+              buf(2*mm) = Mesh % Faces(l) % BDOFs
+            END IF
+          END DO
+        END IF
+      END DO
+
+      CALL MPI_BSEND( mm, 1, MPI_INTEGER, &
+           i-1, 400, MPI_COMM_WORLD, ierr )
+
+      IF (mm<=0 ) CYCLE
+
+      CALL MPI_BSEND( buf, mm*2, MPI_INTEGER, &
+           i-1, 401, MPI_COMM_WORLD, ierr )
+    END DO
+
+    DEALLOCATE(buf)
+
+    DO i = 1, ParEnv % PEs
+      IF( i-1 == ParEnv % MyPE ) CYCLE
+      IF( .NOT. IsNeighbour(i) ) CYCLE
+
+      CALL MPI_RECV( DataSize, 1, MPI_INTEGER, &
+       i-1, 400, MPI_COMM_WORLD, status, ierr )
+      IF( datasize > 0 ) THEN
+        ALLOCATE( buf(DataSize*2) )
+        CALL MPI_RECV( buf, DataSize*2, MPI_INTEGER, &
+           i-1, 401, MPI_COMM_WORLD, status, ierr )
+
+        DO j=1,Datasize
+          gi = buf(2*j-1)
+          bd = buf(2*j)
+          k = SearchIAItem(n,gdofs,gi)
+          Mesh % Faces(k) % BDOFs = MAX(Mesh % Faces(k) % BDOFs,bd)
+        END DO
+        DEALLOCATE(buf)
+      END IF
+    END DO
+
 
     DEALLOCATE( gorder, grevorder, gdofs, facen )
     IF ( ALLM ) DEALLOCATE(IsNeighbour)
@@ -2619,13 +2752,11 @@ END  SUBROUTINE SParIterAllReduceAnd
 
 
 
-!*********************************************************************
-!*********************************************************************
-!
-! Send all of the interface matrix blocks (in NbsIfMatrices) to neighbour
-! processors. This is done only once so there is no need to optimize
-! communication...
-!
+!--------------------------------------------------------------------------
+!> Send all of the interface matrix blocks (in NbsIfMatrices) to neighbour
+!> processors. This is done only once so there is no need to optimize
+!> communication...
+!--------------------------------------------------------------------------
   SUBROUTINE ExchangeInterfaces( NbsIfMatrix, RecvdIfMatrix )
     USE Types
     IMPLICIT NONE
@@ -2833,13 +2964,12 @@ END SUBROUTINE ExchangeInterfaces
 !*********************************************************************
 
 
-!*********************************************************************
-!*********************************************************************
-!
-! Send all of the interface matrix blocks (in NbsIfMatrices) to neighbour
-! processors. This is done only once so there is no need to optimize
-! communication...
-!
+
+!--------------------------------------------------------------------------
+!> Send all of the interface matrix blocks (in NbsIfMatrices) to neighbour
+!> processors. This is done only once so there is no need to optimize
+!> communication...
+!--------------------------------------------------------------------------
   SUBROUTINE ExchangeIfvalues( NbsIfMatrix, RecvdIfMatrix, &
              NeedMass, NeedDamp, NeedPrec )
     USE Types
@@ -3198,9 +3328,8 @@ SUBROUTINE ExchangeSourceVec( SourceMatrix, SplittedMatrix, &
 
   send_size = 0
   DO i = 1, SourceMatrix % NumberOfRows
-    k = SourceMatrix % INVPerm(i)
-    DO j=1,SIZE(ParallelInfo % NeighbourList(k) % Neighbours)
-      owner = ParallelInfo % NeighbourList(k) % Neighbours(j)
+    DO j=1,SIZE(ParallelInfo % NeighbourList(i) % Neighbours)
+      owner = ParallelInfo % NeighbourList(i) % Neighbours(j)
       IF ( owner /= ParEnv % MyPE .AND. ParEnv % Active(owner+1) ) THEN
          owner = perm(owner)
          send_size(owner) = send_size(owner) + 1
@@ -3215,14 +3344,13 @@ SUBROUTINE ExchangeSourceVec( SourceMatrix, SplittedMatrix, &
 
   send_size = 0
   DO i = 1, SourceMatrix % NumberOfRows
-    k = SourceMatrix % INVPerm(i)
-    DO j=1,SIZE(ParallelInfo % NeighbourList(k) % Neighbours)
-      owner = ParallelInfo % NeighbourList(k) % Neighbours(j)
+    DO j=1,SIZE(ParallelInfo % NeighbourList(i) % Neighbours)
+      owner = ParallelInfo % NeighbourList(i) % Neighbours(j)
       IF ( owner /= ParEnv % MyPE .AND. ParEnv % Active(owner+1) ) THEN
          owner = perm(owner)
          send_size(owner) = send_size(owner) + 1
          send_buf(owner) % vec(send_size(owner)) = SourceVec(i)
-         send_buf(owner) % ind(send_size(owner)) = ParallelInfo % GlobalDOFs(k)
+         send_buf(owner) % ind(send_size(owner)) = ParallelInfo % GlobalDOFs(i)
       END IF
     END DO
   END DO
@@ -3301,9 +3429,9 @@ SUBROUTINE ExchangeSourceVec( SourceMatrix, SplittedMatrix, &
   DO i=1,n
      datalen = recv_size(i)
      DO j = 1, datalen
-       Ind = SearchNode( ParallelInfo, recv_buf(i) % Ind(j) )
+       Ind = SearchNode( ParallelInfo, recv_buf(i) % Ind(j),Order=SourceMatrix % Perm )
        IF ( Ind /= -1 ) THEN
-          Ind = SourceMatrix % Perm(Ind)
+!         Ind = SourceMatrix % Perm(Ind)
           IF ( Ind > 0 ) THEN
              SELECT CASE(oper)
              CASE(0)
@@ -3329,11 +3457,10 @@ END SUBROUTINE ExchangeSourceVec
 !*********************************************************************
 
 
-!*********************************************************************
-!*********************************************************************
-!
-! Exchange right-hand-side elements on the interface with neighbours
-!
+
+!----------------------------------------------------------------------
+!> Exchange right-hand-side elements on the interface with neighbours
+!----------------------------------------------------------------------
 SUBROUTINE ExchangeRHSIf( SourceMatrix, SplittedMatrix, &
           ParallelInfo, SourceRHS, TargetRHS )
 
@@ -3379,8 +3506,7 @@ SUBROUTINE ExchangeRHSIf( SourceMatrix, SplittedMatrix, &
 
   send_size = 0
   DO i = 1, SourceMatrix % NumberOfRows
-    k = SourceMatrix % INVPerm(i)
-    owner = ParallelInfo % NeighbourList(k) % Neighbours(1)
+    owner = ParallelInfo % NeighbourList(i) % Neighbours(1)
     IF ( owner /= ParEnv % MyPE .AND. ParEnv % Active(owner+1) ) THEN
        owner = perm(owner)
        send_size(owner) = send_size(owner) + 1
@@ -3394,13 +3520,12 @@ SUBROUTINE ExchangeRHSIf( SourceMatrix, SplittedMatrix, &
 
   send_size = 0
   DO i = 1, SourceMatrix % NumberOfRows
-    k = SourceMatrix % INVPerm(i)
-    owner = ParallelInfo % NeighbourList(k) % Neighbours(1)
+    owner = ParallelInfo % NeighbourList(i) % Neighbours(1)
     IF ( owner /= ParEnv % MyPE .AND. ParEnv % Active(owner+1) ) THEN
        owner = perm(owner)
        send_size(owner) = send_size(owner) + 1
        send_buf(owner) % vec(send_size(owner)) = SourceRHS(i)
-       send_buf(owner) % ind(send_size(owner)) = ParallelInfo % GlobalDOFs(k)
+       send_buf(owner) % ind(send_size(owner)) = ParallelInfo % GlobalDOFs(i)
     END IF
   END DO
 
@@ -3478,9 +3603,10 @@ SUBROUTINE ExchangeRHSIf( SourceMatrix, SplittedMatrix, &
   DO i=1,n
      datalen = recv_size(i)
      DO j = 1, datalen
-       Ind = SearchNode( ParallelInfo, recv_buf(i) % Ind(j) )
+       Ind = SearchNode( ParallelInfo, recv_buf(i) % Ind(j), &
+                 Order=SourceMatrix % Perm )
        IF ( Ind /= -1 ) THEN
-          Ind = SourceMatrix % Perm(Ind)
+!         Ind = SourceMatrix % Perm(Ind)
           IF ( Ind > 0 ) &
              SourceRHS(Ind) = SourceRHS(Ind) + recv_buf(i) % vec(j)
        END IF
@@ -3496,8 +3622,7 @@ SUBROUTINE ExchangeRHSIf( SourceMatrix, SplittedMatrix, &
   ! copy source to target
   j = 0
   DO i = 1, SourceMatrix % NumberOfRows
-     k = SourceMatrix % INVPerm(i)
-     IF (ParallelInfo % NeighbourList(k) % Neighbours(1)==ParEnv % MyPE) THEN
+     IF (ParallelInfo % NeighbourList(i) % Neighbours(1)==ParEnv % MyPE) THEN
         j = j + 1
         TargetRHS(j) = SourceRHS(i)
      END IF
@@ -3507,13 +3632,10 @@ END SUBROUTINE ExchangeRHSIf
 !*********************************************************************
 
 
-!*********************************************************************
-!*********************************************************************
-!
-! Send parts of the result vector to neighbours
-!
-!
-!*********************************************************************
+
+!----------------------------------------------------------------------
+!> Send parts of the result vector to neighbours
+!----------------------------------------------------------------------
 SUBROUTINE ExchangeResult( SourceMatrix, SplittedMatrix, ParallelInfo, XVec )
   USE types
   IMPLICIT NONE
@@ -3645,9 +3767,10 @@ SUBROUTINE ExchangeResult( SourceMatrix, SplittedMatrix, ParallelInfo, XVec )
   DO i=1,n
      datalen = recv_size(i)
      DO j = 1, datalen
-       ind = SearchNode( ParallelInfo, recv_buf(i) % Ind(j) )
+       ind = SearchNode( ParallelInfo, recv_buf(i) % Ind(j), &
+                  Order=SourceMatrix % Perm )
        IF ( ind /= -1 ) THEN
-          ind = SourceMatrix % Perm(ind)
+!         ind = SourceMatrix % Perm(ind)
           IF ( ind > 0 ) &
              xvec(ind) = recv_buf(i) % vec(j)
        END IF
@@ -3671,9 +3794,9 @@ END SUBROUTINE ExchangeResult
 !*********************************************************************
 !*********************************************************************
 !
-! Build index tables for faster vector element combination (in parallel
-! matrix-vector operation).
-!
+!> Build index tables for faster vector element combination (in parallel
+!> matrix-vector operation).
+!-----------------------------------------------------------------------
 SUBROUTINE BuildRevVecIndices( SplittedMatrix )
   IMPLICIT NONE
 
@@ -3827,8 +3950,8 @@ END SUBROUTINE BuildRevVecIndices
 !*********************************************************************
 !*********************************************************************
 !
-! Send our part of the interface matrix blocks to neighbours.
-!
+!> Send our part of the interface matrix blocks to neighbours.
+!----------------------------------------------------------------------
 SUBROUTINE Send_LocIf_Old( SplittedMatrix )
 
   USE types
@@ -3909,8 +4032,8 @@ END SUBROUTINE Send_LocIf_Old
 !*********************************************************************
 !*********************************************************************
 !
-! Receive interface block contributions to vector from neighbours
-!
+!> Receive interface block contributions to vector from neighbours.
+!----------------------------------------------------------------------
 SUBROUTINE Recv_LocIf_Old( SplittedMatrix, ndim, v )
 
   USE types
@@ -3967,8 +4090,8 @@ END SUBROUTINE Recv_LocIf_Old
 
 !*********************************************************************
 !*********************************************************************
-! Send our part of the interface matrix blocks to neighbours.
-!
+!> Send our part of the interface matrix blocks to neighbours.
+!----------------------------------------------------------------------
 SUBROUTINE Send_LocIf_size( SplittedMatrix, n, neigh )
 
   USE types
@@ -4012,7 +4135,7 @@ END SUBROUTINE Send_LocIf_size
 
 !*********************************************************************
 !*********************************************************************
-! Send our part of the interface matrix blocks to neighbours.
+!> Send our part of the interface matrix blocks to neighbours.
 !
 SUBROUTINE Send_LocIf( SplittedMatrix,n,neigh )
 
@@ -4113,7 +4236,7 @@ END SUBROUTINE Send_LocIf
 !*********************************************************************
 !*********************************************************************
 !
-! Receive interface block contributions to vector from neighbours
+!> Receive interface block contributions to vector from neighbours
 !
 SUBROUTINE Recv_LocIf_size( n, neigh, sizes )
   USE Types
@@ -4142,7 +4265,7 @@ END SUBROUTINE Recv_LocIf_size
 !*********************************************************************
 !*********************************************************************
 !
-! Receive interface block contributions to vector from neighbours
+!> Receive interface block contributions to vector from neighbours
 !
 SUBROUTINE Recv_LocIf( SplittedMatrix, n, neigh, &
               sizes, requests, buffer )
@@ -4184,7 +4307,7 @@ END SUBROUTINE Recv_LocIf
 !*********************************************************************
 !*********************************************************************
 !
-! Receive interface block contributions to vector from neighbours
+!> Receive interface block contributions to vector from neighbours
 !
 SUBROUTINE Recv_LocIf_Wait( SplittedMatrix, ndim, v, n, neigh, &
                sizes, requests, buffer )
@@ -4301,7 +4424,7 @@ END FUNCTION SParDotProd
 !*********************************************************************
 !*********************************************************************
 !
-! Compute global 2-norm of vector x
+!> Compute global 2-norm of vector x
 !
 FUNCTION SParNorm( ndim, x, xind ) RESULT(dres)
   IMPLICIT NONE
@@ -4329,7 +4452,7 @@ END FUNCTION SParNorm
 !*********************************************************************
 !*********************************************************************
 !
-! Compute global dot product of vectors x and y
+!> Compute global dot product of vectors x and y
 !
 FUNCTION SParCDotProd( ndim, x, xind, y, yind ) result (dres)
 
@@ -4370,7 +4493,7 @@ END FUNCTION SParCDotProd
 !*********************************************************************
 !*********************************************************************
 !
-! Compute global 2-norm of vector x
+!> Compute global 2-norm of vector x
 !
 FUNCTION SParCNorm( ndim, x, xind ) result (norm)
   IMPLICIT NONE
@@ -4400,7 +4523,7 @@ END FUNCTION SParCNorm
 !*********************************************************************
 !*********************************************************************
 !
-! Finalize MPI environment
+!> Finalize MPI environment
 !
 SUBROUTINE ParEnvFinalize()
   IMPLICIT NONE
@@ -4425,27 +4548,31 @@ END SUBROUTINE ParEnvFinalize
 
 !*********************************************************************
 !
-! Search an element QueriedNode from an ordered set Nodes and return
-! Index to Nodes structure. Return value -1 means QueriedNode was
-! not found.
+!> Search an element QueriedNode from an ordered set Nodes and return
+!> Index to Nodes structure. Return value -1 means QueriedNode was
+!> not found.
 !
-FUNCTION SearchNode( ParallelInfo, QueriedNode, First, Last ) RESULT ( Indx )
+FUNCTION SearchNode( ParallelInfo, QueriedNode, First, Last,Order ) RESULT ( Indx )
 
   USE Types
   IMPLICIT NONE
 
   TYPE (ParallelInfo_t) :: ParallelInfo
   INTEGER :: QueriedNode, Indx
-  INTEGER, OPTIONAL :: First,Last
+  INTEGER, OPTIONAL :: First,Last, Order(:)
 
   ! Local variables
 
-  INTEGER :: Lower, Upper, Lou, i
+  INTEGER :: Lower, Upper, Lou, i, U, L
 
   !*********************************************************************
 
   Indx = -1
-  Upper = SIZE(ParallelInfo % GlobalDOFs)
+  IF(PRESENT(Order)) THEN
+    Upper = SIZE(Order)
+  ELSE
+    Upper = SIZE(ParallelInfo % GlobalDOFs)
+  END IF
   Lower = 1
   IF ( PRESENT( Last  ) ) Upper = Last
   IF ( PRESENT( First ) ) Lower = First
@@ -4454,26 +4581,57 @@ FUNCTION SearchNode( ParallelInfo, QueriedNode, First, Last ) RESULT ( Indx )
 
   IF ( Upper == 0 ) RETURN
 
+  IF (PRESENT(Order)) THEN
+    DO WHILE(Order(Lower)==0)
+      Lower=Lower+1
+    END DO
+    DO WHILE(Order(Upper)==0)
+      Upper=Upper-1
+    END DO
+  END IF
+
 10 CONTINUE
-  IF ( ParallelInfo % GlobalDOFs(Lower) == QueriedNode ) THEN
-     Indx = Lower
-     RETURN
-  ELSE IF ( ParallelInfo % GlobalDOFs(Upper) == QueriedNode ) THEN
-     Indx = Upper
-     RETURN
+  L = Lower
+  IF (PRESENT(Order)) L=Order(L)
+  U = Upper
+  IF (PRESENT(Order)) U=Order(U)
+
+  IF (ParallelInfo % GlobalDOFs(L)==QueriedNode) THEN
+     Indx = L; RETURN
   END IF
 
-  IF ( (Upper - Lower) > 1 ) THEN
-     Lou = ISHFT((Upper + Lower), -1)
-     IF ( ParallelInfo % GlobalDOFs(Lou) < QueriedNode ) THEN
-        Lower = Lou
-        GOTO 10
-     ELSE
-        Upper = Lou
-        GOTO 10
+  IF (ParallelInfo % GlobalDOFs(U)==QueriedNode) THEN
+     Indx = U; RETURN
+  END IF
+
+  IF ((Upper-Lower)>1) THEN
+     L = ISHFT((Upper+Lower),-1)
+     U = L
+
+     IF(PRESENT(Order)) THEN
+       DO WHILE(Order(L)==0)
+         L=L-1
+         IF(L<=Lower) EXIT
+       END DO
+       IF(L<=Lower) THEN
+         DO WHILE(Order(U)==0)
+           U=U+1
+           IF(U>=Upper) RETURN
+         END DO
+         L=U
+       END IF
+       U=Order(L)
      END IF
-  END IF
 
+     IF(U==0) RETURN
+
+     IF (ParallelInfo % GlobalDOFs(U)<QueriedNode) THEN
+        Lower = L
+     ELSE
+        Upper = L
+     END IF
+     GOTO 10
+  END IF
   RETURN
 !*********************************************************************
 END FUNCTION SearchNode
@@ -4483,8 +4641,8 @@ END FUNCTION SearchNode
 !*********************************************************************
 !*********************************************************************
 !
-! Search an element Item from an ordered integer array(N) and return
-! Index to that array element. Return value -1 means Item was not found.
+!> Search an element Item from an ordered integer array(N) and return
+!> Index to that array element. Return value -1 means Item was not found.
 !
 FUNCTION SearchIAItem( N, IArray, Item, SortOrder, sIndx ) RESULT ( Indx )
 
@@ -4545,8 +4703,8 @@ END FUNCTION SearchIAItem
 
 
 !*********************************************************************
-! Search an element Item from an ordered integer array(N) and return
-! Index to that array element. Return value -1 means Item was not found.
+!> Search an element Item from an ordered integer array(N) and return
+!> Index to that array element. Return value -1 means Item was not found.
 !
 FUNCTION SearchIAItemLinear( N, IArray, Item ) RESULT ( Indx )
 
@@ -4575,3 +4733,5 @@ END FUNCTION SearchIAItemLinear
 
 
 END MODULE SParIterComm
+
+!> \}

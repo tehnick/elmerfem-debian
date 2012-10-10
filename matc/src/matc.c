@@ -1,25 +1,25 @@
 /*****************************************************************************
-*
-*  Elmer, A Finite Element Software for Multiphysical Problems
-*
-*  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
-* 
-*  This program is free software; you can redistribute it and/or
-*  modify it under the terms of the GNU General Public License
-*  as published by the Free Software Foundation; either version 2
-*  of the License, or (at your option) any later version.
-* 
-*  This program is distributed in the hope that it will be useful,
-*  but WITHOUT ANY WARRANTY; without even the implied warranty of
-*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*  GNU General Public License for more details.
-*
-*  You should have received a copy of the GNU General Public License
-*  along with this program (in file matc/GPL-2); if not, write to the 
-*  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-*  Boston, MA 02110-1301, USA.
-*
-*****************************************************************************/
+ *
+ *  Elmer, A Finite Element Software for Multiphysical Problems
+ *
+ *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
+ * 
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library (in file ../LGPL-2.1); if not, write 
+ * to the Free Software Foundation, Inc., 51 Franklin Street, 
+ * Fifth Floor, Boston, MA  02110-1301  USA
+ *
+ *****************************************************************************/
 
 /*******************************************************************************
  *
@@ -609,10 +609,10 @@ VARIABLE *com_pointw(sub, ptr)  double (*sub)(); VARIABLE *ptr;
 &  var_temp_new(), *(sub)()
 ^=====================================================================*/
 {
-  VARIABLE *res;     /*  pointer to result structure */
+  VARIABLE *res,*ptr2; /*  pointer to result structure */
 
-  double *a, *b;     /* pointer to matrices */
-  int n, m;          /* matrix dimensions   */
+  double *a, *a2, *a3, *b; /* pointer to matrices */
+  int n, m, sz;            /* matrix dimensions   */
 
   int i;             /* loop index          */
 
@@ -622,12 +622,44 @@ VARIABLE *com_pointw(sub, ptr)  double (*sub)(); VARIABLE *ptr;
   n = NROW(ptr); m = NCOL(ptr);
   res = var_temp_new(TYPE(ptr) ,n , m);
 
-  n *= m;
+  sz = n*m;
   a = MATR(ptr); b = MATR(res);
+  
   /* 
       ...to action.
   */
-  for(i = 0; i < n; i++) *b++ = (*sub)(*a++);
+  ptr2 = NEXT(ptr);
+  if(ptr2)
+  {
+    if(n!=NROW(ptr2)||m!=NCOL(ptr2))
+    {
+      error("Pointwise function arguments must all be of same size.");
+    }
+    a2   = MATR(ptr2);
+
+    ptr2 = NEXT(ptr2);
+    if(ptr2)
+    {
+      if(n!=NROW(ptr2)||m!=NCOL(ptr2))
+      {
+         error("Pointwise function arguments must all be of same size,");
+      }
+      if(NEXT(ptr2))
+      {
+        error("Currently at most three arguments for pointwise functions allowd,sorry.");
+      }
+      a3 = MATR(ptr2);
+      for(i = 0; i < sz; i++) *b++ = (*sub)(*a++,*a2++,*a3++);
+    }
+    else
+    {
+      for(i = 0; i < sz; i++) *b++ = (*sub)(*a++,*a2++);
+    }
+  }
+  else
+  {
+    for(i = 0; i < sz; i++) *b++ = (*sub)(*a++);
+  }
 
   return res;
 }

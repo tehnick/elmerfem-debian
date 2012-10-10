@@ -4,20 +4,20 @@
 ! *
 ! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
 ! * 
-! *  This program is free software; you can redistribute it and/or
-! *  modify it under the terms of the GNU General Public License
-! *  as published by the Free Software Foundation; either version 2
-! *  of the License, or (at your option) any later version.
-! * 
-! *  This program is distributed in the hope that it will be useful,
-! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
-! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-! *  GNU General Public License for more details.
+! *  This library is free software; you can redistribute it and/or
+! *  modify it under the terms of the GNU Lesser General Public
+! *  License as published by the Free Software Foundation; either
+! *  version 2.1 of the License, or (at your option) any later version.
 ! *
-! *  You should have received a copy of the GNU General Public License
-! *  along with this program (in file fem/GPL-2); if not, write to the 
-! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-! *  Boston, MA 02110-1301, USA.
+! *  This library is distributed in the hope that it will be useful,
+! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! *  Lesser General Public License for more details.
+! * 
+! *  You should have received a copy of the GNU Lesser General Public
+! *  License along with this library (in file ../LGPL-2.1); if not, write 
+! *  to the Free Software Foundation, Inc., 51 Franklin Street, 
+! *  Fifth Floor, Boston, MA  02110-1301  USA
 ! *
 ! *****************************************************************************/
 !
@@ -573,7 +573,7 @@ CONTAINS
    SUBROUTINE GaussPointsInit
 !------------------------------------------------------------------------------
      INTEGER :: i,n,istat
-     INTEGER :: nthreads, thread, omp_get_num_threads, omp_get_thread_num
+     INTEGER :: nthreads, thread, omp_get_max_threads, omp_get_thread_num
 
      IF ( .NOT. ALLOCATED(IntegStuff) ) THEN
 !$omp barrier
@@ -581,7 +581,7 @@ CONTAINS
        IF ( .NOT. GInit ) THEN
          GInit = .TRUE.
          nthreads = 1
-!$       nthreads = omp_get_num_threads()
+!$       nthreads = omp_get_max_threads()
          ALLOCATE( IntegStuff(nthreads) )
          DO i=1,nthreads
            IntegStuff(i) % u => NULL()
@@ -1180,22 +1180,47 @@ END FUNCTION GaussPointsPTetra
 !------------------------------------------------------------------------------
 !>    Given element structure return gauss integration points for the element.
 !------------------------------------------------------------------------------
-   FUNCTION GaussPoints( elm,np ) RESULT(IntegStuff)
+   FUNCTION GaussPoints( elm, np, RelOrder ) RESULT(IntegStuff)
 !------------------------------------------------------------------------------
      TYPE( Element_t ) :: elm   !< Structure holding element description
      INTEGER, OPTIONAL :: np    !< Number of requested points
+     INTEGER, OPTIONAL :: RelOrder !< Relative order of Gauss points (-1,0,+1)
      TYPE( GaussIntegrationPoints_t ) :: IntegStuff   !< Structure holding the integration points
 !------------------------------------------------------------------------------
      LOGICAL :: pElement
-     INTEGER :: n
+     INTEGER :: n, eldim, p1d
      TYPE(ElementType_t), POINTER :: elmt
 !------------------------------------------------------------------------------
 
-     elmt => elm % Type
+     elmt => elm % TYPE
      pElement = ASSOCIATED(elm % PDefs)
 
      IF ( PRESENT(np) ) THEN
        n = np
+     ELSE IF( PRESENT( RelOrder ) ) THEN
+       IF (pElement) THEN
+         n = elm % PDefs % GaussPoints
+         IF( RelOrder == 0 ) THEN
+           CONTINUE
+         ELSE 
+           eldim = elm % type % dimension
+           p1d = NINT( n**(1.0_dp/eldim) ) + RelOrder
+           IF( p1d < 1 ) THEN
+             CALL Fatal('GaussPoints','Number of integration points must remain positive!')
+           END IF
+           n = p1d**eldim
+         END IF
+       ELSE
+         IF( RelOrder == 0 ) THEN
+           n = elmt % GaussPoints
+         ELSE IF( RelOrder == 1 ) THEN
+           n = elmt % GaussPoints2
+         ELSE IF( RelOrder == -1 ) THEN
+           n = elmt % GaussPoints0
+         ELSE
+           PRINT *,'RelOrder can only be {-1, 0, 1} !'
+         END IF
+       END IF  
      ELSE
        IF (pElement) THEN
          n = elm % PDefs % GaussPoints

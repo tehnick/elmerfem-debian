@@ -1,23 +1,23 @@
-!/*****************************************************************************
+!/*****************************************************************************/
 ! *
 ! *  Elmer, A Finite Element Software for Multiphysical Problems
 ! *
 ! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
 ! * 
-! *  This program is free software; you can redistribute it and/or
-! *  modify it under the terms of the GNU General Public License
-! *  as published by the Free Software Foundation; either version 2
-! *  of the License, or (at your option) any later version.
-! * 
-! *  This program is distributed in the hope that it will be useful,
-! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
-! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-! *  GNU General Public License for more details.
+! * This library is free software; you can redistribute it and/or
+! * modify it under the terms of the GNU Lesser General Public
+! * License as published by the Free Software Foundation; either
+! * version 2.1 of the License, or (at your option) any later version.
 ! *
-! *  You should have received a copy of the GNU General Public License
-! *  along with this program (in file fem/GPL-2); if not, write to the 
-! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-! *  Boston, MA 02110-1301, USA.
+! * This library is distributed in the hope that it will be useful,
+! * but WITHOUT ANY WARRANTY; without even the implied warranty of
+! * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! * Lesser General Public License for more details.
+! * 
+! * You should have received a copy of the GNU Lesser General Public
+! * License along with this library (in file ../LGPL-2.1); if not, write 
+! * to the Free Software Foundation, Inc., 51 Franklin Street, 
+! * Fifth Floor, Boston, MA  02110-1301  USA
 ! *
 ! *****************************************************************************/
 !
@@ -34,7 +34,7 @@
 ! *
 ! *****************************************************************************/
 
-!> \ingroup Solvers
+!> \ingroup ElmerLib
 !> \{
 
 !------------------------------------------------------------------------------
@@ -188,7 +188,7 @@ MODULE NavierStokes
 
      LOGICAL :: Found, Transient, stat, Bubbles, PBubbles, Stabilize, &
                 VMS, P2P1, Isotropic, drhodp_found, Compressible, ViscNewtonLin, &
-                ViscNonnewtonian
+                ViscNonnewtonian, LaplaceDiscretization
 
 !------------------------------------------------------------------------------
 
@@ -243,6 +243,8 @@ MODULE NavierStokes
        ViscConstantCondition = GetCReal( Params, 'Newtonian Viscosity Condition',Found)
        IF( Found .AND. ViscConstantCondition > 0.0_dp ) ViscNonnewtonian = .FALSE.
      END IF
+
+     LaplaceDiscretization = GetLogical( Params,'Laplace Discretization', Found)
 
 
      Transient = GetString(GetSimulation(),'Simulation Type',Found)=='transient'
@@ -744,10 +746,9 @@ MODULE NavierStokes
 
        IF ( ViscNewtonLin ) THEN
          DO i=1,dim
-           muder = muder0*SUM(Strain(i,:)*dBasisdx(q,:))
+           muder = muder0*4*SUM(Strain(i,:)*dBasisdx(q,:))
            DO j=1,dim
-             Jac(i,i)=Jac(i,i) + s*muder*Grad(i,j)*dBasisdx(p,j)
-             Jac(j,i)=Jac(j,i) + s*muder*Grad(i,j)*dBasisdx(p,i)
+             Jac(j,i)=Jac(j,i)+s*2*muder*SUM(Strain(j,:)*dBasisdx(p,:))
            END DO
          END DO
        END IF
@@ -758,7 +759,7 @@ MODULE NavierStokes
              A(i,i) = A(i,i) + s * mu * dBasisdx(q,j) * dBasisdx(p,j)
              IF ( divDiscretization ) THEN
                 A(i,j) = A(i,j) + s * mu * dBasisdx(q,j) * dBasisdx(p,i)
-             ELSE
+             ELSE IF (.NOT.LaplaceDiscretization) THEN
                 A(i,j) = A(i,j) + s * mu * dBasisdx(q,i) * dBasisdx(p,j)
              END IF
 

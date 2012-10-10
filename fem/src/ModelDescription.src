@@ -4,20 +4,20 @@
 ! *
 ! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
 ! * 
-! *  This program is free software; you can redistribute it and/or
-! *  modify it under the terms of the GNU General Public License
-! *  as published by the Free Software Foundation; either version 2
-! *  of the License, or (at your option) any later version.
-! * 
-! *  This program is distributed in the hope that it will be useful,
-! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
-! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-! *  GNU General Public License for more details.
+! * This library is free software; you can redistribute it and/or
+! * modify it under the terms of the GNU Lesser General Public
+! * License as published by the Free Software Foundation; either
+! * version 2.1 of the License, or (at your option) any later version.
 ! *
-! *  You should have received a copy of the GNU General Public License
-! *  along with this program (in file fem/GPL-2); if not, write to the 
-! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-! *  Boston, MA 02110-1301, USA.
+! * This library is distributed in the hope that it will be useful,
+! * but WITHOUT ANY WARRANTY; without even the implied warranty of
+! * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! * Lesser General Public License for more details.
+! * 
+! * You should have received a copy of the GNU Lesser General Public
+! * License along with this library (in file ../LGPL-2.1); if not, write 
+! * to the Free Software Foundation, Inc., 51 Franklin Street, 
+! * Fifth Floor, Boston, MA  02110-1301  USA
 ! *
 ! *****************************************************************************/
 !
@@ -46,6 +46,7 @@ MODULE ModelDescription
     USE MeshUtils
     USE ElementDescription
     USE BinIO
+    USE Messages
  
     IMPLICIT NONE
 
@@ -67,6 +68,9 @@ MODULE ModelDescription
 
 CONTAINS
 
+!------------------------------------------------------------------------------
+!> Loads a dynamic object (e.g. solver or user defined function) and returns
+!> its address in order to be able to call it. 
 !------------------------------------------------------------------------------
   FUNCTION GetProcAddr( str, Quiet, Abort ) RESULT( Proc )
 !------------------------------------------------------------------------------
@@ -105,10 +109,12 @@ CONTAINS
     ProcName(j) = CHAR(0)
 
     q = 0
-    IF ( OutputPE/=0 ) q=1
-
-    IF ( PRESENT(Quiet) ) THEN
-       IF ( Quiet ) q = 1
+    IF ( OutputPE/=0 ) THEN
+      q=1
+    ELSE IF( PRESENT(Quiet) ) THEN
+      IF ( Quiet ) q = 1
+    ELSE
+      IF ( .NOT. OutputLevelMask(4) ) q = 1
     END IF
 
     a = 1
@@ -124,14 +130,13 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE LoadIncludeFile( Model,InFileUnit,FileName,MeshDir,MeshName,ScanOnly )
 !------------------------------------------------------------------------------
-!------------------------------------------------------------------------------
      TYPE(Model_t) :: Model
      INTEGER :: InFileUnit
      LOGICAL :: ScanOnly
      CHARACTER(LEN=*) :: FileName
      CHARACTER(LEN=*) :: MeshDir,MeshName
 !------------------------------------------------------------------------------
-     CHARACTER(LEN=MAX_PATH_LEN) :: FName
+     CHARACTER(LEN=MAX_STRING_LEN) :: FName
  
      INTEGER :: k,k0,k1,l
 !------------------------------------------------------------------------------
@@ -191,6 +196,9 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+!> This subroutine is used to reload input from the file to allow
+!> multiple parameter sets within the same simulation.
+!------------------------------------------------------------------------------
   FUNCTION ReloadInputFile( Model ) RESULT(got)
 !------------------------------------------------------------------------------
     LOGICAL :: got
@@ -207,6 +215,12 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+
+!------------------------------------------------------------------------------
+!> Subroutine for loading the fields from the input file. This may be 
+!> used multiple times. On first calling the ScanOnly should be true 
+!> to allow only the reading of number of fields. 
+!> Performs also some simple sanity tests for the lists. 
 !------------------------------------------------------------------------------
   RECURSIVE SUBROUTINE LoadInputFile( Model, InFileUnit, FileName, &
          MeshDir, MeshName, BaseLoad, ScanOnly, Runc )
@@ -245,12 +259,8 @@ CONTAINS
     LOGICAL :: FirstTime = .TRUE.
 
     INTEGER :: nlen
-    REAL(KIND=dp) :: Value
-!------------------------------------------------------------------------------
+    REAL(KIND=dp) :: VALUE
 
-!   OPEN( InFileUnit,FILE=TRIM(FileName),STATUS='OLD',ERR=10 )
-
-!
 !------------------------------------------------------------------------------
 !   Read model header first
 !------------------------------------------------------------------------------
@@ -270,7 +280,8 @@ CONTAINS
            IF ( Name(k:k) == '"' ) k = k + 1
            IF ( Name(k:k+5) == 'ignore' )  CheckAbort = 0
            IF ( Name(k:k+3) == 'warn' )    CheckAbort = 1
-           IF ( Name(k:k+4) == 'abort' )   CheckAbort = 2
+           IF ( Name(k:k+5) == 'silent' )  CheckAbort = 2
+           IF ( Name(k:k+4) == 'abort' )   CheckAbort = 3
         ELSE IF ( Name(1:7) == 'echo on' ) THEN
            Echo = .TRUE.
         ELSE IF ( Name(1:8) == 'echo off' ) THEN
@@ -324,18 +335,17 @@ CONTAINS
         END IF
       END DO
 
-      Model % BCs => Null()
-      Model % ICs => Null()
-      Model % Bodies => Null()
-      Model % Solvers => Null()
-      Model % Equations => Null()
-      Model % Materials => Null()
-      Model % Constants => Null()
-      Model % Simulation => Null()
-      Model % BodyForces => Null()
-      Model % Boundaries => Null()
+      Model % BCs => NULL()
+      Model % ICs => NULL()
+      Model % Bodies => NULL()
+      Model % Solvers => NULL()
+      Model % Equations => NULL()
+      Model % Materials => NULL()
+      Model % Constants => NULL()
+      Model % Simulation => NULL()
+      Model % BodyForces => NULL()
+      Model % Boundaries => NULL()
     END IF
-
 
 !------------------------------------------------------------------------------
     IF ( .NOT. ScanOnly ) THEN
@@ -348,6 +358,7 @@ CONTAINS
          END DO
          BoundaryIndex = 0
        END IF
+
     END IF
 
     IF ( PRESENT(runc) ) runc = .FALSE.
@@ -699,7 +710,9 @@ CONTAINS
                 Section, InFileUnit, ScanOnly, Echo )
 
       IF ( .NOT. ScanOnly ) THEN
-        IF ( Section(1:9) == 'constants' ) THEN
+        IF( .NOT. ASSOCIATED( List ) ) THEN
+          CALL Warn('LoadInputFile','Empty section given for: '//TRIM(Section))
+        ELSE IF ( Section(1:9) == 'constants' ) THEN
           Model % Constants => List
         ELSE IF ( Section(1:10) == 'simulation' ) THEN
           Model % Simulation => List
@@ -725,9 +738,63 @@ CONTAINS
     END DO
 !------------------------------------------------------------------------------
 
-!   CLOSE( InFileUnit )
 
     IF ( .NOT. ScanOnly )  THEN
+
+      ! Make some sanity checks that all the entries have been defined
+      ! The might be missing entries due to duplicate numbering etc.
+      ! For some fields this is not detrimental, thus just a warning.
+      !--------------------------------------------------------------------
+      DO i = 1, Model % NumberOFBCs
+        IF(.NOT. ASSOCIATED( Model % BCs(i) % Values ) ) THEN
+          WRITE( Message,'(A,I0)') 'Entry missing for: Boundary Condition ',i
+          CALL Warn('LoadInputFile',Message)
+        END IF
+      END DO
+      
+      DO i = 1, Model % NumberOfBodyForces
+        IF(.NOT. ASSOCIATED( Model % BodyForces(i) % Values ) ) THEN
+          WRITE( Message,'(A,I0)') 'Entry missing for: Body Force ',i
+          CALL Warn('LoadInputFile',Message)
+        END IF
+      END DO
+
+      DO i = 1, Model % NumberOfICs
+        IF(.NOT. ASSOCIATED( Model % ICs(i) % Values ) ) THEN
+          WRITE( Message,'(A,I0)') 'Entry missing for: Initial Condition ',i
+          CALL Warn('LoadInputFile',Message)
+        END IF
+      END DO
+      
+      DO i = 1, Model % NumberOfMaterials         
+        IF(.NOT. ASSOCIATED( Model % Materials(i) % Values ) ) THEN
+          WRITE( Message,'(A,I0)') 'Entry missing for: Material ',i
+          CALL Warn('LoadInputFile',Message)
+        END IF
+      END DO
+
+      DO i = 1, Model % NumberOFEquations 
+        IF(.NOT. ASSOCIATED( Model % Equations(i) % Values ) ) THEN
+          WRITE( Message,'(A,I0)') 'Entry missing for: Equation ',i
+          CALL Fatal('LoadInputFile',Message)
+        END IF
+      END DO
+    
+      DO i = 1, Model % NumberOfSolvers         
+        IF(.NOT. ASSOCIATED( Model % Solvers(i) % Values ) ) THEN
+          WRITE( Message,'(A,I0)') 'Entry missing for: Solver ',i
+          CALL Fatal('LoadInputFile',Message)
+        END IF
+      END DO
+
+      DO i = 1, Model % NumberOfBodies
+        IF(.NOT. ASSOCIATED( Model % Bodies(i) % Values ) ) THEN
+          WRITE( Message,'(A,I0)') 'Entry missing for: Body ',i
+          CALL Fatal('LoadInputFile',Message)
+        END IF
+      END DO
+      !--- sanity checks done
+
 
       ! Add default equation, material, ic, bodyforce, and body if not given:
       ! ---------------------------------------------------------------------
@@ -738,7 +805,7 @@ CONTAINS
          CALL ListAddIntegerArray( Model % Equations(1) % Values, 'Active Solvers', &
              Model % NumberOFSolvers, (/ (i,i=1,Model % NumberOfSolvers) /) )
          CALL ListAddString ( Model % Equations(1) % Values, 'Name', 'Default Equation 1' )
-      END IF
+       END IF
 
       IF ( Model % NumberOfMaterials <= 0 ) THEN
          Model % NumberOfMaterials = 1
@@ -772,7 +839,9 @@ CONTAINS
          CALL ListAddInteger( Model % Bodies(1) % Values, 'Initial Condition', 1 )
       END IF
       ! -- done adding default fields
+      
     END IF
+    !--------------------------------------------------------------------
 
     RETURN
 
@@ -791,10 +860,10 @@ CONTAINS
        LOGICAL, OPTIONAL :: ReturnType,FreeNames
 
        INTEGER :: i,j, k,n, istat
-       TYPE(HashTable_t), POINTER, SAVE :: Hash =>Null()
-       TYPE(HashValue_t), POINTER :: Value
+       TYPE(HashTable_t), POINTER, SAVE :: Hash =>NULL()
+       TYPE(HashValue_t), POINTER :: VALUE
        LOGICAL :: FirstTime = .TRUE.,lstat
-       CHARACTER(LEN=MAX_PATH_LEN) :: str,str1
+       CHARACTER(LEN=MAX_STRING_LEN) :: str,str1
        EXTERNAL ENVIR
 
        IF ( PRESENT( ReturnType ) ) ReturnType = .FALSE.
@@ -834,7 +903,7 @@ CONTAINS
 !         --------------------------------------------------------
           hash => HashCreate( 50,4 )
           IF ( .NOT. ASSOCIATED( hash ) ) THEN
-             IF ( CheckAbort <= 1 ) THEN
+             IF ( CheckAbort <= 2 ) THEN
                CALL Warn( 'Model Input', 'Can not create the hash table for SOLVER.KEYWORDS.' )
                CALL Warn( 'Model Input', 'keyword checking disabled.' )
                CheckAbort = 0
@@ -856,10 +925,10 @@ CONTAINS
              IF ( i <= 0 .OR. j<= 0 ) CYCLE
              str1 = str(1:i-1) // ':' //  str(j+1:LEN_TRIM(str)-1)
 
-             ALLOCATE( Value, STAT=istat )
+             ALLOCATE( VALUE, STAT=istat )
 
              IF ( istat /= 0 ) THEN
-                IF ( CheckAbort <= 1 ) THEN
+                IF ( CheckAbort <= 2 ) THEN
                   CALL Warn( 'Model Input', 'Can not allocate the hash table entry for SOLVER.KEYWORDS.' )
                   CALL Warn( 'Model Input', ' keyword checking disabled.' )
                   CheckAbort = 0
@@ -869,11 +938,11 @@ CONTAINS
                 END IF
              END IF
 
-             Value % TYPE = str(i+1:j-3)
+             VALUE % TYPE = str(i+1:j-3)
 
-             lstat = HashAdd( hash, str1, Value )
+             lstat = HashAdd( hash, str1, VALUE )
              IF ( .NOT. lstat ) THEN
-                IF ( CheckAbort <= 1 ) THEN
+                IF ( CheckAbort <= 2 ) THEN
                    CALL Warn( 'Model Input', 'Hash table build error. Keyword checking disabled.' )
                    CheckAbort = 0
                    RETURN
@@ -918,45 +987,67 @@ CONTAINS
           str =  'solver: '
         END IF
 
-        str = TRIM(str) // TRIM(Name)
+        i=INDEX(Name,':')+1
+        IF (name(i:i)==' ') i=i+1
+        str = TRIM(str) // TRIM(Name(i:))
 
 !------------------------------------------------------------------------------
 
-       Value => HashValue( Hash, str )
-       IF ( ASSOCIATED( Value ) ) THEN
+       VALUE => HashValue( Hash, str )
+       IF ( ASSOCIATED( VALUE ) ) THEN
           IF ( PRESENT( ReturnType ) ) THEN
              ReturnType = .TRUE.
-             TYPE = Value % TYPE
+             TYPE = VALUE % TYPE
           END IF
-          IF  ( HashEqualKeys( Value % TYPE, TYPE ) ) RETURN
+          IF  ( HashEqualKeys( VALUE % TYPE, TYPE ) ) RETURN
        END IF
 
        IF ( PRESENT( ReturnType ) ) ReturnType = .FALSE.
 
-       IF ( .NOT.ASSOCIATED(Value) .AND. (CheckAbort <= 1 .OR. FreeNames) ) THEN
-          IF ( .NOT. ScanOnly ) THEN
+       IF ( .NOT.ASSOCIATED(VALUE) .AND. (CheckAbort <= 2 .OR. FreeNames) ) THEN
+          IF ( .NOT. ( ScanOnly .OR. CheckAbort == 2) ) THEN
             WRITE( Message, * ) 'Unlisted keyword: [', TRIM(name), &
                       '] in section: [', TRIM(Section), ']'
             CALL Info( 'Model Input', Message )
+
+            ! This is intended to be activated when new keywords are checked 
+            ! Generally it can be set false
+            !---------------------------------------------------------------
+            IF(.FALSE.) THEN
+              OPEN( 10,File='../SOLVER.KEYWORDS.byname',&
+                  STATUS='UNKNOWN',POSITION='APPEND' )
+              WRITE( 10,'(A,T40,A)') TRIM(Name),TRIM(Section)
+
+              OPEN( 10,File='../SOLVER.KEYWORDS.bysection',&
+                  STATUS='UNKNOWN',POSITION='APPEND' )
+              WRITE( 10,'(A,T25,A)') TRIM(Section),TRIM(Name)
+              CLOSE(10 )
+            END IF
           END IF
-       ELSE
-          IF ( ASSOCIATED( Value ) ) THEN
-             WRITE( Message, * ) 'Keyword: [', TRIM(name), &
-                    '] in section: [', TRIM(Section), ']',  &
-                    ' is given wrong type: [', TRIM(TYPE),  &
-                    '], should be of type: [', TRIM(Value % TYPE),']'
-          ELSE
-             WRITE( Message, * ) 'Unlisted keyword: [', TRIM(name), &
-               '] in section: [', TRIM(Section), '].'
-          END IF
+       ELSE IF ( ASSOCIATED( VALUE ) ) THEN
+         ! Difference between types 'string' and 'file' is just that 
+         ! file is case sensitive while string is not. Hence both are ok. 
+         !----------------------------------------------------------------
+         IF( TRIM(VALUE % TYPE) == 'string' .AND. TRIM(TYPE) == 'file') THEN
+           RETURN
+         ELSE
+           WRITE( Message, * ) 'Keyword: [', TRIM(name), &
+               '] in section: [', TRIM(Section), ']',  &
+               ' is given wrong type: [', TRIM(TYPE),  &
+               '], should be of type: [', TRIM(VALUE % TYPE),']'
           CALL Fatal( 'Model Input', Message )
+        END IF
+       ELSE
+         WRITE( Message, * ) 'Unlisted keyword: [', TRIM(name), &
+             '] in section: [', TRIM(Section), '].'
+         CALL Fatal( 'Model Input', Message )
        END IF
 
        RETURN
 
 10     CONTINUE
 
-       IF ( CheckAbort <= 1 ) THEN
+       IF ( CheckAbort <= 2 ) THEN
           CALL Warn( 'Model Input', 'Keyword check requested, but SOLVER.KEYWORDS' // &
                  ' database not available.' )
        ELSE
@@ -983,8 +1074,8 @@ CONTAINS
       REAL(KIND=dp), ALLOCATABLE :: Atx(:,:,:), ATt(:)
 
       CHARACTER(LEN=MAX_NAME_LEN) :: TypeString,Keyword
-      CHARACTER(LEN=MAX_PATH_LEN) :: Name,str, Depname
-      LOGICAL :: ReturnType, ScanOnly, String_literal,  SizeGiven, Cubic
+      CHARACTER(LEN=MAX_STRING_LEN) :: Name,str, Depname
+      LOGICAL :: ReturnType, ScanOnly, String_literal,  SizeGiven, Cubic, AllInt
 
       INTEGER(KIND=AddrInt) :: Proc
       INTEGER :: i,j,k,l,n,slen, str_beg, str_end, n1,n2, TYPE, abuflen=0,maxbuflen=0
@@ -1060,7 +1151,7 @@ CONTAINS
                       CALL ListAddConstRealArray( List,Name,N1,N2, &
                              ATx(1:N1,1:N2,1),Proc )
                     ELSE
-                      CALL ListAddConstReal( List,Name,Value,Proc )
+                      CALL ListAddConstReal( List,Name,VALUE,Proc )
                     END IF
    
                   CASE( LIST_TYPE_VARIABLE_SCALAR )
@@ -1085,7 +1176,7 @@ CONTAINS
                        CALL ListAddConstRealArray( List,Name,N1,N2, &
                          ATx(1:N1,1:N2,1), Proc, str(str_beg+5:) )
                     ELSE
-                      CALL ListAddConstReal( List,Name,Value,Proc, &
+                      CALL ListAddConstReal( List,Name,VALUE,Proc, &
                                   str(str_beg+5:) )
                     END IF
    
@@ -1219,7 +1310,6 @@ CONTAINS
 
             CALL CheckKeyWord( Name,'integer',CheckAbort,FreeNames,Section )
 
-
              Proc = 0
              IF ( str(str_beg:str_beg+9) == 'procedure ' ) THEN
                IF ( .NOT. ScanOnly ) THEN
@@ -1231,6 +1321,20 @@ CONTAINS
                  END IF
                END IF
              ELSE
+! Two different ways of checking that the string is ok as integer
+! The 2nd one just checks for decimal points, and is currently used.
+#if 0
+               k = VERIFY( str( str_beg:),' 0123456789',.FALSE.)
+               IF( k > 0 ) THEN
+                 CALL Fatal('','Invalidr Integer for > '//TRIM(Name)//' < : '// &
+                     TRIM(str( str_beg:)) )                 
+               END IF
+#else
+               IF( INDEX( str( str_beg:),'.') /= 0 ) THEN
+                 CALL Fatal('','Invalidr Integer for > '//TRIM(Name)//' < : '// &
+                     TRIM(str( str_beg:)) )
+               END IF
+#endif
                IF ( SizeGiven ) THEN
                  IF ( .NOT. ScanOnly ) THEN
                    IF (SIZE(IValues)<n1) THEN
@@ -1404,6 +1508,11 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+!> Loads the Gebhardt factors needed in the radiation heat transfer.
+!> This may be done externally only when the emissivities are constant.
+!> Hence there is a internal computation of Gebhardt factors that is highly optimized.
+!> \deprecated
+!------------------------------------------------------------------------------
   SUBROUTINE LoadGebhardtFactors( Mesh,FileName )
 !------------------------------------------------------------------------------
     TYPE(Mesh_t), POINTER :: Mesh
@@ -1413,7 +1522,7 @@ CONTAINS
     INTEGER, ALLOCATABLE :: Mapping(:)
     INTEGER :: i,j,k,l,n,m,p
     REAL(KIND=dp) :: s
-    CHARACTER(LEN=MAX_PATH_LEN) :: FName
+    CHARACTER(LEN=MAX_STRING_LEN) :: FName
     TYPE(Element_t), POINTER :: elm,celm
 
 !------------------------------------------------------------------------------
@@ -1495,7 +1604,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-!    Figure out requested coordinate system
+!>    Figure out the requested coordinate system.
 !------------------------------------------------------------------------------
   SUBROUTINE SetCoordinateSystem( Model )
 !------------------------------------------------------------------------------
@@ -1563,7 +1672,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-! Function to read model from the ELMER DATA BASE 
+!> Function to read the complete Elmer model: sif file and mesh files.
 !------------------------------------------------------------------------------
   FUNCTION LoadModel( ModelName,BoundariesOnly,numprocs,mype ) RESULT( Model )
 !------------------------------------------------------------------------------
@@ -1573,7 +1682,7 @@ CONTAINS
     LOGICAL :: BoundariesOnly
 
     INTEGER, OPTIONAL :: numprocs,mype
-
+ 
     TYPE(Model_t), POINTER :: Model
 
 !------------------------------------------------------------------------------
@@ -1589,7 +1698,7 @@ CONTAINS
     REAL(KIND=dp), POINTER :: h(:)
     CHARACTER(LEN=MAX_NAME_LEN) :: Name,ElementDef
     CHARACTER(LEN=MAX_NAME_LEN) :: MeshDir,MeshName
-TYPE(valuelist_t), POINTER :: lst
+    TYPE(valuelist_t), POINTER :: lst
 !------------------------------------------------------------------------------
 
     ALLOCATE( Model )
@@ -1616,15 +1725,11 @@ TYPE(valuelist_t), POINTER :: lst
     CALL LoadInputFile( Model,InFileUnit,ModelName,MeshDir,MeshName, .TRUE., .FALSE. )
     IF ( .NOT. OpenFile ) CLOSE( InFileUnit )
 
-    DO j=1,Model % NumberOfEquations
-      IF (ListCheckPresent(Model % Equations(j) % Values, 'Element') ) THEN
-        CALL Error('LM:', 'Depreciated: "Element" keyword  ' // &
-          'in the "Equation" section, move to "Solver" section(s)' )
-      END IF
-    END DO
+
+    CALL InitializeOutputLevel()
 
     Transient=ListGetString(Model % Simulation, &
-                     'Simulation Type',Found)=='transient'
+        'Simulation Type',Found)=='transient'
 
     Def_Dofs = -1; Def_Dofs(1)=1
 
@@ -1648,35 +1753,21 @@ TYPE(valuelist_t), POINTER :: lst
 
       GotMesh = ListCheckPresent(Solver % Values, 'Mesh')
 
-      ALLOCATE(Solver % Def_Dofs(Model % NumberOfBodies,6))
-      Solver % Def_Dofs = -1; Solver % Def_Dofs(:,1)=1
-      ElementDef = ListGetString( Solver % Values, 'Element', stat )
-   
-      IF (.NOT.stat) THEN
-        Name = ListGetString(Solver % Values, 'Equation', stat)
-        DO j=1,Model % NumberOfEquations
-          IF (ListCheckPresent(Model % Equations(j) % Values, 'Element') ) THEN
-            IF (ListGetLogical(Model % Equations(j) % Values,Name,Found) ) THEN
-              ElementDef=ListGetString(Model % Equations(J) % Values, 'Element',stat)
-              EXIT
-            END IF
-            ActiveSolvers => ListGetIntegerArray(Model % Equations(j) % Values, &
-                    'Active Solvers', Found )
-            IF ( Found ) THEN
-              IF ( ANY(ActiveSolvers==i) ) THEN
-                ElementDef=ListGetString(Model % Equations(J) % Values,'Element',stat)
-                EXIT
-              END IF
-            END IF
-          END IF
-        END DO
+      IF(.NOT.ALLOCATED(Solver % Def_Dofs)) THEN
+        ALLOCATE(Solver % Def_Dofs(Model % NumberOfBodies,6))
+        Solver % Def_Dofs = -1; Solver % Def_Dofs(:,1)=1
       END IF
 
+      ! Define what kind of element we are working with in this solver
+      !-----------------------------------------------------------------
+      ElementDef = ListGetString( Solver % Values, 'Element', stat )
+   
       IF ( .NOT. stat ) THEN
         IF ( ListGetLogical( Solver % Values, &
              'Discontinuous Galerkin', stat ) ) THEN
            Solver % Def_Dofs(:,4) = 0
            IF ( .NOT. GotMesh ) Def_Dofs(4) = MAX(Def_Dofs(4),0 )
+           i=i+1
            CYCLE
         ELSE
            ElementDef = "n:1"
@@ -1738,6 +1829,8 @@ TYPE(valuelist_t), POINTER :: lst
       i = i + 1
     END DO
 
+    ! Check the mesh 
+    !--------------------------------------------------------
     Name = ListGetString( Model % Simulation, 'Mesh', GotIt )
 
     OneMeshName = .FALSE.
@@ -1994,11 +2087,58 @@ TYPE(valuelist_t), POINTER :: lst
        Mesh => Mesh % Next
     END DO
 !------------------------------------------------------------------------------
+
+  CONTAINS
+    
+    !------------------------------------------------------------------------------
+    !      Initialize the log file output system for Messages
+    !------------------------------------------------------------------------------
+    SUBROUTINE InitializeOutputLevel( )
+      
+      INTEGER, POINTER :: OutputMask(:)
+    
+       
+      MinOutputLevel = ListGetInteger( CurrentModel % Simulation, &
+          'Min Output Level', GotIt )
+      
+      MaxOutputLevel = ListGetInteger( CurrentModel % Simulation, &
+          'Max Output Level', GotIt )
+      
+      IF ( .NOT. GotIt ) MaxOutputLevel = 32
+      
+      OutputMask => ListGetIntegerArray( CurrentModel % Simulation, &
+          'Output Level', GotIt )
+      
+      IF ( GotIt ) THEN
+        DO i=1,SIZE(OutputMask)
+          OutputLevelMask(i-1) = OutputMask(i) /= 0
+        END DO
+      END IF
+      
+      DO i=0,31
+        OutputLevelMask(i) = OutputLevelMask(i) .AND. &
+            i >= MinOutputLevel .AND. i <= MaxOutputLevel
+      END DO
+      
+      OutputPrefix = ListGetLogical( CurrentModel % Simulation, &
+          'Output Prefix', GotIt )
+      IF ( .NOT. GotIt ) OutputPrefix = .FALSE.
+      
+      OutputCaller = ListGetLogical( CurrentModel % Simulation, &
+          'Output Caller', GotIt )
+      IF ( .NOT. GotIt ) OutputCaller = .TRUE.
+      
+    END SUBROUTINE InitializeOutputLevel
+
+
   END FUNCTION LoadModel
 !------------------------------------------------------------------------------
 
 
 
+!------------------------------------------------------------------------------
+!> Save fields in a file that may be used in restarting of Elmer simulation.
+!> The data may be saved either in ascii and binary formats.
 !------------------------------------------------------------------------------
   FUNCTION SaveResult( Filename,Mesh,Time,SimulationTime,Binary,SaveAll,&
                        FreeSurface ) RESULT(SaveCount)
@@ -2344,6 +2484,9 @@ TYPE(valuelist_t), POINTER :: lst
 
 
 !------------------------------------------------------------------------------
+!> Loads the result file that has been saved by an earlier Elmer simulation.
+!> This makes it possible to restart the simulation.
+!------------------------------------------------------------------------------
   SUBROUTINE LoadRestartFile( RestartFile,TimeCount,Mesh,Continuous,EOF )
     CHARACTER(LEN=*) :: RestartFile
     INTEGER :: TimeCount
@@ -2352,7 +2495,7 @@ TYPE(valuelist_t), POINTER :: lst
 !------------------------------------------------------------------------------
     TYPE(Variable_t),POINTER :: Var, Comp
     CHARACTER(LEN=MAX_NAME_LEN) :: Row,Name,PosName
-    CHARACTER(LEN=MAX_PATH_LEN) :: FName,Trash
+    CHARACTER(LEN=MAX_STRING_LEN) :: FName,Trash
     INTEGER ::i,j,k,n,nt,Node,DOFs,SavedCount,Timestep,NSDOFs,nlen
     INTEGER :: nNodes, Stat
     INTEGER, SAVE :: FmtVersion
@@ -2365,22 +2508,22 @@ TYPE(valuelist_t), POINTER :: lst
     LOGICAL, SAVE :: PosFile = .FALSE.
     LOGICAL, SAVE :: Binary
 
-    REAL(KIND=dp) :: Dummy,value,Time
+    REAL(KIND=dp) :: Dummy,VALUE,Time
     REAL(KIND=dp), POINTER :: Component(:), Temp(:)
     REAL(KIND=dp), POINTER :: Velocity1(:),Velocity2(:),Velocity3(:),Pressure(:)
     INTEGER(KIND=IntOff_k) :: Pos
     CHARACTER(1) :: E
-    REAL(dp) :: tstart, tstop
+    REAL(dp) :: tstart, tstop, CPUTime
     SAVE DOFs
 
-    CALL CPU_TIME(tstart)
+    tstart = CPUTime()
     Perm => NULL()
 !------------------------------------------------------------------------------
 !   Open restart file and search for the right position
 !------------------------------------------------------------------------------
-    CALL Info( 'LoadRestartFile',' ', Level = 3)
-    CALL Info( 'LoadRestartFile','--------------------------------------------', Level=3 )
-    CALL Info( 'LoadRestartFile','Reading data from file: '//TRIM(RestartFile), Level = 3 )
+    CALL Info( 'LoadRestartFile',' ', Level = 4)
+    CALL Info( 'LoadRestartFile','--------------------------------------------', Level= 4 )
+    CALL Info( 'LoadRestartFile','Reading data from file: '//TRIM(RestartFile), Level = 4 )
 
     Cont = .FALSE.
     IF ( PRESENT( Continuous ) ) Cont = Continuous
@@ -2416,23 +2559,23 @@ TYPE(valuelist_t), POINTER :: lst
         Binary = .TRUE.
         FmtVersion = 1
         E = Row(1:1)
-        CALL Info( 'LoadRestartFile', TRIM(Row(3:)), Level=3 )
+        CALL Info( 'LoadRestartFile', TRIM(Row(3:)), Level = 4 )
     ELSE IF ( Row(2:7) == 'BINARY' ) THEN
         Binary = .TRUE.
         FmtVersion = 2
         i = INDEX( Row, "." )
         E = Row(i+1:i+1)
-        CALL Info( 'LoadRestartFile', TRIM(Row(2:)), Level=3 )
+        CALL Info( 'LoadRestartFile', TRIM(Row(2:)), Level = 4 )
     ELSE IF ( Row(2:7) == 'ASCII' ) THEN
         Binary = .FALSE.
         FmtVersion = 1
-        CALL Info( 'LoadRestartFile', TRIM(Row(2:)), Level=3 )
+        CALL Info( 'LoadRestartFile', TRIM(Row(2:)), Level = 4 )
     ELSE 
         Binary = .FALSE.
         FmtVersion = 0
-        CALL Info( 'LoadRestartFile', 'ASCII 0', Level=3 )
+        CALL Info( 'LoadRestartFile', 'ASCII 0', Level = 4 )
     END IF
-    CALL Info( 'LoadRestartFile',' ', Level = 3)
+    CALL Info( 'LoadRestartFile',' ', Level = 4)
 
     DO WHILE( ReadAndTrim(RestartUnit,Row) )
       IF ( Row(1:18) == 'degrees of freedom' ) EXIT
@@ -2585,6 +2728,10 @@ TYPE(valuelist_t), POINTER :: lst
       IF ( ASSOCIATED( TimeVar ) )  TimeVar % Values(1)  = Time
       IF ( ASSOCIATED( tStepVar ) ) tStepVar % Values(1) = Timestep
 
+      WRITE( Message,'(A,ES12.3)') 'Reading time sequence: ',Time
+      CALL Info( 'LoadRestartFile',Message, Level=4)
+
+
       DO i=1,DOFs
          IF ( PosFile ) THEN
             Pos = GetPosition( PosUnit,TimeCount,i )
@@ -2616,18 +2763,18 @@ TYPE(valuelist_t), POINTER :: lst
 
             DO j=1, n
                IF ( FmtVersion > 0 ) THEN
-                  CALL GetValue( RestartUnit, Perm, j, k, value )
+                  CALL GetValue( RestartUnit, Perm, j, k, VALUE )
                ELSE
-                  READ( RestartUnit,* ) Node, k, value
+                  READ( RestartUnit,* ) Node, k, VALUE
                END IF
 
                IF ( .NOT. ASSOCIATED( Var % Perm ) ) THEN
-                  IF ( k > 0 ) Var % Values(k) = value
+                  IF ( k > 0 ) Var % Values(k) = VALUE
                ELSE IF ( Var % Perm(j) <= 0 ) THEN
                   Var % Perm(j) = k
-                  IF ( k > 0 ) Var % Values(k) = value
+                  IF ( k > 0 ) Var % Values(k) = VALUE
                ELSE IF ( Var % Perm(j) > 0 ) THEN
-                  IF ( k > 0 ) Var % Values(Var % Perm(j)) = value
+                  IF ( k > 0 ) Var % Values(Var % Perm(j)) = VALUE
                END IF
             END DO
 
@@ -2686,13 +2833,13 @@ TYPE(valuelist_t), POINTER :: lst
       Var => Var % Next
     END DO
 
-    CALL CPU_TIME(tstop)
+    tstop = CPUTime()
     
-    WRITE( Message,* ) 'Restart time = ', tstop - tstart
-    CALL Info( 'LoadRestartFile',Message)
-    CALL Info( 'LoadRestartFile', 'All done', Level=3 )
-    CALL Info( 'LoadRestartFile','--------------------------------------------', Level=3 )
-    CALL Info( 'LoadRestartFile', ' ', Level = 3 )
+    WRITE( Message,'(A,F8.2)') 'Time spent for restart (s): ', tstop - tstart
+    CALL Info( 'LoadRestartFile',Message, Level = 4)
+    CALL Info( 'LoadRestartFile', 'All done', Level = 4 )
+    CALL Info( 'LoadRestartFile','--------------------------------------------', Level = 4 )
+    CALL Info( 'LoadRestartFile', ' ', Level = 4 )
 
 
 CONTAINS
@@ -2770,7 +2917,7 @@ CONTAINS
    END FUNCTION GetPosition
       
 
-   SUBROUTINE GetValue( RestartUnit, Perm, iNode, iPerm, Value )
+   SUBROUTINE GetValue( RestartUnit, Perm, iNode, iPerm, VALUE )
    !
    ! Get iPerm = Perm(iNode) and Value from input
    !
@@ -2778,7 +2925,7 @@ CONTAINS
       INTEGER, POINTER :: Perm(:)
       INTEGER, INTENT(IN) :: iNode
       INTEGER, INTENT(OUT) :: iPerm
-      REAL(dp), INTENT(OUT) :: Value
+      REAL(dp), INTENT(OUT) :: VALUE
 
       IF ( ASSOCIATED( Perm ) ) THEN
          iPerm = Perm(iNode)
@@ -2788,9 +2935,9 @@ CONTAINS
 
       IF ( iPerm > 0 ) THEN
          IF ( Binary ) THEN
-            CALL BinReadDouble( RestartUnit, Value )
+            CALL BinReadDouble( RestartUnit, VALUE )
          ELSE
-            READ( RestartUnit, * ) Value
+            READ( RestartUnit, * ) VALUE
          END IF
       END IF
    END SUBROUTINE GetValue
@@ -2961,6 +3108,9 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+
+!------------------------------------------------------------------------------
+!> Writes data in ElmerPost format. 
 !------------------------------------------------------------------------------
   SUBROUTINE WritePostFile( PostFile,ResultFile,Model,TimeCount,AppendFlag )
 !------------------------------------------------------------------------------
@@ -2977,17 +3127,15 @@ CONTAINS
 
     LOGICAL :: gotIt, FreeSurfaceFlag, MoveBoundary, MeshMoved, MaskExists
 
-    REAL(KIND=dp) :: Time,Dummy, MeshScale
+    REAL(KIND=dp) :: Time,Dummy, MeshScale, Coord(3)
     INTEGER :: ii,i,j,k,l,n,m,q,Node,idummy,DOFs,SavedCount,TimeStep, &
-         NumberOfNodes, NumberOfElements, ind, nDOFs
+         NumberOfNodes, NumberOfElements, ind, nDOFs, MeshDim, Nzeros
     INTEGER, POINTER :: MaskPerm(:), MaskOrder(:)
 !------------------------------------------------------------------------------
-
 
     IF( Model % Mesh % SavesDone == 0 ) THEN
       CALL Info('WriteToPost','Saving results in ElmerPost format to file '//TRIM(PostFile))
     END IF
-
 
     IF ( .NOT. FileNameQualified(PostFile) ) THEN
       IF ( LEN_TRIM(OutputPath) > 0 ) THEN
@@ -3093,7 +3241,7 @@ CONTAINS
         Var => Var % Next; CYCLE
       END IF
 
-      IF( Var % Type /= Variable_on_nodes ) THEN
+      IF( Var % TYPE /= Variable_on_nodes ) THEN
         Var => Var % Next; CYCLE
       END IF
 
@@ -3159,7 +3307,7 @@ CONTAINS
       Var => Var % Next
     END DO
 
-    IF ( .NOT.FreeSurfaceFlag ) DOFs=DOFs-3
+    IF ( .NOT.FreeSurfaceFlag ) DOFs = DOFs-3
 
 !------------------------------------------------------------------------------
 ! Write header to output
@@ -3179,7 +3327,7 @@ CONTAINS
           Var => Var % Next; CYCLE
         END IF
 
-        IF( Var % Type /= Variable_on_nodes ) THEN
+        IF( Var % TYPE /= Variable_on_nodes ) THEN
           Var => Var % Next; CYCLE
         END IF
 
@@ -3290,7 +3438,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 !   Coordinates
 !------------------------------------------------------------------------------
-!
+
       MeshScale = 1.0_dp
       DO i=1,Model % NumberOfSolvers
         MeshMoved = ListGetLogical( Model % Solvers(i) % Values, &
@@ -3308,66 +3456,43 @@ CONTAINS
         END IF
       END DO
 
+      MeshDim = Model % Mesh % MeshDim
 
       DO ii=1,NumberOfNodes
 
-         i = ii
-         IF(MaskExists) i = MaskOrder(i)
-
-         IF ( ASSOCIATED(Displacement) ) THEN
-            k = Displacement % Perm(i)
-            l = 0
-            IF ( ASSOCIATED( MeshUpdate ) ) l = MeshUpdate % Perm(i)
-
+        i = ii
+        IF(MaskExists) i = MaskOrder(i)
+        
+        Coord(1) = Model % Nodes % x(i)
+        Coord(2) = Model % Nodes % y(i)
+        Coord(3) = Model % Nodes % z(i)
+        
+        IF ( ASSOCIATED(Displacement) ) THEN
+          k = Displacement % Perm(i)
+          
+          IF ( k > 0 ) THEN
+            DO l=1,Displacement % Dofs
+              Coord(l) = Coord(l) - MeshScale * &
+                  Displacement % Values( Displacement % Dofs * (k-1) + l )
+            END DO
+          ELSE IF( ASSOCIATED( MeshUpdate ) ) THEN
+            k = MeshUpdate % Perm(i)             
             IF ( k > 0 ) THEN
-               k = Displacement % DOFs * (k-1)
-               SELECT CASE( Displacement % DOFs )
-               CASE(1)
-                  WRITE(PostFileUnit,'(3ES17.8E3)') &
-                       Model % Nodes % x(i) - MeshScale*Displacement % Values(k+1), &
-                       Model % Nodes % y(i), Model % Nodes % z(i)
-                  
-               CASE(2)
-                  WRITE(PostFileUnit,'(3ES17.8E3)') &
-                       Model % Nodes % x(i) - MeshScale*Displacement % Values(k+1), &
-                       Model % Nodes % y(i) - MeshScale*Displacement % Values(k+2), &
-                       Model % Nodes % z(i)
-                  
-               CASE(3)
-                  WRITE(PostFileUnit,'(3ES17.8E3)') &
-                       Model % Nodes % x(i) - MeshScale*Displacement % Values(k+1), &
-                       Model % Nodes % y(i) - MeshScale*Displacement % Values(k+2), &
-                       Model % Nodes % z(i) - MeshScale*Displacement % Values(k+3)
-               END SELECT
-
-            ELSE IF ( l > 0 ) THEN
-               k = MeshUpdate % DOFs * (l-1)
-               SELECT CASE( MeshUpdate % DOFs )
-               CASE(1)
-                  WRITE(PostFileUnit,'(3ES17.8E3)') &
-                       Model % Nodes % x(i) - MeshScale*MeshUpdate % Values(k+1), &
-                       Model % Nodes % y(i), Model % Nodes % z(i)
-                  
-               CASE(2)
-                  WRITE(PostFileUnit,'(3ES17.8E3)') &
-                       Model % Nodes % x(i) - MeshScale*MeshUpdate % Values(k+1), &
-                       Model % Nodes % y(i) - MeshScale*MeshUpdate % Values(k+2), &
-                       Model % Nodes % z(i)
-                  
-               CASE(3)
-                  WRITE(PostFileUnit,'(3ES17.8E3)') &
-                       Model % Nodes % x(i) - MeshScale*MeshUpdate % Values(k+1), &
-                       Model % Nodes % y(i) - MeshScale*MeshUpdate % Values(k+2), &
-                       Model % Nodes % z(i) - MeshScale*MeshUpdate % Values(k+3)
-               END SELECT
-            ELSE
-               WRITE(PostFileUnit,'(3ES17.8E3)') Model % Nodes % x(i),Model % Nodes % y(i), &
-                    Model % Nodes % z(i)
-            ENDIF
-         ELSE
-            WRITE(PostFileUnit,'(3ES17.8E3)') Model % Nodes % x(i),Model % Nodes % y(i), &
-                 Model % Nodes % z(i)
-         END IF
+              DO l=1,MeshUpdate % Dofs
+                Coord(l) = Coord(l) - MeshScale * &
+                    MeshUpdate % Values( Displacement % Dofs * (k-1) + l )
+              END DO
+            END IF
+          END IF
+        END IF
+        
+        IF( MeshDim == 3 ) THEN
+          WRITE(PostFileUnit,'(3ES17.8E3)') Coord(1:MeshDim)
+        ELSE IF( MeshDim == 2 ) THEN
+          WRITE(PostFileUnit,'(2ES17.8E3,A)') Coord(1:MeshDim),' 0.0'
+        ELSE
+          WRITE(PostFileUnit,'(ES17.8E3,A)') Coord(1:MeshDim),' 0.0 0.0'
+        END IF
       END DO
 
 !------------------------------------------------------------------------------
@@ -3514,7 +3639,7 @@ CONTAINS
                END DO
             END IF
         END DO
-     END IF
+      END IF
 !-----------------------------------------------------------------------------
 !     ...then save it to post file.
 !------------------------------------------------------------------------------
@@ -3533,7 +3658,7 @@ CONTAINS
              Var => Var % Next; CYCLE
            END IF
 
-           IF( Var % Type /= Variable_on_nodes ) THEN
+           IF( Var % TYPE /= Variable_on_nodes ) THEN
              Var => Var % Next; CYCLE
            END IF
 
@@ -3552,9 +3677,9 @@ CONTAINS
                     DO j=1,Var % DOFs
                        WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
                     END DO
-                    IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0D0
+                    IF ( Var % DOFs == 2 ) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                  ELSE
-                    WRITE(PostFileUnit,'(4ES17.8E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                    WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0 0.0 0.0'
                  END IF
               END IF
               
@@ -3570,18 +3695,18 @@ CONTAINS
                      WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') &
                          REAL(Var % Cvalues(Var % DOFs*(k-1)+j))
                    END DO
-                   IF (Var % DOFs<3) WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0d0
+                   IF (Var % DOFs == 2) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                    DO j=1,Var % DOFs
                      WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') &
                          AIMAG(Var % Cvalues(Var % DOFs*(k-1)+j))
                    END DO
-                   IF (Var % DOFs<3) WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0d0
+                   IF (Var % DOFs == 2) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                  ELSE
                    DO j=1,Var % DOFs
                      WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') &
                          Var % Values(Var % DOFs*(k-1)+j)
                    END DO
-                   IF (Var % DOFs<3) WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0d0
+                   IF (Var % DOFs == 2) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                  END IF
               ELSE
                  Var1 => Model % Variables
@@ -3593,17 +3718,20 @@ CONTAINS
                     k = i
                     IF ( ASSOCIATED(Var1 % Perm) ) k = Var1 % Perm(k)
                     IF ( k > 0 ) THEN
-                       DO j=1,Var1 % DOFs
-                          WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO')  &
-                               Var1 % Values(Var1 % DOFs*(k-1)+j)
-                       END DO
-                       IF ( Var1 % DOFs<3 ) &
-                            WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0D0
+                      DO j=1,Var1 % DOFs
+                        WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO')  &
+                            Var1 % Values(Var1 % DOFs*(k-1)+j)
+                      END DO
+                      IF ( Var1 % DOFs == 2 ) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                     ELSE
-                       WRITE(PostFileUnit,'(4ES17.8E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                      WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0 0.0 0.0'
                     END IF
                  ELSE
-                    WRITE(PostFileUnit,'(4ES17.8E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                   IF( ASSOCIATED( Var % Cvalues ) ) THEN
+                     WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0 0.0 0.0 0.0 0.0 0.0'
+                   ELSE
+                     WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0 0.0 0.0'
+                   END IF
                  END IF
               END IF
               
@@ -3616,12 +3744,12 @@ CONTAINS
                  DO j=1,Var % DOFs-1
                     WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
                  END DO
-                 IF ( Var % DOFs < 4 ) WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0D0
+                 IF ( Var % DOFs < 4 ) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                  
                  WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO')  &
-                      Var % Values(Var % DOFs*(k-1)+Var % DOFs)
+                      Var % Values(Var % DOFs*k)
               ELSE
-                 WRITE(PostFileUnit,'(4ES17.8E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0,0.0D0
+                 WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0 0.0 0.0 0.0'
               END IF
               
            CASE( 'velocity 1','velocity 2','velocity 3','pressure' )
@@ -3633,9 +3761,9 @@ CONTAINS
                  DO j=1,Var % DOFs
                     WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') Var % Values(Var % DOFs*(k-1)+j)
                  END DO
-                 IF ( Var % DOFs < 3 ) WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0D0
+                 IF ( Var % DOFs == 2 ) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
               ELSE
-                 WRITE(PostFileUnit,'(4ES17.8E3)',ADVANCE='NO') 0.0D0,0.0D0,0.0D0
+                 WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0 0.0 0.0'
               END IF
               
            CASE( 'magnetic field 1','magnetic field 2','magnetic field 3')
@@ -3657,7 +3785,7 @@ CONTAINS
                       WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') Var % Values(k)
                     END IF
                  ELSE
-                    WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0d0
+                    WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                  END IF
               ELSE
                  l = INDEX( var % name, '[' )
@@ -3676,24 +3804,18 @@ CONTAINS
                                   WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') &
                                      REAL(Var % Cvalues(Var % DOFs*(k-1)+j))
                                END DO
-                               DO j=q+1,3
-                                 WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0d0
-                               END DO
+                               IF(q==2) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                                DO j=DOFs+1,DOFs+q
                                   WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') &
                                      AIMAG(Var % Cvalues(Var % DOFs*(k-1)+j))
                                END DO
-                               DO j=q+1,3
-                                 WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0d0
-                               END DO
+                               IF(q==2) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                             ELSE
                                DO j=DOFs+1,DOFs+q
                                  WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') &
                                      Var % Values(Var % DOFs*(k-1)+j)
                                END DO
-                               DO j=q+1,3
-                                 WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0d0
-                               END DO
+                               IF(q==2) WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                             END IF
                           ELSE
                             DO j=DOFs+1,DOFs+q
@@ -3709,14 +3831,15 @@ CONTAINS
                             END DO
                           END IF
                        ELSE
-                          DO j=1,q
-                             WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0d0
+                         IF( q == 2 ) THEN
+                           Nzeros = 3
+                         ELSE
+                           Nzeros = q
+                         END IF
+                         IF( ASSOCIATED( Var % CValues ) ) Nzeros = 2 * Nzeros
+                         DO j=1,Nzeros
+                             WRITE(PostFileUnit,'(A)',ADVANCE='NO') ' 0.0'
                           END DO
-                          IF ( q==2 .OR. q==3 ) THEN
-                             DO j=q+1,3
-                                WRITE(PostFileUnit,'(ES17.8E3)',ADVANCE='NO') 0.0d0
-                             END DO
-                          END IF
                        END IF
                        l=m+1
                        DOFs = DOFs+q
@@ -3801,14 +3924,14 @@ SUBROUTINE GetNodalElementSize(Model,expo,noweight,h)
   SAVE STIFF, FORCE, AllocationsDone
 !------------------------------------------------------------------------------
 
-  CALL Info('ElementSizeSolver','Computing nodal element size indicator')
+  CALL Info('GetNodalElementSize','Computing nodal element size indicator')
 
 
   ALLOCATE( Solver )
   Solver % Mesh => Model % Mesh
   Mesh => Solver % Mesh
 
-  Params => Null()
+  Params => NULL()
   CALL ListAddString( Params,'Linear System Iterative Method', 'CG' )
   CALL ListAddLogical( Params,'Linear System Symmetric', .TRUE. )
   CALL ListAddInteger( Params, 'Linear System Max Iterations', 5000 )
@@ -3823,7 +3946,7 @@ SUBROUTINE GetNodalElementSize(Model,expo,noweight,h)
            Solver % Mesh,CPerm,1,MATRIX_CRS,.FALSE. )
 
   A % Comm = MPI_COMM_WORLD
-  A % ParMatrix => Null()
+  A % ParMatrix => NULL()
   Solver % Matrix => A
   Model % Solver => Solver
 
@@ -3831,13 +3954,13 @@ SUBROUTINE GetNodalElementSize(Model,expo,noweight,h)
 
   Solver % TimeOrder = 0
 
-  Mesh % Variables => Null()
+  Mesh % Variables => NULL()
   CALL VariableAdd( Mesh % Variables, Mesh, Solver, &
         'nodal h',1,h,Cperm) !,Output=.FALSE.)
   Solver % Variable=>VariableGet(Mesh % Variables,'nodal h',ThisOnly=.TRUE.)
 
   IF ( ParEnv % PEs>1 ) THEN
-    IF ( ASSOCIATED(Solver % Mesh % ParallelInfo % Interface) ) THEN
+    IF ( ASSOCIATED(Solver % Mesh % ParallelInfo % INTERFACE) ) THEN
       ParEnv % ActiveComm = MPI_COMM_WORLD
 
       ALLOCATE(ParEnv % Active(ParEnv % PEs))
@@ -3857,7 +3980,7 @@ SUBROUTINE GetNodalElementSize(Model,expo,noweight,h)
   N = Mesh % MaxElementNodes ! just big enough for elemental arrays
   ALLOCATE( FORCE(N), STIFF(N,N), STAT=istat )
   IF ( istat /= 0 ) THEN
-    CALL Fatal( 'ElementSizeSolver', 'Memory allocation error.' )
+    CALL Fatal( 'GetNodalElementSize', 'Memory allocation error.' )
   END IF
   
   ElemMin =  HUGE(ElemMin)
@@ -3873,7 +3996,7 @@ SUBROUTINE GetNodalElementSize(Model,expo,noweight,h)
   DO t=1,active
     Element => Mesh % Elements(t)
     Model % CurrentElement => Element
-    n = Element % Type % NumberOfNodes
+    n = Element % TYPE % NumberOfNodes
     
     !Get element local matrix and rhs vector:
     !----------------------------------------
@@ -3895,15 +4018,15 @@ SUBROUTINE GetNodalElementSize(Model,expo,noweight,h)
   
 
   WRITE(Message,'(A,2ES12.4)') 'Minimum Element Size: ',ElemMin, MINVAL(h)
-  CALL Info('ElementSizeSolver',Message)
+  CALL Info('GetNodalElementSize',Message)
   WRITE(Message,'(A,2ES12.4)') 'Maximum Element Size: ',ElemMax, MAXVAL(h)
-  CALL Info('ElementSizeSolver',Message)
+  CALL Info('GetNodalElementSize',Message)
   WRITE(Message,'(A,2ES12.4)') 'Element Size Ratio: ',ElemMax / ElemMin, MAXVAL(h)/MINVAL(h)
-  CALL Info('ElementSizeSolver',Message)
+  CALL Info('GetNodalElementSize',Message)
 
-  Model % Solver=>Null()
+  Model % Solver=>NULL()
   DEALLOCATE(Mesh % Variables)
-  Mesh % Variables => Null()
+  Mesh % Variables => NULL()
 
   CALL FreeMatrix(A)
   DEALLOCATE( FORCE, STIFF,Cperm )
