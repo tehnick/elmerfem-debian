@@ -1,23 +1,23 @@
-!/*****************************************************************************
+!/*****************************************************************************/
 ! *
 ! *  Elmer, A Finite Element Software for Multiphysical Problems
 ! *
 ! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
 ! * 
-! *  This program is free software; you can redistribute it and/or
-! *  modify it under the terms of the GNU General Public License
-! *  as published by the Free Software Foundation; either version 2
-! *  of the License, or (at your option) any later version.
-! * 
-! *  This program is distributed in the hope that it will be useful,
-! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
-! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-! *  GNU General Public License for more details.
+! *  This library is free software; you can redistribute it and/or
+! *  modify it under the terms of the GNU Lesser General Public
+! *  License as published by the Free Software Foundation; either
+! *  version 2.1 of the License, or (at your option) any later version.
 ! *
-! *  You should have received a copy of the GNU General Public License
-! *  along with this program (in file fem/GPL-2); if not, write to the 
-! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-! *  Boston, MA 02110-1301, USA.
+! *  This library is distributed in the hope that it will be useful,
+! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! *  Lesser General Public License for more details.
+! * 
+! *  You should have received a copy of the GNU Lesser General Public
+! *  License along with this library (in file ../LGPL-2.1); if not, write 
+! *  to the Free Software Foundation, Inc., 51 Franklin Street, 
+! *  Fifth Floor, Boston, MA  02110-1301  USA
 ! *
 ! *****************************************************************************/
 !
@@ -83,6 +83,14 @@ MODULE DefUtils
      MODULE PROCEDURE Default2ndOrderTimeR, Default2ndOrderTimeC
    END INTERFACE
 
+   INTERFACE GetLocalSolution
+     MODULE PROCEDURE GetScalarLocalSolution, GetVectorLocalSolution
+   END INTERFACE
+
+   INTERFACE GetLocalEigenmode
+     MODULE PROCEDURE GetScalarLocalEigenmode, GetVectorLocalEigenmode
+   END INTERFACE
+
    INTEGER, ALLOCATABLE, TARGET, PRIVATE :: IndexStore(:,:)
    REAL(KIND=dp), ALLOCATABLE, TARGET, PRIVATE  :: Store(:)
 
@@ -94,14 +102,14 @@ CONTAINS
   FUNCTION GetIndexStore() RESULT(ind)
     INTEGER, POINTER :: Ind(:)
     INTEGER :: thread, nthreads, istat
-    INTEGER :: omp_get_num_threads, omp_get_thread_num
+    INTEGER :: omp_get_max_threads, omp_get_thread_num
 
     IF ( .NOT.ALLOCATED(IndexStore) ) THEN
 !$omp barrier
 !$omp critical(get_index)
       IF ( .NOT.ALLOCATED(IndexStore) ) THEN
         nthreads = 1
-!$      nthreads = omp_get_num_threads()
+!$      nthreads = omp_get_max_threads()
         ALLOCATE( IndexStore(nthreads,512), STAT=istat )
         IF ( Istat /= 0 ) &
            CALL Fatal( 'GetIndexStore', 'Memory allocation error.' )
@@ -118,14 +126,14 @@ CONTAINS
   FUNCTION GetStore(n) RESULT(val)
     REAL(KIND=dp), POINTER :: val(:)
     INTEGER :: n,thread, nthreads, istat
-    INTEGER :: omp_get_num_threads, omp_get_thread_num
+    INTEGER :: omp_get_max_threads, omp_get_thread_num
 
     IF ( .NOT.ALLOCATED(Store) ) THEN
 !$omp barrier
 !$omp critical(get_store)
       IF ( .NOT.ALLOCATED(Store) ) THEN
         nthreads = 1
-!$      nthreads = omp_get_num_threads()
+!$      nthreads = omp_get_max_threads()
         ALLOCATE( Store(nthreads*MAX_ELEMENT_NODES), STAT=istat )
         IF ( Istat /= 0 ) &
            CALL Fatal( 'GetStore', 'Memory allocation error.' )
@@ -247,53 +255,8 @@ CONTAINS
     REAL(KIND=dp) :: w
     TYPE(ValueList_t), POINTER, OPTIONAL :: ValueList
     LOGICAL, OPTIONAL :: Found
-    LOGICAL :: GotIt
-    TYPE(Element_t), POINTER :: Element
-    INTEGER :: elem_id,eq_id
 
-    ! This is rather complicated since it should replace all the various strategies
-    ! that have been used in different solvers.
-    !------------------------------------------------------------------------------
-
-    ! The only way frequency may depend on element is that it sits in equation block
-    !--------------------------------------------------------------------------------
-    IF( PRESENT( ValueList ) ) THEN
-      w = 2 * PI * ListGetCReal( ValueList,'Frequency',GotIt)
-      IF(.NOT. GotIt) w = ListGetCReal( ValueList,'Angular Frequency',GotIt)
-    ELSE
-      GotIt = .FALSE.
-    END IF
-
-
-    ! Normally the constant frequency is given in Simulation (or solver) block
-    !-------------------------------------------------------------------------
-    IF(.NOT. GotIt) w = 2 * PI * ListGetCReal( &
-        CurrentModel % Simulation,'Frequency',GotIt)
-    IF(.NOT. GotIt ) w = ListGetCReal( &
-        CurrentModel % Simulation,'Angular Frequency',GotIt)
-
-    IF(.NOT. GotIt ) w = 2 * PI * ListGetCReal( &
-        CurrentModel % Solver % Values,'Frequency',GotIt)
-    IF(.NOT. GotIt ) w = ListGetCReal( &
-        CurrentModel % Solver % Values,'Angular Frequency',GotIt)
-
-    ! It seems that the equation section is used to allow compliance with ElmerGUI
-    !------------------------------------------------------------------------------
-    IF( .NOT. GotIt ) THEN
-      elem_id = CurrentModel % Solver % ActiveElements(1)
-      Element => CurrentModel % Elements(elem_id)
-      eq_id = ListGetInteger( CurrentModel % Bodies(Element % bodyid) % Values,'Equation')
-      w = 2 * PI * ListGetCReal( &
-          CurrentModel % Equations(eq_id) % Values,'Frequency',GotIt)
-      IF(.NOT. GotIt) w = ListGetCReal( &
-          CurrentModel % Equations(eq_id) % Values,'Angular Frequency',GotIt)
-    END IF
-
-    IF( PRESENT( Found ) ) THEN
-      Found = GotIt
-    ELSE IF(.NOT. GotIt ) THEN
-      CALL Info('GetAngularFrequency','Angular frequency could not be determined!')
-    END IF
+    w = ListGetAngularFrequency( ValueList, Found )
 
   END FUNCTION GetAngularFrequency
 
@@ -633,6 +596,41 @@ CONTAINS
      END IF
   END SUBROUTINE GetVectorLocalEigenmode
     
+
+
+!------------------------------------------------------------------------------
+!> Add variable to the default variable list.
+!------------------------------------------------------------------------------
+  SUBROUTINE DefaultVariableAdd( Name, DOFs, Perm, Values,&
+      Output,Secondary,Global,InitValue,USolver )
+    
+    CHARACTER(LEN=*) :: Name
+    INTEGER, OPTIONAL :: DOFs
+    REAL(KIND=dp), OPTIONAL, POINTER :: Values(:)
+    LOGICAL, OPTIONAL :: Output
+    INTEGER, OPTIONAL, POINTER :: Perm(:)
+    LOGICAL, OPTIONAL :: Secondary
+    LOGICAL, OPTIONAL :: Global
+    REAL(KIND=dp), OPTIONAL :: InitValue   
+    TYPE(Solver_t), OPTIONAL, TARGET :: USolver
+    !------------------------------------------------------------------------------
+    TYPE(Variable_t), POINTER :: Variables
+    TYPE(Mesh_t), POINTER :: Mesh
+    TYPE(Solver_t), POINTER :: Solver
+    
+    IF( PRESENT( USolver ) ) THEN
+      Solver => USolver
+    ELSE
+      Solver => CurrentModel % Solver 
+    END IF
+    Mesh => Solver % Mesh
+    Variables => Mesh % Variables
+
+    CALL VariableAddVector( Variables,Mesh,Solver,Name,DOFs,Values,&
+        Perm,Output,Secondary,Global,InitValue )
+
+  END SUBROUTINE DefaultVariableAdd
+!------------------------------------------------------------------------------
 
 
 !> Returns a string by its name if found in the list structure
@@ -1024,6 +1022,25 @@ CONTAINS
      family = CurrElement % TYPE % ElementCode / 100
   END FUNCTION GetElementFamily
 
+!> Return true if the element is a possible flux element
+!> Needed to skip nodal elements in 2D and 3D boundary condition setting.
+  FUNCTION PossibleFluxElement( Element, Mesh )  RESULT(possible)
+     LOGICAL :: possible
+     TYPE(Element_t), OPTIONAL :: Element
+     TYPE(Mesh_t), OPTIONAL :: Mesh
+     INTEGER :: MeshDim, family
+
+     IF( PRESENT( Mesh ) ) THEN
+       MeshDim = Mesh % MeshDim
+     ELSE
+       MeshDim = CurrentModel % Solver % Mesh % MeshDim
+     END IF
+
+     family = GetElementFamily( Element )
+
+     possible = ( family > 1 .OR. MeshDim == 1 )
+   END FUNCTION PossibleFluxElement
+
 
 !> Return the number of nodes in the active element
   FUNCTION GetElementNOFNodes( Element ) RESULT(n)
@@ -1098,15 +1115,16 @@ CONTAINS
 
 
 !> Returns the number of element degrees of freedom
-  FUNCTION GetElementDOFs( Indexes, UElement, USolver )  RESULT(NB)
+  FUNCTION GetElementDOFs( Indexes, UElement, USolver,NotDG )  RESULT(NB)
      TYPE(Element_t), OPTIONAL, TARGET :: UElement
      TYPE(Solver_t),  OPTIONAL, TARGET :: USolver
      INTEGER :: Indexes(:)
+     LOGICAL, OPTIONAL  ::  NotDG
 
      TYPE(Solver_t),  POINTER :: Solver
      TYPE(Element_t), POINTER :: Element, Parent, Edge, Face
 
-     LOGICAL :: Found, GB
+     LOGICAL :: Found, GB, DGdisable
      INTEGER :: nb,i,j,k,id,EDOFs, FDOFs, BDOFs,FaceDOFs, EdgeDOFs, BubbleDOFs, Ind
 
      Element => GetCurrentElement(UElement)
@@ -1119,7 +1137,10 @@ CONTAINS
 
      NB = 0
 
-     IF ( ListGetLogical( Solver % Values, 'Discontinuous Galerkin', Found ) ) THEN
+     DGDisable=.FALSE.
+     IF (PRESENT(NotDG)) DGDisable=NotDG
+
+     IF ( .NOT.DGDisable .AND. ListGetLogical( Solver % Values, 'Discontinuous Galerkin', Found ) ) THEN
         DO i=1,Element % DGDOFs
            NB = NB + 1
            Indexes(NB) = Element % DGIndexes(i)
@@ -1328,9 +1349,9 @@ CONTAINS
      END IF
 
      sz1 = SIZE(Solver % Mesh % Nodes % x)
-     IF ( sz1 > Solver % Mesh % NumberOfNodes ) THEN
+     IF (sz1 > Solver % Mesh % NumberOfNodes) THEN
         Indexes => GetIndexStore()
-        nd = GetElementDOFs( Indexes )
+        nd = GetElementDOFs(Indexes,Element,NotDG=.TRUE.)
         DO i=n+1,nd
            IF ( Indexes(i)>0 .AND. Indexes(i)<=sz1 ) THEN
              ElementNodes % x(i) = Solver % Mesh % Nodes % x(Indexes(i))
@@ -1663,6 +1684,9 @@ CONTAINS
     TYPE(Solver_t),  OPTIONAL, TARGET :: USolver
     TYPE(Element_t), OPTIONAL, TARGET :: UElement
 
+    LOGICAL :: Found
+    TYPE(ValueList_t), POINTER :: Params
+
     TYPE(Solver_t), POINTER :: Solver
     TYPE(Variable_t), POINTER :: x
     TYPE(Element_t), POINTER :: Element
@@ -1673,6 +1697,13 @@ CONTAINS
 
     Solver => CurrentModel % Solver
     IF ( PRESENT(USolver) ) Solver => USolver
+
+    Params => GetSolverParams(Solver)
+
+    IF (GetLogical(Params,'Use Global Mass Matrix',Found)) THEN
+      CALL DefaultUpdateMass(M,UElement,USolver)
+      RETURN
+    END IF
 
     Element => CurrentModel % CurrentElement
     IF ( PRESENT(UElement) ) Element => UElement
@@ -1703,12 +1734,22 @@ CONTAINS
 
     REAL(KIND=dp), ALLOCATABLE :: M(:,:),A(:,:), F(:)
 
+    LOGICAL :: Found
+    TYPE(ValueList_t), POINTER :: Params
+
     INTEGER :: i,j,n,DOFs
     REAL(KIND=dp) :: dt
     INTEGER, POINTER :: Indexes(:)
 
     Solver => CurrentModel % Solver
     IF ( PRESENT(USolver) ) Solver => USolver
+
+    Params=>GetSolverParams(Solver)
+
+    IF (GetLogical(Params,'Use Global Mass Matrix',Found)) THEN
+      CALL DefaultUpdateMass(M,UElement,USolver)
+      RETURN
+    END IF
 
     Element => CurrentModel % CurrentElement
     IF ( PRESENT(UElement) ) Element => UElement
@@ -1764,7 +1805,7 @@ CONTAINS
    INTEGER :: i,j,k,l,n,Order
    REAL(KIND=dp), POINTER :: SaveValues(:) => NULL()
    REAL(KIND=dp) :: FORCE(1), Dts(16)
-   LOGICAL :: ConstantDt, Found
+   LOGICAL :: ConstantDt, Found, HasMass
    TYPE(Variable_t), POINTER :: DtVar
    SAVE STIFF, MASS, X
    REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:),MASS(:,:), X(:,:)
@@ -1776,18 +1817,23 @@ CONTAINS
    END IF
 
    IF ( .NOT.ASSOCIATED(Solver % Variable % Values, SaveValues) ) THEN
-      IF ( ALLOCATED(STIFF) ) DEALLOCATE( STIFF,MASS,X )
-      n = 0
-      DO i=1,Solver % Matrix % NumberOfRows
-        n = MAX( n,Solver % Matrix % Rows(i+1)-Solver % Matrix % Rows(i) )
-      END DO
-      k = SIZE(Solver % Variable % PrevValues,2)
-      ALLOCATE( STIFF(1,n),MASS(1,n),X(n,k) )
-
-      SaveValues => Solver % Variable % Values
+     IF ( ALLOCATED(STIFF) ) DEALLOCATE( STIFF,MASS,X )
+     n = 0
+     DO i=1,Solver % Matrix % NumberOfRows
+       n = MAX( n,Solver % Matrix % Rows(i+1)-Solver % Matrix % Rows(i) )
+     END DO
+     k = SIZE(Solver % Variable % PrevValues,2)
+     ALLOCATE( STIFF(1,n),MASS(1,n),X(n,k) )
+     
+     SaveValues => Solver % Variable % Values
    END IF
+    
+   STIFF = 0.0_dp
+   MASS = 0.0_dp
+   X = 0.0_dp
 
    Order = MIN( Solver % DoneTime, Solver % Order )
+   HasMass = ASSOCIATED( Solver % Matrix % MassValues )
 
    Method = ListGetString( Solver % Values, 'Timestepping Method', Found )
    IF ( Method == 'bdf' ) THEN
@@ -1807,7 +1853,7 @@ CONTAINS
      DO j=Solver % Matrix % Rows(i),Solver % Matrix % Rows(i+1)-1
        n=n+1
        STIFF(1,n) = Solver % Matrix % Values(j)
-       MASS(1,n)  = Solver % Matrix % MassValues(j)
+       IF( HasMass ) MASS(1,n) = Solver % Matrix % MassValues(j)
        X(n,:) = Solver % Variable % PrevValues(Solver % Matrix % Cols(j),:)
      END DO
      FORCE(1) = Solver % Matrix % RHS(i)
@@ -1850,7 +1896,7 @@ CONTAINS
    INTEGER :: i,j,k,l,n
    REAL(KIND=dp), POINTER :: SaveValues(:) => NULL()
    REAL(KIND=dp) :: FORCE(1)
-   LOGICAL :: Found
+   LOGICAL :: Found, HasDamping, HasMass
    REAL(KIND=dp), ALLOCATABLE, SAVE :: STIFF(:,:),MASS(:,:), DAMP(:,:), X(:,:)
 
    IF ( PRESENT(USolver) ) THEN
@@ -1868,30 +1914,38 @@ CONTAINS
       k = SIZE(Solver % Variable % PrevValues,2)
       ALLOCATE( STIFF(1,n),MASS(1,n),DAMP(1,n),X(n,k) )
       SaveValues => Solver % Variable % Values
-   END IF
 
-   DO i=1,Solver % Matrix % NumberOFRows
-     n = 0
-     DO j=Solver % Matrix % Rows(i),Solver % Matrix % Rows(i+1)-1
-       n=n+1
-       MASS(1,n)  = Solver % Matrix % MassValues(j)
-       DAMP(1,n)  = Solver % Matrix % DampValues(j)
-       STIFF(1,n) = Solver % Matrix % Values(j)
-       X(n,:) = Solver % Variable % PrevValues(Solver % Matrix % Cols(j),:)
-     END DO
-     FORCE(1) = Solver % Matrix % RHS(i)
-     Solver % Matrix % Force(i,1) = FORCE(1)
+      STIFF = 0.0_dp
+      MASS = 0.0_dp
+      DAMP = 0.0_dp
+      X = 0.0_dp
+    END IF
 
-     CALL Bossak2ndOrder( n, Solver % dt, MASS, DAMP, STIFF, &
-      FORCE, X(1:n,3), X(1:n,4), X(1:n,5), Solver % Alpha )
+    HasDamping = ASSOCIATED(Solver % Matrix % DampValues )
+    HasMass = ASSOCIATED(Solver % Matrix % MassValues )
 
-     n = 0
-     DO j=Solver % Matrix % Rows(i),Solver % Matrix % Rows(i+1)-1
-       n=n+1
-       Solver % Matrix % Values(j) = STIFF(1,n)
-     END DO
-     Solver % Matrix % RHS(i) = FORCE(1)
-   END DO
+    DO i=1,Solver % Matrix % NumberOFRows
+      n = 0
+      DO j=Solver % Matrix % Rows(i),Solver % Matrix % Rows(i+1)-1
+        n=n+1
+        IF( HasMass ) MASS(1,n) = Solver % Matrix % MassValues(j)
+        IF( HasDamping ) DAMP(1,n) = Solver % Matrix % DampValues(j)
+        STIFF(1,n) = Solver % Matrix % Values(j)
+        X(n,:) = Solver % Variable % PrevValues(Solver % Matrix % Cols(j),:)
+      END DO
+      FORCE(1) = Solver % Matrix % RHS(i)
+      Solver % Matrix % Force(i,1) = FORCE(1)
+      
+      CALL Bossak2ndOrder( n, Solver % dt, MASS, DAMP, STIFF, &
+          FORCE, X(1:n,3), X(1:n,4), X(1:n,5), Solver % Alpha )
+      
+      n = 0
+      DO j=Solver % Matrix % Rows(i),Solver % Matrix % Rows(i+1)-1
+        n=n+1
+        Solver % Matrix % Values(j) = STIFF(1,n)
+      END DO
+      Solver % Matrix % RHS(i) = FORCE(1)
+    END DO
 !----------------------------------------------------------------------------
   END SUBROUTINE Default2ndOrderTimeGlobal
 !----------------------------------------------------------------------------
@@ -1908,12 +1962,23 @@ CONTAINS
     TYPE(Variable_t), POINTER :: x
     TYPE(Element_t), POINTER :: Element
 
+    LOGICAL :: Found
+    TYPE(ValueList_t), POINTER :: Params
+
     INTEGER :: n
     REAL(KIND=dp) :: dt
     INTEGER, POINTER :: Indexes(:)
 
     Solver => CurrentModel % Solver
     IF ( PRESENT(USolver) ) Solver => USolver
+
+    Params=>GetSolverParams(Solver)
+
+    IF (GetLogical(Params,'Use Global Mass Matrix',Found)) THEN
+      CALL DefaultUpdateMass(M,UElement,USolver)
+      CALL DefaultUpdateDamp(B,UElement,USolver)
+      RETURN
+    END IF
 
     Element => CurrentModel % CurrentElement
     IF ( PRESENT(UElement) ) Element => UElement
@@ -1944,12 +2009,23 @@ CONTAINS
     TYPE(Element_t), POINTER :: Element
     REAL(KIND=dp), ALLOCATABLE :: M(:,:), B(:,:), A(:,:), F(:)
 
+    LOGICAL :: Found
+    TYPE(ValueList_t), POINTER :: Params
+
     INTEGER :: i,j,n,DOFs
     REAL(KIND=dp) :: dt
     INTEGER, POINTER :: Indexes(:)
 
     Solver => CurrentModel % Solver
     IF ( PRESENT(USolver) ) Solver => USolver
+
+    Params=>GetSolverParams(Solver)
+
+    IF (GetLogical(Params,'Use Global Mass Matrix',Found)) THEN
+      CALL DefaultUpdateMass(M,UElement,USolver)
+      CALL DefaultUpdateDamp(B,UElement,USolver)
+      RETURN
+    END IF
 
     Element => CurrentModel % CurrentElement
     IF ( PRESENT(UElement) ) Element => UElement
@@ -2030,7 +2106,7 @@ CONTAINS
 
     TYPE(Matrix_t), POINTER   :: A
     TYPE(Variable_t), POINTER :: x
-    REAL(KIND=dp), POINTER CONTIG    :: b(:), SOL(:)
+    REAL(KIND=dp), POINTER  :: b(:), SOL(:)
 
     LOGICAL :: Found, BackRot
 
@@ -2188,12 +2264,12 @@ CONTAINS
 
      IF ( BUpd ) THEN
        IF ( .NOT. ASSOCIATED( A % BulkRHS ) ) THEN
-          ALLOCATE( Solver % Matrix % BulkRHS(SIZE(A % RHS)) )
+          ALLOCATE( A % BulkRHS(SIZE(A % RHS)) )
           A % BulkRHS = 0.0_dp
        END IF
 
        IF ( .NOT. ASSOCIATED( A % BulkValues ) ) THEN
-          ALLOCATE( Solver % Matrix % BulkValues(SIZE(A % Values)) )
+          ALLOCATE( A % BulkValues(SIZE(A % Values)) )
           A % BulkValues = 0.0_dp
        END IF
        SaveValues => A % Values
@@ -2300,12 +2376,12 @@ CONTAINS
 
      IF (BUpd) THEN
         IF ( .NOT. ASSOCIATED( A % BulkRHS ) ) THEN
-          ALLOCATE( Solver % Matrix % BulkRHS(SIZE(A % RHS)) )
+          ALLOCATE( A % BulkRHS(SIZE(A % RHS)) )
           A % BulkRHS = 0.0_dp
        END IF
 
         IF ( .NOT. ASSOCIATED( A % BulkValues ) ) THEN
-          ALLOCATE( Solver % Matrix % BulkValues(SIZE(A % Values)) )
+          ALLOCATE( A % BulkValues(SIZE(A % Values)) )
           A % BulkValues = 0.0_dp
        END IF
         SaveValues => A % Values
@@ -3061,13 +3137,14 @@ CONTAINS
      REAL(KIND=dp), POINTER    :: b(:)
 
      REAL(KIND=dp) :: xx
+     REAL(KIND=dp), POINTER :: DiagScaling(:)
      REAL(KIND=dp), ALLOCATABLE :: Work(:), STIFF(:,:)
 
      INTEGER, ALLOCATABLE :: lInd(:), gInd(:)
      INTEGER :: i,j, k, kk, l, m, n,nd, nb, mb, nn, ni, nj, &
           DOF, local, numEdgeDofs,istat, n_start, Offset
 
-     LOGICAL :: Flag,Found, ConstantValue
+     LOGICAL :: Flag,Found, ConstantValue, ScaleSystem
      TYPE(ValueList_t), POINTER :: BC, ptr, Params
      TYPE(Element_t), POINTER :: Element, Parent, Edge, Face, SaveElement
 
@@ -3092,6 +3169,20 @@ CONTAINS
        x => Ux
      ELSE
        x => Solver % Variable
+     END IF
+
+     ScaleSystem=GetLogical(Params,'Linear System Dirichlet Scaling',Found)
+     IF(.NOT.Found) THEN
+       ScaleSystem=GetLogical(Params,'Linear System Scaling',Found)
+       IF(.NOT.Found) ScaleSystem=.TRUE.
+     END IF
+
+     IF (ScaleSystem) THEN
+       CALL ScaleLinearSystem(Solver,A,b,RHSscaling=.FALSE.)
+       DiagScaling => A % DiagScaling
+     ELSE
+       ALLOCATE(DiagScaling(A % NumberOfRows))
+       DiagScaling=1._dp
      END IF
 
      Offset = 0
@@ -3192,7 +3283,6 @@ CONTAINS
         CALL SetDirichletBoundaries( CurrentModel, A, b, &
              Name, DOF, x % DOFs, x % Perm, Offset, OffDiagonalMatrix )
 
-
 !       Dirichlet BCs for face & edge DOFs:
 !       -----------------------------------
         SaveElement => CurrentModel % CurrentElement
@@ -3239,10 +3329,10 @@ CONTAINS
                    IF ( nb <= 0 ) CYCLE
                    nb = Offset + x % DOFs*(nb-1) + DOF
                    IF ( A % Symmetric ) THEN
-                     CALL CRS_SetSymmDirichlet(A,A % RHS,nb,Work(1))
+                     CALL CRS_SetSymmDirichlet(A,A % RHS,nb,Work(1)/DiagScaling(nb))
                    ELSE
                      CALL ZeroRow( A, nb )
-                     A % RHS(nb) = Work(1)
+                     A % RHS(nb) = Work(1)/DiagScaling(nb)
                      CALL SetMatrixElement(A,nb,nb,1._dp)
                    END IF
                  END DO
@@ -3273,10 +3363,10 @@ CONTAINS
                      IF ( nb <= 0 ) CYCLE
                      nb = Offset + x % DOFs*(nb-1) + DOF
                      IF ( A % Symmetric ) THEN
-                       CALL CRS_SetSymmDirichlet(A,A % RHS,nb,Work(1))
+                       CALL CRS_SetSymmDirichlet(A,A % RHS,nb,Work(1)/DiagScaling(nb))
                      ELSE
                        CALL ZeroRow( A, nb )
-                       A % RHS(nb) = Work(1)
+                       A % RHS(nb) = Work(1)/DiagScaling(nb)
                        CALL SetMatrixElement(A,nb,nb,1._dp)
                      END IF
                    END DO
@@ -3295,7 +3385,7 @@ CONTAINS
 
                CALL ZeroRow( A, nb )
                CALL SetMatrixElement(A,nb,nb,1._dp)
-               A % RHS(nb) = Work(1)
+               A % RHS(nb) = Work(1)/DiagScaling(nb)
              END DO
            END IF
 
@@ -3328,7 +3418,7 @@ CONTAINS
                   IF ( nb <= 0 ) CYCLE
                   nb = Offset + x % DOFs * (nb-1) + DOF
                   DO k=n+1,numEdgeDOFs
-                    Work(k) = Work(k) - STIFF(k,l)*A % RHS(nb)
+                    Work(k) = Work(k) - STIFF(k,l)*A % RHS(nb)*DiagScaling(nb)
                   END DO
                 END DO
 
@@ -3348,7 +3438,7 @@ CONTAINS
                   nb = x % Perm( gInd(k) )
                   IF ( nb <= 0 ) CYCLE
                   nb = Offset + x % DOFs * (nb-1) + DOF
-                  CALL CRS_SetSymmDirichlet(A,A % RHS,nb,Work(k-n))
+                  CALL CRS_SetSymmDirichlet(A,A % RHS,nb,Work(k-n)/DiagScaling(nb))
                 END DO 
               ELSE
                 ! Contribute this boundary to global system
@@ -3357,14 +3447,15 @@ CONTAINS
                    nb = x % Perm( gInd(k) )
                    IF ( nb <= 0 ) CYCLE
                    nb = Offset + x % DOFs * (nb-1) + DOF
-                   A % RHS(nb) = A % RHS(nb) + Work(k)
+                   A % RHS(nb) = A % RHS(nb) + Work(k)/DiagScaling(nb)
                    DO l=1,numEdgeDofs
                       mb = x % Perm( gInd(l) )
                       IF ( mb <= 0 ) CYCLE
                       mb = Offset + x % DOFs * (mb-1) + DOF
                       DO kk=A % Rows(nb)+DOF-1,A % Rows(nb+1)-1,x % DOFs
                         IF ( A % Cols(kk) == mb ) THEN
-                          A % Values(kk) = A % Values(kk) + STIFF(k,l)
+                          A % Values(kk) = A % Values(kk) + STIFF(k,l) * &
+                             DiagScaling(mb) / DiagScaling(nb)
                           EXIT
                         END IF
                       END DO
@@ -3396,7 +3487,7 @@ CONTAINS
                   IF ( nb <= 0 ) CYCLE
                   nb = Offset + x % DOFs * (nb-1) + DOF
                   DO k=n+1,numEdgeDOFs
-                    Work(k) = Work(k) - STIFF(k,l)*A % RHS(nb)
+                    Work(k) = Work(k) - STIFF(k,l)*A % RHS(nb)*DiagScaling(nb)
                   END DO
                 END DO
                 n_start=n+1
@@ -3407,14 +3498,15 @@ CONTAINS
                 nb = x % Perm( gInd(k) )
                 IF ( nb <= 0 ) CYCLE
                 nb = Offset + x % DOFs * (nb-1) + DOF
-                A % RHS(nb) = A % RHS(nb) + Work(k)
+                A % RHS(nb) = A % RHS(nb) + Work(k)/DiagScaling(nb)
                 DO l=n_start,numEdgeDOFs
                   mb = x % Perm( gInd(l) )
                   IF ( mb <= 0 ) CYCLE
                   mb = Offset + x % DOFs * (mb-1) + DOF
                   DO kk=A % Rows(nb)+DOF-1,A % Rows(nb+1)-1,x % DOFs
                     IF ( A % Cols(kk) == mb ) THEN
-                      A % Values(kk) = A % Values(kk) + STIFF(k,l)
+                      A % Values(kk) = A % Values(kk) + STIFF(k,l) * &
+                          DiagScaling(mb) / DiagScaling(nb)
                       EXIT
                     END IF
                   END DO
@@ -3424,6 +3516,12 @@ CONTAINS
         END DO
         CurrentModel % CurrentElement => SaveElement
      END DO
+
+     IF (ScaleSystem) THEN
+       CALL BackScaleLinearSystem(Solver,A,b)
+     ELSE
+       DEALLOCATE(DiagScaling)
+     END IF
 
      CALL Info('DefUtils::DefaultDirichletBCs','Dirichlet boundary conditions set', Level=5)
 !------------------------------------------------------------------------------
@@ -3643,13 +3741,40 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE DefaultFinishAssembly( Solver )
 !------------------------------------------------------------------------------
-    TYPE(Solver_t), OPTIONAL :: Solver
+    TYPE(Solver_t), OPTIONAL, TARGET :: Solver
 
-    IF ( PRESENT( Solver ) ) THEN
-       CALL FinishAssembly( Solver, Solver % Matrix % RHS )
+    INTEGER :: order
+    LOGICAL :: Found
+    TYPE(ValueList_t), POINTER :: Params
+    TYPE(Solver_t), POINTER :: PSolver
+
+    IF( PRESENT( Solver ) ) THEN
+      PSolver => Solver
     ELSE
-       CALL FinishAssembly( CurrentModel % Solver, CurrentModel % Solver % Matrix % RHS )
+      PSolver => CurrentModel % Solver
     END IF
+
+    Params => GetSolverParams(PSolver)
+
+    IF(GetLogical(Params,'Use Global Mass Matrix',Found)) THEN
+
+      IF( ListGetString( CurrentModel % Simulation, 'Simulation Type' ) == 'transient') THEN
+        order=GetInteger(Params,'Time Derivative Order',Found)
+        IF(.NOT.Found) order=1
+
+        SELECT CASE(order)
+          
+        CASE(1)  
+          CALL Default1stOrderTimeGlobal(PSolver)
+
+        CASE(2)
+          CALL Default2ndOrderTimeGlobal(PSolver)
+        END SELECT
+      END IF
+    END IF
+
+    CALL FinishAssembly( PSolver, PSolver % Matrix % RHS )
+
 !------------------------------------------------------------------------------
   END SUBROUTINE DefaultFinishAssembly
 !------------------------------------------------------------------------------
@@ -3827,6 +3952,8 @@ CONTAINS
 
      ! Assign rest of indexes if neccessary
      SELECT CASE(Parent % TYPE % DIMENSION)
+     CASE (1)
+       indSize = n 
      CASE (2)
         ! Add index for each bubble dof in edge
         DO i=1,Element % BDOFs
@@ -4160,6 +4287,326 @@ CONTAINS
 !------------------------------------------------------------------------------
   END SUBROUTINE GetParentUVW
 !------------------------------------------------------------------------------
+
+! >Returns basis functions for Whitney elements of lowest degree (edge elements)
+! ----------------------------------------------------------------------
+!------------------------------------------------------------------------
+   SUBROUTINE GetEdgeBasis( Element, WBasis, RotWBasis, Basis, dBasisdx )
+!------------------------------------------------------------------------
+     TYPE(Element_t),TARGET :: Element
+     REAL(KIND=dp) :: WBasis(:,:), RotWBasis(:,:), Basis(:), dBasisdx(:,:)
+!------------------------------------------------------------------------
+     TYPE(Element_t),POINTER :: Edge
+     TYPE(Mesh_t), POINTER :: Mesh
+     TYPE(Nodes_t), SAVE :: Nodes
+     REAL(KIND=dp) :: u,v,w,dudx(3,3),du(3),Base,dBase(3),tBase(3), &
+                rBase(3),triBase(3),dtriBase(3,3)
+     LOGICAL :: Parallel,stat
+     INTEGER :: i,j,k,n,nj,nk,i1,i2
+     INTEGER, POINTER :: EdgeMap(:,:)
+!------------------------------------------------------------------------
+     Mesh => GetMesh()
+     Parallel = ParEnv % PEs>1
+
+     IF (Element % TYPE % BasisFunctionDegree>1) THEN
+       CALL Fatal('GetEdgeBasis',"Can't handle but linear elements, sorry.") 
+     END IF
+
+     SELECT CASE(GetElementFamily(Element))
+     CASE(4,7,8)
+       n = Element % TYPE % NumberOfNodes
+       u = SUM(Basis(1:n)*Element % TYPE % NodeU(1:n))
+       v = SUM(Basis(1:n)*Element % TYPE % NodeV(1:n))
+       w = SUM(Basis(1:n)*Element % TYPE % NodeW(1:n))
+
+       dudx(1,:) = MATMUL(Element % TYPE % NodeU(1:n),dBasisdx(1:n,:))
+       dudx(2,:) = MATMUL(Element % TYPE % NodeV(1:n),dBasisdx(1:n,:))
+       dudx(3,:) = MATMUL(Element % TYPE % NodeW(1:n),dBasisdx(1:n,:))
+
+       triBase(1) = 1-u-v
+       triBase(2) = u
+       triBase(3) = v
+
+       dtriBase(1,:) = -dudx(1,:)-dudx(2,:) 
+       dtriBase(2,:) =  dudx(1,:)
+       dtriBase(3,:) =  dudx(2,:)
+     END SELECT
+
+     EdgeMap => GetEdgeMap(GetElementFamily(Element))
+     DO i=1,SIZE(Edgemap,1)
+       j = EdgeMap(i,1); k = EdgeMap(i,2)
+
+       nj = Element % Nodeindexes(j)
+       IF (Parallel) nj=Mesh % ParallelInfo % GlobalDOFs(nj)
+       nk = Element % Nodeindexes(k)
+       IF (Parallel) nk=Mesh % ParallelInfo % GlobalDOFs(nk)
+
+       SELECT CASE(GetElementFamily(Element))
+       CASE(3,5)
+         WBasis(i,:) = Basis(j)*dBasisdx(k,:) - Basis(k)*dBasisdx(j,:)
+
+         RotWBasis(i,1) = 2.0_dp * ( dBasisdx(j,2) * dBasisdx(k,3) - &
+                       dBasisdx(j,3) * dBasisdx(k,2) )
+         RotWBasis(i,2) = 2.0_dp * ( dBasisdx(j,3) * dBasisdx(k,1) - &
+                       dBasisdx(j,1) * dBasisdx(k,3) )
+         RotWBasis(i,3) = 2.0_dp * ( dBasisdx(j,1) * dBasisdx(k,2) - &
+                       dBasisdx(j,2) * dBasisdx(k,1) )
+       CASE(7)
+         SELECT CASE(i)
+          CASE(1)
+            j=1;k=2; Base=(1-w)/2; dBase=-dudx(3,:)/2
+          CASE(2)
+            j=2;k=3; Base=(1-w)/2; dBase=-dudx(3,:)/2
+          CASE(3)
+            j=3;k=1; Base=(1-w)/2; dBase=-dudx(3,:)/2
+          CASE(4)
+            j=1;k=2; Base=(1+w)/2; dBase= dudx(3,:)/2
+          CASE(5)
+            j=2;k=3; Base=(1+w)/2; dBase= dudx(3,:)/2
+          CASE(6)
+            j=3;k=1; Base=(1+w)/2; dBase= dudx(3,:)/2
+          CASE(7)
+            Base=triBase(1); dBase=dtriBase(1,:); du=dudx(3,:)/2
+          CASE(8)
+            Base=triBase(2); dBase=dtriBase(2,:); du=dudx(3,:)/2
+          CASE(9)
+            Base=triBase(3); dBase=dtriBase(3,:); du=dudx(3,:)/2
+         END SELECT
+
+         IF(i<=6) THEN
+            tBase = (triBase(j)*dtriBase(k,:)-triBase(k)*dtriBase(j,:))
+            rBase(1) = 2*Base*(dtriBase(j,2)*dtriBase(k,3)-dtriBase(k,2)*dtriBase(j,3)) + &
+                              dBase(2)*tBase(3) - dBase(3)*tBase(2)
+
+            rBase(2) = 2*Base*(dtriBase(j,3)*dtriBase(k,1)-dtriBase(k,3)*dtriBase(j,1)) + &
+                              dBase(3)*tBase(1) - dBase(1)*tBase(3)
+
+            rBase(3) = 2*Base*(dtriBase(j,1)*dtriBase(k,2)-dtriBase(k,1)*dtriBase(j,2)) + &
+                              dBase(1)*tBase(2) - dBase(2)*tBase(1)
+
+            RotWBasis(i,:)=rBase
+            WBasis(i,:)=tBase*Base
+         ELSE
+            WBasis(i,:)=Base*du
+            RotWBasis(i,1)=(dBase(2)*du(3) - dBase(3)*du(2))
+            RotWBasis(i,2)=(dBase(3)*du(1) - dBase(1)*du(3))
+            RotWBasis(i,3)=(dBase(1)*du(2) - dBase(2)*du(1))
+         END IF
+       CASE(4)
+         SELECT CASE(i)
+          CASE(1)
+             du=dudx(1,:); Base=(1-v)*(1-w)
+             dBase(:)=-dudx(2,:)*(1-w)-(1-v)*dudx(3,:)
+          CASE(2)
+             du=dudx(2,:); Base=(1+u)*(1-w)
+             dBase(:)= dudx(1,:)*(1-w)-(1+u)*dudx(3,:)
+          CASE(3)
+             du=-dudx(1,:); Base=(1+v)*(1-w)
+             dBase(:)= dudx(2,:)*(1-w)-(1+v)*dudx(3,:)
+          CASE(4)
+             du=-dudx(2,:); Base=(1-u)*(1-w)
+             dBase(:)=-dudx(1,:)*(1-w)-(1-u)*dudx(3,:)
+         END SELECT
+
+         wBasis(i,:) = Base*du/n
+         RotWBasis(i,1)=(dBase(2)*du(3) - dBase(3)*du(2))/n
+         RotWBasis(i,2)=(dBase(3)*du(1) - dBase(1)*du(3))/n
+         RotWBasis(i,3) = (dBase(1)*du(2) - dBase(2)*du(1))/n
+       CASE(8)
+         SELECT CASE(i)
+          CASE(1)
+             du=dudx(1,:); Base=(1-v)*(1-w)
+             dBase(:)=-dudx(2,:)*(1-w)-(1-v)*dudx(3,:)
+          CASE(2)
+             du=dudx(2,:); Base=(1+u)*(1-w)
+             dBase(:)= dudx(1,:)*(1-w)-(1+u)*dudx(3,:)
+          CASE(3)
+             du=dudx(1,:); Base=(1+v)*(1-w)
+             dBase(:)= dudx(2,:)*(1-w)-(1+v)*dudx(3,:)
+          CASE(4)
+             du=dudx(2,:); Base=(1-u)*(1-w)
+             dBase(:)=-dudx(1,:)*(1-w)-(1-u)*dudx(3,:)
+          CASE(5)
+             du=dudx(1,:); Base=(1-v)*(1+w)
+             dBase(:)=-dudx(2,:)*(1+w)+(1-v)*dudx(3,:)
+          CASE(6)
+             du=dudx(2,:); Base=(1+u)*(1+w)
+             dBase(:)= dudx(1,:)*(1+w)+(1+u)*dudx(3,:)
+          CASE(7)
+             du=dudx(1,:); Base=(1+v)*(1+w)
+             dBase(:)= dudx(2,:)*(1+w)+(1+v)*dudx(3,:)
+          CASE(8)
+             du=dudx(2,:); Base=(1-u)*(1+w)
+             dBase(:)=-dudx(1,:)*(1+w)+(1-u)*dudx(3,:)
+          CASE(9)
+             du=dudx(3,:); Base=(1-u)*(1-v)
+             dBase(:)=-dudx(1,:)*(1-v)-(1-u)*dudx(2,:)
+          CASE(10)
+             du=dudx(3,:); Base=(1+u)*(1-v)
+             dBase(:)= dudx(1,:)*(1-v)-(1+u)*dudx(2,:)
+          CASE(11)
+             du=dudx(3,:); Base=(1+u)*(1+v)
+             dBase(:)= dudx(1,:)*(1+v)+(1+u)*dudx(2,:)
+          CASE(12)
+             du=dudx(3,:); Base=(1-u)*(1+v)
+             dBase(:)=-dudx(1,:)*(1+v)+(1-u)*dudx(2,:)
+         END SELECT
+
+         wBasis(i,:)=Base*du/n
+         RotWBasis(i,1)=(dBase(2)*du(3) - dBase(3)*du(2))/n
+         RotWBasis(i,2)=(dBase(3)*du(1) - dBase(1)*du(3))/n
+         RotWBasis(i,3)=(dBase(1)*du(2) - dBase(2)*du(1))/n
+       END SELECT
+
+       IF( nk < nj ) THEN
+         WBasis(i,:) = -WBasis(i,:); RotWBasis(i,:) = -RotWBasis(i,:)
+       END IF
+     END DO
+!------------------------------------------------------------------------------
+   END SUBROUTINE GetEdgeBasis
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+   SUBROUTINE GalerkinProjector(Model,Mesh,A,B)
+!------------------------------------------------------------------------------
+     TYPE(Matrix_t), POINTER :: Projector,A,B
+     TYPE(Mesh_t) :: Mesh
+     TYPE(Model_t) :: Model
+!------------------------------------------------------------------------------
+     INTEGER, ALLOCATABLE :: CPerm(:)
+     INTEGER:: i,j,k,n,t,ll
+     LOGICAL :: Found
+     TYPE(ValueList_t), POINTER :: BC
+     TYPE(Element_t), POINTER :: Element
+!------------------------------------------------------------------------------
+
+     ALLOCATE(Cperm(Mesh % NumberOfNodes));cperm=0
+     ll=0
+
+     A => Null()
+     B => Null()
+
+     DO t=1,GetNOFBoundaryElements()
+       Element=>GetBoundaryElement(t)
+       n=GetElementNOFNodes()
+
+       BC=>GetBC()
+       IF(.NOT.ASSOCIATED(BC)) CYCLE
+
+       IF (.NOT.ListCheckPresent(BC,'Mortar BC')) CYCLE
+         
+       IF(.NOT.ASSOCIATED(A)) THEN
+         A=>AllocateMatrix()
+         B=>AllocateMatrix()
+         A % Format = MATRIX_LIST
+         B % Format = MATRIX_LIST
+       END IF
+
+       DO i=1,n
+         j=Element % NodeIndexes(i)
+         IF(CPerm(j)==0) THEN
+           ll=ll+1
+           cperm(j)=ll
+         END IF
+       END DO
+
+       CALL IntegConns(A,B,CPerm,Element,n)
+     END DO
+
+     CALL List_toCRSMatrix(A)
+     CALL List_toCRSMatrix(B)
+
+CONTAINS
+
+
+
+!------------------------------------------------------------------------------
+  SUBROUTINE IntegConns(A,B,CPerm,Element,n)
+!------------------------------------------------------------------------------
+    TYPE(Element_t), POINTER :: Element, oElement
+    TYPE(Matrix_t) :: A,B
+    INTEGER ::n,i,j,k,t,p,q,cperm(:)
+    REAL(KIND=dp):: myMass(n,n),otherMass(n,n),detj,DetJo, &
+             Basis(n),Basiso(n),glob(3),loc(3)
+    LOGICAL :: stat
+    TYPE(Nodes_t),SAVE :: Nodes, oNodes
+    TYPE(GaussIntegrationPoints_t), TARGET :: ip
+!------------------------------------------------------------------------------
+
+    ip=GaussPoints(Element)
+    CALL GetElementNodes(Nodes)
+
+    mymass=0
+    DO t=1,ip%n
+      stat = ElementInfo(Element,Nodes,ip%u(t),ip%v(t),iP%w(t),detJ,Basis)
+
+      glob(1) = SUM(Basis(1:n)*Nodes % x(1:n))
+      glob(2) = SUM(Basis(1:n)*Nodes % y(1:n))
+      glob(3) = SUM(Basis(1:n)*Nodes % z(1:n))
+
+      CALL FindElement(Glob,Loc,oElement)
+      IF(.NOT.ASSOCIATED(oElement)) STOP 'eh?'
+      CALL GetElementNodes(oNodes,oElement)
+
+      stat = ElementInfo(oElement,oNodes,loc(1),loc(2),loc(3),detJo,Basiso)
+
+      OtherMass=0
+      DO i=1,n
+        DO j=1,n
+          MyMass(i,j)=MyMass(i,j)+detJ*ip%s(t)*Basis(j)*Basis(i)
+          OtherMass(i,j)=OtherMass(i,j)+detJ*ip%s(t)*Basiso(j)*Basis(i)
+        END DO
+      END DO
+  
+      DO i=1,n
+        p=CPerm(Element % NodeIndexes(i))
+        DO j=1,n
+         q=oElement % NodeIndexes(j)
+         CALL AddToMatrixElement(B,p,q,OtherMass(i,j))
+        END DO
+      END DO
+     END DO
+
+     DO i=1,n
+       p=CPerm(Element % NodeIndexes(i))
+       DO j=1,n
+        q=Element % NodeIndexes(j)
+        CALL AddToMatrixElement(A,p,q,MyMass(i,j))
+       END DO
+     END DO
+!------------------------------------------------------------------------------
+  END SUBROUTINE IntegConns
+!------------------------------------------------------------------------------
+
+!------------------------------------------------------------------------------
+  SUBROUTINE FindElement(glob,loc,oelement)
+!------------------------------------------------------------------------------
+    real(kind=dp)::glob(:),loc(:)
+    integer ::id,i
+    type(nodes_t),save::nodes
+    type(element_t),pointer::oelement,el
+!------------------------------------------------------------------------------
+
+    id=GetInteger(GetBC(),'Mortar BC')
+    oelement=>Null()
+    DO i=1,GetNOFBoundaryElements()
+      el=>Mesh % Elements( Mesh % NumberOfBulkElements+i)
+      IF (el%BoundaryInfo%Constraint/=id) CYCLE
+
+      CALL GetElementNodes(Nodes,El)
+      IF(PointInElement(el,nodes,glob,loc)) THEN
+        oelement=>el
+        EXIT
+      END IF
+    END DO
+!------------------------------------------------------------------------------
+   END SUBROUTINE FindElement
+!------------------------------------------------------------------------------
+!------------------------------------------------------------------------------
+  END SUBROUTINE GalerkinProjector
+!------------------------------------------------------------------------------
+
 
 
 END MODULE DefUtils

@@ -74,6 +74,37 @@ static int Getrow(char *line1,FILE *io,int upper)
   return(0);
 }
 
+static int GetrowDouble(char *line1,FILE *io)
+{
+  int i,isend;
+  char line0[MAXLINESIZE],*charend;
+
+  for(i=0;i<MAXLINESIZE;i++) 
+    line0[i] = ' ';
+
+ newline:
+
+  charend = fgets(line0,MAXLINESIZE,io);
+  isend = (charend == NULL);
+
+  if(isend) return(1);
+
+  if(line0[0] == '#' || line0[0] == '!') goto newline;
+  if(strstr(line0,"#")) goto newline;
+
+  for(i=0;i<MAXLINESIZE;i++) { 
+
+    /* The fortran double is not recognized by C string operators */
+    if( line0[i] == 'd' || line0[i] == 'D' ) {
+      line1[i] = 'e';
+    } else {
+      line1[i] = line0[i];    
+    }
+  }
+
+  return(0);
+}
+
 
 static int Comsolrow(char *line1,FILE *io) 
 {
@@ -2481,7 +2512,7 @@ int LoadTriangleInput(struct FemType *data,struct BoundaryType *bound,
     }
   } 
 
-  printf("Succesfully read the mesh from the Triangle input file.\n");
+  printf("Successfully read the mesh from the Triangle input file.\n");
 
   return(0);
 }
@@ -2601,7 +2632,7 @@ printf("ALLOCATED=%d\n",allocated);
     goto allocate;
   }
 
-  printf("Succesfully read the mesh from the Medit input file.\n");
+  printf("Successfully read the mesh from the Medit input file.\n");
 
   return(0);
 }
@@ -3101,7 +3132,8 @@ omstart:
       }
     }
 
-    else if(strstr(line,"# number of domains")) {
+    else if(strstr(line,"# number of geometric entity indices") || 
+	    strstr(line,"# number of domains")) {
 
       cp = line;
       k = next_int(&cp);
@@ -3448,7 +3480,7 @@ allocate:
 
   ElementsToBoundaryConditions(data,bound,FALSE,info);
 
-  printf("Succesfully read the mesh from the Gmsh input file.\n");
+  printf("Successfully read the mesh from the Gmsh input file.\n");
 
   return(0);
 }
@@ -3648,7 +3680,7 @@ omstart:
     RenumberMaterialTypes(data,bound,info);
   }
 
-  if(info) printf("Succesfully read the mesh from the Gmsh input file.\n");
+  if(info) printf("Successfully read the mesh from the Gmsh input file.\n");
 
   return(0);
 }
@@ -3837,13 +3869,13 @@ omstart:
 
   if(0) ElementsToBoundaryConditions(data,bound,FALSE,info);
 
-  if(info) printf("Succesfully read the mesh from the Geo input file.\n");
+  if(info) printf("Successfully read the mesh from the Geo input file.\n");
 
   return(0);
 }
 
 
-int UnvToElmerType(int unvtype)
+static int UnvToElmerType(int unvtype)
 {
   int elmertype;
 
@@ -3854,6 +3886,7 @@ int UnvToElmerType(int unvtype)
     elmertype = 202;
     break;
 
+  case 22:
   case 23:
     elmertype = 203;
     break;
@@ -3893,6 +3926,7 @@ int UnvToElmerType(int unvtype)
     elmertype = 404;
     break;
 
+  case 45:
   case 46:
   case 56:
   case 66:
@@ -3906,7 +3940,7 @@ int UnvToElmerType(int unvtype)
     break;
 
   case 118:
-    elmertype = 513;
+    elmertype = 510;
     break;
 
   case 112:
@@ -3933,7 +3967,8 @@ int UnvToElmerType(int unvtype)
   return(elmertype);
 }
 
-static int CheckRedundantIndexes(int nonodes,int *ind)
+
+static int UnvRedundantIndexes(int nonodes,int *ind)
 {
   int i,j,redundant;
   
@@ -3949,14 +3984,60 @@ static int CheckRedundantIndexes(int nonodes,int *ind)
       printf(" %d ",ind[i]);
     printf("\n");
   }
+
   return(redundant);
 }
 
-int LoadUniversalMesh(struct FemType *data,char *prefix,int info)
+
+static void UnvToElmerIndx(int elemtype,int *topology)
+{
+  int i=0,nodes=0,oldtopology[MAXNODESD2];
+  int reorder, *porder;
+
+  int order510[]={1,3,5,10,2,4,6,7,8,9};
+  int order408[]={1,3,5,7,2,4,6,8};
+  int order820[]={1,3,5,7,13,15,17,19,2,4,6,8,9,10,11,12,14,16,18,20};
+
+
+  reorder = FALSE;
+
+  switch (elemtype) {
+      
+  case 510:        
+    reorder = TRUE;
+    porder = &order510[0];
+    break;
+
+  case 408:        
+    reorder = TRUE;
+    porder = &order408[0];
+    break;
+
+  case 820:        
+    reorder = TRUE;
+    porder = &order820[0];
+    break;
+   
+  }
+
+  if( reorder ) {
+    nodes = elemtype % 100;
+    for(i=0;i<nodes;i++) 
+      oldtopology[i] = topology[i];
+    for(i=0;i<nodes;i++) 
+      topology[i] = oldtopology[porder[i]-1];
+  }
+}
+
+
+
+
+int LoadUniversalMesh(struct FemType *data,struct BoundaryType *bound,
+		      char *prefix,int info)
      /* Load the grid in universal file format */
 {
   int noknots,totknots,noelements,elemcode,maxnodes;
-  int allocated,maxknot,dim,ind;
+  int allocated,maxknot,dim,ind,lines;
   int reordernodes,reorderelements,nogroups,maxnodeind,maxelem,elid,unvtype,elmertype;
   int nonodes,group,grouptype,mode,nopoints,nodeind,matind,physind,colorind;
   int debug,mingroup,maxgroup,nogroup,noentities,dummy;
@@ -4001,7 +4082,7 @@ omstart:
 
   if(info) {
     if(allocated) 
-      printf("Second round for memorizing data\n");
+      printf("Second round for reading data\n");
     else 
       printf("First round for allocating data\n");
   }
@@ -4019,7 +4100,7 @@ omstart:
 
   nextline:
     if( !strncmp(line,"    -1",6)) mode = 0;
-    if(Getrow(line,in,FALSE)) goto end;
+    if( Getrow(line,in,FALSE)) goto end;
     if(!line) goto end;
 
     if( !strncmp(line,"    -1",6)) mode = 0;
@@ -4029,23 +4110,23 @@ omstart:
     else if( !strncmp(line,"  2435",6)) mode = 2435;
     else if( !strncmp(line,"   781",6)) mode = 781;
     else if( !strncmp(line,"   780",6)) mode = 780;
-    else if(1 && allocated && strncmp(line,"      ",6)) printf("Unknown mode: %s",line);
+    else if( allocated && strncmp(line,"      ",6)) printf("Unknown mode: %s",line);
 
 
     if(debug && mode) printf("Current mode is %d\n",mode);
 
     /* node definition */
     if( mode == 2411 || mode == 781 ) {
-      if(debug) printf("Reading nodes\n");
+      if(debug) printf("Reading nodes in mode %d\n",mode);
       for(;;) {
-	Getrow(line,in,FALSE);
+	GetrowDouble(line,in);
 	if( !strncmp(line,"    -1",6)) goto nextline;
 
 	cp = line;
 	nodeind = next_int(&cp);
 	/* Three other fields omitted: two coordinate systems and color */
 	noknots += 1;
-	Getrow(line,in,FALSE);
+	GetrowDouble(line,in);
 	
 	if(allocated) {
 	  if(reordernodes) {
@@ -4055,6 +4136,7 @@ omstart:
 	    else
 	      u2eind[nodeind] = noknots;
 	  }
+
 	  cp = line;
 	  data->x[noknots] = next_real(&cp);
 	  data->y[noknots] = next_real(&cp);
@@ -4067,9 +4149,8 @@ omstart:
       }
     }
 
-
     if( mode == 2412 ) {
-      if(debug) printf("Reading elements\n");
+      if(debug) printf("Reading elements from field %d\n",mode);
       for(;;) {
 	Getrow(line,in,FALSE);
 	if( !strncmp(line,"    -1",6)) goto nextline;
@@ -4089,13 +4170,27 @@ omstart:
 	  maxelem = MAX(maxelem, elid);
 	}
 	
-	if(unvtype == 11) Getrow(line,in,FALSE);
+	if(unvtype == 11 || unvtype == 21 || unvtype == 22 ) Getrow(line,in,FALSE);
 	Getrow(line,in,FALSE);
 	cp = line;
+
+	elmertype = UnvToElmerType(unvtype); 
+	if(!elmertype) {
+	  printf("Unknown elementtype %d %d %d %d %d %d\n",
+		 elid,unvtype,physind,matind,colorind,nonodes);
+	  printf("line: %s\n",line);
+	  bigerror("done");
+	}
+
+	if(elmertype == 510 ) 	   
+	  lines = 1;
+	else if(elmertype == 820 ) 
+	  lines = 2;
+	else
+	  lines = 0;
+
 	if(allocated) {
 	  if(reorderelements) u2eelem[elid] = noelements;
-
-	  elmertype = UnvToElmerType(unvtype); 
 
 	  if(debug && !elementtypes[elmertype]) {
 	    elementtypes[elmertype] = TRUE;
@@ -4106,23 +4201,38 @@ omstart:
 	    printf("nonodes = %d elemtype = %d elid = %d\n",nonodes,elmertype,elid);
 	    nonodes = elmertype % 100;
 	  }
-
+	  
+	 	  
 	  data->elementtypes[noelements] = elmertype;
-	  for(i=0;i<nonodes;i++)
+	  for(i=0;i<nonodes;i++) {
+	    if( lines > 0 && i >= 8 ) {
+	      if( i%8 == 0 ) {
+		Getrow(line,in,FALSE);
+		cp = line;
+	      }
+	    }
 	    data->topology[noelements][i] = next_int(&cp);
+	  }
 
-	  CheckRedundantIndexes(nonodes,data->topology[noelements]);
+	  UnvRedundantIndexes(nonodes,data->topology[noelements]);
+
+	  UnvToElmerIndx(elmertype,data->topology[noelements]);	  
 
 	  /* should this be physical property or material property? */
 	  data->material[noelements] = physind;
 	}
-      }    
+	else {
+	  for(i=1;i<=lines;i++) 
+	    Getrow(line,in,FALSE);	  
+	}
+      }
     }
+
 
     if( mode == 780 ) {
       int physind2,matind2;
 
-      if(debug) printf("Reading elements\n");
+      if(debug) printf("Reading elements from field %d\n",mode);
       for(;;) {
 	Getrow(line,in,FALSE);
 	if( !strncmp(line,"    -1",6)) goto nextline;
@@ -4145,7 +4255,7 @@ omstart:
 	  maxelem = MAX(maxelem, elid);
 	}
 	
-	if(unvtype == 11) Getrow(line,in,FALSE);
+	if(unvtype == 11 || unvtype == 21) Getrow(line,in,FALSE);
 	Getrow(line,in,FALSE);
 	cp = line;
 	if(allocated) {
@@ -4167,7 +4277,9 @@ omstart:
 	  for(i=0;i<nonodes;i++)
 	    data->topology[noelements][i] = next_int(&cp);
 
-	  CheckRedundantIndexes(nonodes,data->topology[noelements]);
+	  UnvRedundantIndexes(nonodes,data->topology[noelements]);
+
+	  UnvToElmerIndx(elmertype,data->topology[noelements]);	  
 
 	  /* should this be physical property or material property? */
 	  data->material[noelements] = physind;
@@ -4176,7 +4288,7 @@ omstart:
     }  
 
     if( mode == 2467 || mode == 2435) {
-      if(debug) printf("Reading groups\n");
+      if(debug) printf("Reading groups in mode %d\n",mode);
       
       for(;;) {
 	Getrow(line,in,FALSE);
@@ -4282,8 +4394,8 @@ end:
     data->dim = dim;
     
     if(info) {
-      printf("Allocating for %d knots and %d %d-node elements.\n",
-	     noknots,noelements,maxnodes);
+      printf("Allocating for %d knots and %d %d-node elements in %d dims.\n",
+	     noknots,noelements,maxnodes,dim);
     }  
     AllocateKnots(data);
     allocated = TRUE;
@@ -4319,7 +4431,10 @@ end:
       if(data->material[i] == 0) data->material[i] = maxgroup + 1;
   }
     
+  ElementsToBoundaryConditions(data,bound,TRUE,info);
+ 
   if(info) printf("The Universal mesh was loaded from file %s.\n\n",filename);
+
   return(0);
 }
 

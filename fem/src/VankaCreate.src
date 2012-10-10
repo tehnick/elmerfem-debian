@@ -1,3 +1,42 @@
+!/*****************************************************************************/
+! *
+! * Elmer, A Finite Element Software for Multiphysical Problems
+! *
+! * Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
+! * 
+! * This library is free software; you can redistribute it and/or
+! * modify it under the terms of the GNU Lesser General Public
+! * License as published by the Free Software Foundation; either
+! * version 2.1 of the License, or (at your option) any later version.
+! *
+! * This library is distributed in the hope that it will be useful,
+! * but WITHOUT ANY WARRANTY; without even the implied warranty of
+! * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! * Lesser General Public License for more details.
+! * 
+! * You should have received a copy of the GNU Lesser General Public
+! * License along with this library (in file ../LGPL-2.1); if not, write 
+! * to the Free Software Foundation, Inc., 51 Franklin Street, 
+! * Fifth Floor, Boston, MA  02110-1301  USA
+! *
+! *****************************************************************************/
+!
+!/******************************************************************************
+! *
+! *  Authors: Juha Ruokolainen
+! *  Email:   Juha.Ruokolainen@csc.fi
+! *  Web:     http://www.csc.fi/elmer
+! *  Address: CSC - IT Center for Science Ltd.
+! *           Keilaranta 14
+! *           02101 Espoo, Finland 
+! *
+! *****************************************************************************/
+
+!> \ingroup ElmerLib
+!> \{
+
+!-------------------------------------------------------------------------------
+!> Vanka preconditioning for iterative methods.
 !-------------------------------------------------------------------------------
     SUBROUTINE VankaPrec(u,v,ipar)
 !-------------------------------------------------------------------------------
@@ -49,6 +88,8 @@
 
 
 !------------------------------------------------------------------------------
+!> Create the Vanka preconditioning.
+!------------------------------------------------------------------------------
   SUBROUTINE VankaCreate(A,Solver)
      USE DefUtils
 !------------------------------------------------------------------------------
@@ -94,10 +135,9 @@
        cnt = 0
        DO i=1,A % NumberOfRows
          DO j=Rows(i),Rows(i+1)-1
-           k = A % INVPerm(Cols(j))
-           IF ( A % ParallelInfo % Interface(k) ) THEN
-             DO l=1,SIZE(A % ParallelInfo % NeighbourList(k) % Neighbours)
-               m = A % ParallelInfo % NeighbourList(k) % Neighbours(l)
+           IF ( A % ParallelInfo % Interface(Cols(j)) ) THEN
+             DO l=1,SIZE(A % ParallelInfo % NeighbourList(Cols(j)) % Neighbours)
+               m = A % ParallelInfo % NeighbourList(Cols(j)) % Neighbours(l)
                IF ( m==ParEnv % myPE ) CYCLE
                cnt(m) = cnt(m)+1
              END DO
@@ -114,14 +154,13 @@
        cnt = 0
        DO i=1,A % NumberOfRows
          DO j=Rows(i),Rows(i+1)-1
-           k = A % INVPerm(Cols(j))
-           DO l=1,SIZE(A % ParallelInfo % NeighbourList(k) % Neighbours)
-             m = A % ParallelInfo % NeighbourList(k) % Neighbours(l)
+           DO l=1,SIZE(A % ParallelInfo % NeighbourList(Cols(j)) % Neighbours)
+             m = A % ParallelInfo % NeighbourList(Cols(j)) % Neighbours(l)
              IF ( m==ParEnv % myPE ) CYCLE
              cnt(m) = cnt(m)+1
-             Buf(m) % gcol(cnt(m)) = A % ParallelInfo % GlobalDOFs(k)
+             Buf(m) % gcol(cnt(m)) = A % ParallelInfo % GlobalDOFs(Cols(j))
              Buf(m) % gval(cnt(m)) = A % Values(j)
-             Buf(m) % grow(cnt(m)) = A % ParallelInfo % GlobalDOFs(A % INVPerm(i))
+             Buf(m) % grow(cnt(m)) = A % ParallelInfo % GlobalDOFs(i)
            END DO
          END DO
        END DO
@@ -168,12 +207,12 @@
               proc, 7004, MPI_COMM_WORLD, status, ierr )
 
            DO j=1,rcnt
-             l = SearchNode(A % ParallelInfo,rcol(j))
+             l = SearchNode(A % ParallelInfo,rcol(j),Order=A % Perm)
              IF ( l>0 ) THEN
-               k = SearchNode(A % ParallelInfo,rrow(j))
+               k = SearchNode(A % ParallelInfo,rrow(j),Order=A % Perm)
                IF ( k>0 ) THEN
-                 k = A % Perm(k)
-                 l = A % Perm(l)
+!                k = A % Perm(k)
+!                l = A % Perm(l)
                  IF ( l>=k ) THEN
                    DO m=Diag(k),Rows(k+1)-1
                      IF ( Cols(m)==l ) THEN
@@ -233,3 +272,5 @@
 !------------------------------------------------------------------------------
   END SUBROUTINE VankaCreate
 !------------------------------------------------------------------------------
+
+!> \}

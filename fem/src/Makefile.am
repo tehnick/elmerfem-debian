@@ -1,14 +1,14 @@
-SUBDIRS=view3d viewaxis binio
+SUBDIRS=view3d viewaxis binio . modules
 
 OBJ_EXT=.$(OBJEXT)
 SHL_EXT=.$(SHLEXT)
 LIB_EXT=.$(LIBEXT)
 EXE_EXT=$(EXEEXT)
 
-include make.bin
+include make.lib
 include make.dep
 
-NORMAL_TARGETS=mpif libelmersolver$(SHL_EXT) ElmerSolver$(EXE_EXT) $(BINARIES) ViewFactors$(EXE_EXT) GebhardtFactors$(EXE_EXT)
+NORMAL_TARGETS=mpif libelmersolver$(SHL_EXT) ElmerSolver$(EXE_EXT) ViewFactors$(EXE_EXT) GebhardtFactors$(EXE_EXT)
 MPI_TARGETS=ElmerSolver_mpi$(EXE_EXT)
 
 
@@ -20,7 +20,7 @@ endif
 
 all-local: $(ELMER_TARGETS)
 
-SUFFIXES: .f90 .so .src 
+SUFFIXES: .f90 .so .src .cpp
 
 if USE_CPP
 # Use basic CPP
@@ -37,6 +37,9 @@ else
 .f90.$(OBJEXT):
 	$(FC) $(FCFLAGS) $(FORTRAN_CPP_FLAG) $(FCPPFLAGS) -c $<
 endif
+
+.cxx.$(OBJEXT):
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $<
 
 nofdeps:
 	sed -e "s/^\([^:^#]*\...OBJEXT.: \)/#\1/g" Makefile > Makefile.nodeps
@@ -87,8 +90,6 @@ endif
 
 endif
 
-
-$(BINARIES) $(BINARIES_ODD): libelmersolver$(SHL_EXT)
 
 $(SOLVEROBJS): mpif
 
@@ -144,7 +145,6 @@ install-data-local:
 	@echo "Installing solvers to ${ELMER_SOLVER_DATADIR}/lib"
 
 	mkdir -p $(DESTDIR)$(ELMER_SOLVER_DATADIR)/lib
-	$(CP) `ls -f *$(SHL_EXT) | grep -v libelmersolver` $(DESTDIR)$(ELMER_SOLVER_DATADIR)/lib
 	$(CP) elements.def $(DESTDIR)$(ELMER_SOLVER_DATADIR)/lib
 	$(CP) SOLVER.KEYWORDS $(DESTDIR)$(ELMER_SOLVER_DATADIR)/lib
 
@@ -172,7 +172,7 @@ if USE_MPI
 endif
 
 clean-local:
-	$(RM) $(ALL) *.o *.mod *.f90 *.F *.fpp *~ *.a *.so *.dll \#* mpif mpif.h ElmerSolver ElmerSolver_mpi GebhardtFactors ResultToResult ViewFactors
+	$(RM) $(ALL) *.o *.mod *.f90 *.F *.fpp *~ *.a *.so *.dll \#* mpif mpif.h ElmerSolver ElmerSolver_mpi GebhardtFactors ViewFactors
 
 
 bin_PROGRAMS = SC2Elmer 
@@ -196,11 +196,13 @@ EXTRA_DIST = \
 	ArtificialCompressibility.src \
 	BandMatrix.src \
 	BandwidthOptimize.src \
+	BlockSolve.src \
         cholmod.c	      \
 	ClusteringMethods.src \
 	CoordinateSystems.src \
 	CPUTime.c \
 	CRSMatrix.src \
+	DataToFieldSolver.src \
 	DCRComplexSolve.src \
 	DefUtils.src \
 	DFTSolver.src \
@@ -276,6 +278,7 @@ EXTRA_DIST = \
 	NormalSolver.src \
 	ParallelEigenSolve.src \
 	ParticleAdvector.src \
+	ParticleDynamics.src \
 	ParticleUtils.src \
 	PElementBase.src \
 	PElementMaps.src \
@@ -308,13 +311,13 @@ EXTRA_DIST = \
 	SolverUtils.src \
 	SolveSBand.src \
 	SolveHypre.c   \
+	SolveTrilinos.cxx   \
 	SolveSuperLU.c \
 	Spalart-Allmaras.src\
 	SParIterComm.src \
 	SParIterGlobals.src \
 	SParIterPrecond.src \
 	SParIterSolver.src \
-	SparseMatrix.src \
 	SSTKomega.src \
 	StatCurrentSolve.src \
 	StatElecBoundary.src \
@@ -328,6 +331,7 @@ EXTRA_DIST = \
 	StressSolve.src \
 	StucturedFlowLine.src \
 	StructuredMeshMapper.src \
+	ThermoElectricSolver.src \
 	TimeIntegrate.src \
 	TransportEquation.src \
 	TransientPhaseChange.src \
