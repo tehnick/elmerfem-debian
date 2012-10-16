@@ -1,3 +1,9 @@
+elmerfem (7.0.svn.5867+dfsg-0ppa1~quantal1) quantal; urgency=low
+
+  * New upstream revision.
+
+ -- Boris Pek <tehnick-8@mail.ru>  Tue, 16 Oct 2012 20:40:19 +0300
+
 elmerfem (7.0.svn.5864+dfsg-0ppa1~quantal1) quantal; urgency=low
 
   * New upstream revision.
