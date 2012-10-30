@@ -1,3 +1,9 @@
+elmerfem (7.0.svn.5907+dfsg-0ppa1~raring1) raring; urgency=low
+
+  * New upstream revision.
+
+ -- Boris Pek <tehnick-8@mail.ru>  Tue, 30 Oct 2012 21:12:27 +0200
+
 elmerfem (7.0.svn.5903+dfsg-0ppa1~raring1) raring; urgency=low
 
   * New upstream revision.
