@@ -1,0 +1,8 @@
+# This file is useful only for checking current version. You can use script
+# debian/elmerfem_get-orig-source.sh to get the orig tarball.
+
+version=3
+opts=dversionmangle=s/.*svn.(.*).dfsg.*/$1/ \
+  http://elmerfem.svn.sourceforge.net/viewvc/elmerfem/trunk \
+    .*elmerfem.*revision=([\d]+) \
+  debian debian/elmerfem_get-orig-source.sh
