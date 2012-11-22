@@ -1,21 +1,9 @@
-elmerfem (7.0.svn.5930+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Wed, 21 Nov 2012 21:26:49 +0200
-
-elmerfem (7.0.svn.5929+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Tue, 20 Nov 2012 22:25:06 +0200
-
-elmerfem (7.0.svn.5928+dfsg-0ppa1~raring1) raring; urgency=low
+elmerfem (7.0.svn.5931+dfsg-0ppa1~raring1) raring; urgency=low
 
   * New upstream revision.
   * Changelog was cleaned.
 
- -- Boris Pek <tehnick-8@mail.ru>  Tue, 20 Nov 2012 19:46:14 +0200
+ -- Boris Pek <tehnick-8@mail.ru>  Thu, 22 Nov 2012 23:16:59 +0200
 
 elmerfem (6.1.0.svn.5396.dfsg2-1) unstable; urgency=low
 
