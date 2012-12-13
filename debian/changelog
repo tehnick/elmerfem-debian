@@ -1,75 +1,9 @@
-elmerfem (7.0.svn.5980+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Tue, 11 Dec 2012 19:35:42 +0200
-
-elmerfem (7.0.svn.5978+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Mon, 10 Dec 2012 20:35:03 +0200
-
-elmerfem (7.0.svn.5973+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Thu, 06 Dec 2012 20:21:25 +0200
-
-elmerfem (7.0.svn.5969+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Wed, 05 Dec 2012 20:00:11 +0200
-
-elmerfem (7.0.svn.5964+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Tue, 04 Dec 2012 20:49:32 +0200
-
-elmerfem (7.0.svn.5950+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Fri, 30 Nov 2012 23:00:36 +0200
-
-elmerfem (7.0.svn.5947+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Thu, 29 Nov 2012 20:41:15 +0200
-
-elmerfem (7.0.svn.5944+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Tue, 27 Nov 2012 21:19:07 +0200
-
-elmerfem (7.0.svn.5942+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Tue, 27 Nov 2012 07:30:19 +0200
-
-elmerfem (7.0.svn.5940+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Mon, 26 Nov 2012 20:22:44 +0200
-
-elmerfem (7.0.svn.5934+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Fri, 23 Nov 2012 20:56:35 +0200
-
-elmerfem (7.0.svn.5931+dfsg-0ppa1~raring1) raring; urgency=low
+elmerfem (7.0.svn.5992+dfsg-0ppa1~raring1) raring; urgency=low
 
   * New upstream revision.
   * Changelog was cleaned.
 
- -- Boris Pek <tehnick-8@mail.ru>  Thu, 22 Nov 2012 23:16:59 +0200
+ -- Boris Pek <tehnick-8@mail.ru>  Thu, 13 Dec 2012 21:30:30 +0200
 
 elmerfem (6.1.0.svn.5396.dfsg2-1) unstable; urgency=low
 
