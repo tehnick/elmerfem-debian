@@ -2,7 +2,7 @@ Source: elmerfem
 Section: science
 Priority: extra
 Maintainer: Debian Science Maintainers <debian-science-maintainers@lists.alioth.debian.org>
-Uploaders: "Adam C. Powell, IV" <hazelsct@debian.org>
+Uploaders: "Adam C. Powell, IV" <hazelsct@debian.org>, Boris Pek <tehnick-8@mail.ru>
 Standards-Version: 3.9.2
 Build-Depends: debhelper (>= 5), quilt, po-debconf, autoconf, automake,
  gfortran, libblas-dev | libblas-3gf.so, liblapack-dev | liblapack-3gf.so,
