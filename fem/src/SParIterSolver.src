@@ -531,10 +531,7 @@ real(kind=dp) :: realtime,st
      NbsOldCols(:) = NbsIfMCols(:)
   END DO
 
-  IF ( SplittedMatrix % InsideMatrix % NumberOfRows /= 0 ) THEN
-     SplittedMatrix % InsideMatrix % Rows( InsideMRows ) = InsideMCols
-  END IF
-
+  SplittedMatrix % InsideMatrix % Rows( InsideMRows ) = InsideMCols
   DO j = 1, ParEnv % PEs
      IF ( OwnIfMatrix(j) % NumberOfRows /= 0 ) &
           OwnIfMatrix(j) % Rows(OwnIfMRows(j)) = OwnIfMCols(j)
@@ -1848,9 +1845,14 @@ SUBROUTINE Solve( SourceMatrix, SplittedMatrix, ParallelInfo, &
   REAL(KIND=dp), DIMENSION(:), ALLOCATABLE :: TmpXVec, TmpRHSVec, r(:)
 
   INTEGER(KIND=AddrInt) :: AddrFunc
-  REAL(KIND=dp) :: ILUT_TOL, RealTime
+  REAL(KIND=dp) :: ILUT_TOL
   INTEGER :: ILUn
   CHARACTER(LEN=MAX_NAME_LEN) :: Preconditioner
+
+  TYPE(Matrix_t), POINTER :: CM
+  INTEGER, POINTER :: SPerm(:), SCols(:)
+
+real(kind=dp)::cputime,realtime,tt,rt
 
   !*******************************************************************
 
@@ -1895,16 +1897,18 @@ SUBROUTINE Solve( SourceMatrix, SplittedMatrix, ParallelInfo, &
  !
  !----------------------------------------------------------------------
 
- IF (SplittedMatrix % InsideMatrix % Diag(1)==0) THEN
-   DO i = 1, SplittedMatrix % InsideMatrix % NumberOfRows
-     DO j = SplittedMatrix % InsideMatrix % Rows(i), &
-          SplittedMatrix % InsideMatrix % Rows(i+1) - 1
-        IF ( SplittedMatrix % InsideMatrix % Cols(j) == i ) THEN
-           SplittedMatrix % InsideMatrix % Diag(i) = j
-           EXIT
-        END IF
+ IF (SplittedMatrix % InsideMatrix % NumberOFRows>0) THEN
+   IF (SplittedMatrix % InsideMatrix % Diag(1)==0) THEN
+     DO i = 1, SplittedMatrix % InsideMatrix % NumberOfRows
+       DO j = SplittedMatrix % InsideMatrix % Rows(i), &
+            SplittedMatrix % InsideMatrix % Rows(i+1) - 1
+          IF ( SplittedMatrix % InsideMatrix % Cols(j) == i ) THEN
+             SplittedMatrix % InsideMatrix % Diag(i) = j
+             EXIT
+          END IF
+        END DO
       END DO
-    END DO
+    END IF
   END IF
 
   DO i = 1, SplittedMatrix % InsideMatrix % NumberOfRows
@@ -1928,9 +1932,32 @@ SUBROUTINE Solve( SourceMatrix, SplittedMatrix, ParallelInfo, &
  !----------------------------------------------------------------------
 
   IF ( .NOT. SourceMatrix % Complex ) THEN
+    CM => SourceMatrix % ConstraintMatrix
+    IF (ASSOCIATED(CM)) THEN
+      ALLOCATE(SPerm(SourceMatrix % NumberOfRows)); SPerm=0
+      j = 0
+      DO i = 1, SourceMatrix % NumberOfRows
+        IF (ParallelInfo % NeighbourList(i) % Neighbours(1)==ParEnv % MyPE) THEN
+           j = j + 1
+           SPerm(i)=j
+        END IF
+      END DO
+      SCols => CM % Cols
+      ALLOCATE(CM % Cols(SIZE(SCols)))
+      CM % Cols = SPerm(SCols)
+      DEALLOCATE(SPerm)
+      SplittedMatrix % InsideMatrix % ConstraintMatrix => CM
+     END IF
+
      CALL IterSolver( SplittedMatrix % InsideMatrix, TmpXVec, &
         TmpRHSVec, Solver, DotF=AddrFunc(SParDotProd), NormF=AddrFunc(SParNorm), &
           matVecF=AddrFunc(SParMatrixVector) )
+
+    IF (ASSOCIATED(CM)) THEN
+      DEALLOCATE(CM % Cols)
+      CM % Cols => SCols
+      SplittedMatrix % InsideMatrix % ConstraintMatrix => Null()
+    END IF
   ELSE
      CALL IterSolver( SplittedMatrix % InsideMatrix, TmpXVec, &
        TmpRHSVec, Solver, DotF=AddrFunc(SParCDotProd), NormF=AddrFunc(SParCNorm), &

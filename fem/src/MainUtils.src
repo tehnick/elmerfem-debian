@@ -945,16 +945,9 @@ CONTAINS
         ELSE IF ( Solver % TimeOrder >= 2 ) THEN
           Component => Solver % Variable % PrevValues(:,2)
           str = TRIM( Solver % Variable % Name ) // ' Acceleration'
-          CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
+          CALL VariableAddVector( Solver % Mesh % Variables, Solver % Mesh, Solver, &
               str, Solver % Variable % Dofs, Component, Solver % Variable % Perm, &
               Secondary = .TRUE. )
-          
-          DO k=1,Solver % Variable % DOFs
-            Component => Solver % Variable % PrevValues(k::Solver % Variable % DOFs,2)          
-            str = ComponentName( Solver % Variable % Name) // ' Acceleration ' // CHAR(i+ICHAR('0'))
-            CALL VariableAdd( Solver % Mesh % Variables, Solver % Mesh, Solver, &
-                str, 1, Component, Solver % Variable % Perm, Secondary = .TRUE. )
-          END DO
         END IF
       END IF
 
@@ -3398,12 +3391,14 @@ CONTAINS
 !------------------------------------------------------------------------------
      TYPE(Model_t)  :: Model
      TYPE(Solver_t),POINTER :: Solver
-     LOGICAL :: TransientSimulation, UpdateExported
-     REAL(KIND=dp) :: dt, OrigDT, DTScal
+     LOGICAL :: TransientSimulation
+     REAL(KIND=dp) :: dt
 !------------------------------------------------------------------------------
-     LOGICAL :: stat, Found, TimeDerivativeActive, Timing, IsPassiveBC
-     INTEGER :: i, j, n, BDOFs, timestep, timei, PassiveBcId
-     INTEGER, POINTER :: ExecIntervals(:)
+     REAL(KIND=dp) :: OrigDT, DTScal
+     LOGICAL :: stat, Found, TimeDerivativeActive, Timing, IsPassiveBC, &
+         UpdateExported, CoordTransform
+     INTEGER :: i, j, n, BDOFs, timestep, timei, timei0, PassiveBcId
+     INTEGER, POINTER :: ExecIntervals(:),ExecIntervalsOffset(:)
      REAL(KIND=dp) :: tcond, t0, rt0, st, rst, ct, CPUTime,RealTime
      TYPE(Variable_t), POINTER :: TimeVar, IterV
      CHARACTER(LEN=MAX_NAME_LEN) :: str
@@ -3413,6 +3408,12 @@ CONTAINS
 !------------------------------------------------------------------------------
      CALL SetCurrentMesh( Model, Solver % Mesh )
      Model % Solver => Solver
+
+     CoordTransform = ListCheckPresent( Solver % Values,'Coordinate Transformation')
+     IF( CoordTransform ) THEN
+       CALL CoordinateTransformation( Solver % Mesh, .FALSE. )
+     END IF
+
      Params => Solver % Values
 
 !------------------------------------------------------------------------------
@@ -3439,10 +3440,20 @@ CONTAINS
        TimeVar => VariableGet( Model % Variables, 'Timestep Interval' )
        timei = NINT(Timevar % Values(1))
 
+       IF( ExecIntervals(timei) == 0 ) RETURN
+
        TimeVar => VariableGet( Model % Variables, 'Timestep' )
        timestep = NINT(TimeVar % Values(1))
 
-       IF( MOD( timestep-1, ExecIntervals(timei)) /= 0 ) RETURN
+       ExecIntervalsOffset =>  ListGetIntegerArray( Params,&
+           'Exec Intervals Offset', Found )
+       IF( Found ) THEN
+         timei0 = ExecIntervalsOffset(timei)
+       ELSE
+         timei0 = 0
+       END IF
+
+       IF( MOD( timestep-1-timei0, ExecIntervals(timei)) /= 0 ) RETURN
      END IF
 
 !------------------------------------------------------------------------------
@@ -3520,6 +3531,10 @@ CONTAINS
    
      CALL ListSetNamespace('')
      Solver % dt = dt
+
+     IF( CoordTransform ) THEN
+       CALL BackCoordinateTransformation( Solver % Mesh )
+     END IF
 
 !------------------------------------------------------------------------------
 ! After solution register the timing, if requested

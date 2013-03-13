@@ -126,27 +126,27 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-  PURE FUNCTION i2s(value) RESULT(string)
+  PURE FUNCTION i2s(VALUE) RESULT(string)
 !------------------------------------------------------------------------------
-    INTEGER, INTENT(in) :: value
+    INTEGER, INTENT(in) :: VALUE
     CHARACTER(LEN=12) :: string
 !------------------------------------------------------------------------------
     INTEGER :: i,j,n,m,t,v
-    CHARACTER, PARAMETER :: digits(0:9)=['0','1','2','3','4','5','6','7','8','9']
+    CHARACTER, PARAMETER :: DIGITS(0:9)=['0','1','2','3','4','5','6','7','8','9']
 !------------------------------------------------------------------------------
      string = ' '
 
-     IF ( value>=0 ) THEN
+     IF ( VALUE>=0 ) THEN
        j=0
-       v=value
+       v=VALUE
      ELSE
        string(1:1)='-'
        j=1
-       v=-value
+       v=-VALUE
      END IF
 
      IF (v<10) THEN
-       string(j+1:j+1)=digits(v)
+       string(j+1:j+1)=DIGITS(v)
      ELSE
        n=2
        m=10
@@ -157,7 +157,7 @@ CONTAINS
 
        DO i=j+1,j+n
          t = v / m
-         string(i:i) = digits(t)
+         string(i:i) = DIGITS(t)
          v = v - t*m
          m = m / 10
        END DO
@@ -183,7 +183,7 @@ CONTAINS
     LOGICAL :: L
     CHARACTER(*), INTENT(IN) :: file
 !------------------------------------------------------------------------------
-    L = Index(file,':')>0 .OR. file(1:1)=='/' .OR. file(1:1)==Backslash
+    L = INDEX(file,':')>0 .OR. file(1:1)=='/' .OR. file(1:1)==Backslash
 !------------------------------------------------------------------------------
   END FUNCTION FileNameQualified
 !------------------------------------------------------------------------------
@@ -268,7 +268,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-!> Sort an interger array, together with an another integer array.
+!> Sort an interger array a, together with an another integer array.
 !------------------------------------------------------------------------------
    SUBROUTINE SortI( n,a,b )
 !------------------------------------------------------------------------------
@@ -324,7 +324,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-!> Sort an real array, and organize an index table accordingly.
+!> Sort an index array, and change the order of an real array accordingly.
 !------------------------------------------------------------------------------
    SUBROUTINE SortF( n,a,b )
 !------------------------------------------------------------------------------
@@ -379,6 +379,65 @@ CONTAINS
 
 !------------------------------------------------------------------------------
    END SUBROUTINE SortF
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+!> Sort an real array, and change the order of an index array accordingly.
+!------------------------------------------------------------------------------
+   SUBROUTINE SortD( n,a,b )
+!------------------------------------------------------------------------------
+     INTEGER :: n,b(:)
+     REAL(KIND=dp) :: a(:)
+!------------------------------------------------------------------------------
+
+     INTEGER :: i,j,l,ir,rb
+     REAL(KIND=dp) :: ra
+!------------------------------------------------------------------------------
+
+      IF ( n <= 1 ) RETURN
+ 
+      l = n / 2 + 1
+      ir = n
+      DO WHILE( .TRUE. )
+
+        IF ( l > 1 ) THEN
+          l = l - 1
+          ra = a(l)
+          rb = b(l)
+        ELSE
+          ra = a(ir)
+          rb = b(ir)
+          a(ir) = a(1)
+          b(ir) = b(1)
+          ir = ir - 1
+          IF ( ir == 1 ) THEN
+            a(1) = ra
+            b(1) = rb
+            RETURN
+          END IF
+        END IF
+        i = l
+        j = l + l
+        DO WHILE( j <= ir )
+          IF ( j<ir  ) THEN
+            IF ( a(j)<a(j+1) ) j = j+1
+          END IF
+          IF ( ra<a(j) ) THEN
+            a(i) = a(j)
+            b(i) = b(j)
+            i = j
+            j = j + i
+          ELSE
+            j = ir + 1
+          END IF
+          a(i) = ra
+          b(i) = rb
+       END DO
+     END DO
+
+!------------------------------------------------------------------------------
+   END SUBROUTINE SortD
 !------------------------------------------------------------------------------
 
 
@@ -500,20 +559,16 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-  FUNCTION Search( N,Array,Value ) RESULT ( INDEX )
+!> Search an integer value in an ordered array. 
+!------------------------------------------------------------------------------
+   FUNCTION SearchI( N,Array,Val ) RESULT ( Idx )
+!------------------------------------------------------------------------------
+    INTEGER :: N,Val,Array(:)
+!------------------------------------------------------------------------------
+    INTEGER :: Lower, Upper,Lou,Idx
 !------------------------------------------------------------------------------
 
-    INTEGER :: N,Value,Array(:)
-!------------------------------------------------------------------------------
-
-    ! Local variables
-
-    INTEGER :: Lower, Upper,Lou,INDEX
-!------------------------------------------------------------------------------
-
-    !*******************************************************************
-
-    INDEX = 0 
+    Idx = 0 
     Upper = N
     Lower = 1
 
@@ -522,17 +577,17 @@ CONTAINS
     IF ( Upper == 0 ) RETURN
 
     DO WHILE( .TRUE. )
-      IF ( Array(Lower) == Value ) THEN
-         INDEX = Lower
+      IF ( Array(Lower) == Val) THEN
+         Idx = Lower
          EXIT
-      ELSE IF ( Array(Upper) == Value ) THEN
-         INDEX = Upper
+      ELSE IF ( Array(Upper) == Val ) THEN
+         Idx = Upper
          EXIT
       END IF
 
       IF ( (Upper-Lower)>1 ) THEN
         Lou = ISHFT((Upper + Lower), -1)
-        IF ( Array(Lou) < Value ) THEN
+        IF ( Array(Lou) < Val ) THEN
           Lower = Lou
         ELSE
           Upper = Lou
@@ -545,7 +600,56 @@ CONTAINS
     RETURN
 
 !------------------------------------------------------------------------------
-  END FUNCTION Search
+  END FUNCTION SearchI
+!------------------------------------------------------------------------------
+
+
+
+!------------------------------------------------------------------------------
+!> Search a real value in an ordered array. 
+!------------------------------------------------------------------------------
+  FUNCTION SearchR( N,Array,Val ) RESULT ( Idx )
+!------------------------------------------------------------------------------
+
+    INTEGER :: N
+    REAL(KIND=dP) :: Val,Array(:)
+    INTEGER :: Idx
+!------------------------------------------------------------------------------
+    INTEGER :: Lower, Upper,Lou
+!------------------------------------------------------------------------------
+
+    Idx = 0
+    Upper = N
+    Lower = 1
+
+    ! Handle the special case
+    IF ( Upper == 0 ) RETURN
+
+    DO WHILE( .TRUE. )
+      IF ( ABS( Array(Lower) - Val) < TINY(Val)  ) THEN
+        Idx = Lower
+        EXIT
+      ELSE IF ( ABS( Array(Upper) - Val ) < TINY(Val) ) THEN
+        Idx = Upper
+        EXIT
+      END IF
+
+      IF ( (Upper-Lower) > 1 ) THEN
+        Lou = ISHFT((Upper + Lower), -1)
+        IF ( Array(Lou) < Val ) THEN
+          Lower = Lou
+        ELSE
+          Upper = Lou
+        END IF
+      ELSE
+        EXIT
+      END IF
+    END DO
+    
+    RETURN
+
+!------------------------------------------------------------------------------
+  END FUNCTION SearchR
 !------------------------------------------------------------------------------
 
 
@@ -899,7 +1003,7 @@ CONTAINS
   FUNCTION ComponentNameVar( Var, Component ) RESULT(str)
 !------------------------------------------------------------------------------
     TYPE(Variable_t),INTENT(in) :: Var
-    INTEGER, OPTIONAL,intent(in) :: Component
+    INTEGER, OPTIONAL,INTENT(in) :: Component
 !------------------------------------------------------------------------------
     CHARACTER(LEN=MAX_NAME_LEN) :: str
 !------------------------------------------------------------------------------
@@ -1011,7 +1115,7 @@ END FUNCTION ComponentNameVar
       r(1) = (y(2) - y(1) )
       r(n) = (y(n) - y(n-1) )
 
-      CALL SolveTriDiag( n,x,h,r )
+      CALL SolveTriDiag( n,y,h,r )
 !------------------------------------------------------------------------------
     END SUBROUTINE CubicSpline
 !------------------------------------------------------------------------------
@@ -1276,6 +1380,7 @@ END FUNCTION ComponentNameVar
       Matrix % UMFPack_Numeric = 0
 #endif
 
+      Matrix % Cholesky  = .FALSE.
       Matrix % Lumped    = .FALSE.
       Matrix % Ordered   = .FALSE. 
       Matrix % COMPLEX   = .FALSE.

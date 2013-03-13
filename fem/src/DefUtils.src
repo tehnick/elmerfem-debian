@@ -1037,8 +1037,13 @@ CONTAINS
      END IF
 
      family = GetElementFamily( Element )
+     
+     ! This is not a generic rule but happens to be true for all combinations
+     ! 3D: families 3 and 4
+     ! 2D: family 2
+     ! 1D: family 1
+     possible = ( MeshDim <= family )
 
-     possible = ( family > 1 .OR. MeshDim == 1 )
    END FUNCTION PossibleFluxElement
 
 
@@ -1362,9 +1367,42 @@ CONTAINS
      END IF
   END SUBROUTINE GetElementNodes
 
+
+!> Get element body id
+!------------------------------------------------------------------------------
+  FUNCTION GetBody( Element ) RESULT(body_id)
+!------------------------------------------------------------------------------
+   INTEGER::Body_id
+   TYPE(Element_t), OPTIONAL :: Element
+!------------------------------------------------------------------------------
+   TYPE(Element_t), POINTER :: el
+!------------------------------------------------------------------------------
+   el => GetCurrentElement(Element)
+   body_id= el % BodyId
+!------------------------------------------------------------------------------
+  END FUNCTION GetBody
+!------------------------------------------------------------------------------
+
+
+!> Get element body parameters
+!------------------------------------------------------------------------------
+  FUNCTION GetBodyParams(Element) RESULT(lst)
+!------------------------------------------------------------------------------
+   TYPE(ValueList_t), POINTER :: Lst
+   TYPE(Element_t), OPTIONAL :: Element
+!------------------------------------------------------------------------------
+   TYPE(Element_t), POINTER :: el
+!------------------------------------------------------------------------------
+   lst => CurrentModel % Bodies(GetBody(Element)) % Values
+!------------------------------------------------------------------------------
+  END FUNCTION GetBodyParams
+!------------------------------------------------------------------------------
+
   
 !> Get the body force index of the active element
+!------------------------------------------------------------------------------
   FUNCTION GetBodyForceId(  Element, Found ) RESULT(bf_id)
+!------------------------------------------------------------------------------
      LOGICAL, OPTIONAL :: Found
      TYPE(Element_t), OPTIONAL :: Element
      TYPE(Element_t), POINTER :: CurrElement
@@ -1372,9 +1410,9 @@ CONTAINS
      INTEGER :: bf_id, body_id
 
      CurrElement => GetCurrentElement(Element)
-	body_id = CurrElement % BodyId 
+     body_id = CurrElement % BodyId 
 
-	IF ( PRESENT( Found ) ) THEN
+     IF ( PRESENT( Found ) ) THEN
 	bf_id = ListGetInteger( CurrentModel % Bodies(body_id) % Values, &
            'Body Force', Found, minv=1,maxv=CurrentModel % NumberOfBodyForces )
      ELSE
@@ -4468,11 +4506,12 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-   SUBROUTINE GalerkinProjector(Model,Mesh,A,B)
+   SUBROUTINE GalerkinProjector(Model,Mesh,A,B,NumericEps)
 !------------------------------------------------------------------------------
      TYPE(Matrix_t), POINTER :: Projector,A,B
      TYPE(Mesh_t) :: Mesh
      TYPE(Model_t) :: Model
+     REAL(KIND=dp), OPTIONAL :: NumericEps
 !------------------------------------------------------------------------------
      INTEGER, ALLOCATABLE :: CPerm(:)
      INTEGER:: i,j,k,n,t,ll
@@ -4484,8 +4523,8 @@ CONTAINS
      ALLOCATE(Cperm(Mesh % NumberOfNodes));cperm=0
      ll=0
 
-     A => Null()
-     B => Null()
+     A => NULL()
+     B => NULL()
 
      DO t=1,GetNOFBoundaryElements()
        Element=>GetBoundaryElement(t)
@@ -4499,8 +4538,8 @@ CONTAINS
        IF(.NOT.ASSOCIATED(A)) THEN
          A=>AllocateMatrix()
          B=>AllocateMatrix()
-         A % Format = MATRIX_LIST
-         B % Format = MATRIX_LIST
+         A % FORMAT = MATRIX_LIST
+         B % FORMAT = MATRIX_LIST
        END IF
 
        DO i=1,n
@@ -4582,20 +4621,20 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE FindElement(glob,loc,oelement)
 !------------------------------------------------------------------------------
-    real(kind=dp)::glob(:),loc(:)
-    integer ::id,i
-    type(nodes_t),save::nodes
-    type(element_t),pointer::oelement,el
+    REAL(kind=dp)::glob(:),loc(:)
+    INTEGER ::id,i
+    TYPE(nodes_t),SAVE::nodes
+    TYPE(element_t),POINTER::oelement,el
 !------------------------------------------------------------------------------
 
     id=GetInteger(GetBC(),'Mortar BC')
-    oelement=>Null()
+    oelement=>NULL()
     DO i=1,GetNOFBoundaryElements()
       el=>Mesh % Elements( Mesh % NumberOfBulkElements+i)
       IF (el%BoundaryInfo%Constraint/=id) CYCLE
 
       CALL GetElementNodes(Nodes,El)
-      IF(PointInElement(el,nodes,glob,loc)) THEN
+      IF(PointInElement(el,nodes,glob,loc,NumericEps=NumericEps)) THEN
         oelement=>el
         EXIT
       END IF

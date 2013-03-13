@@ -16,7 +16,7 @@
 #define MAXNODESD2 27       /* maximum number of 2D nodes */ 
 #define MAXNODESD1 9        /* maximum number of 1D nodes */
 #define MAXMAPPINGS 20      /* maximum number of geometry mappings */
-#define MAXCONNECTIONS 100  /* maximum number of connections in dual graph */
+#define MAXCONNECTIONS 100  /* maximum number of connections in nodal graph */
 #define MAXBCS 1000         /* maximum number of BCs in naming */
 #define MAXBODIES 100       /* maximum number of bodies in naming */
 #define MAXPARTITIONS 512   /* maximum number of partitions */
@@ -170,10 +170,12 @@ struct FemType {
     variables,     /* number of variables */
     indexwidth,    /* maximum difference of node indices */
     mapgeo,        /* mappings for geometry */
+    *nodalgraph[MAXCONNECTIONS],  
+    nodalmaxconnections,
+    nodalexists,
     *dualgraph[MAXCONNECTIONS],  
     dualmaxconnections,
     dualexists,
-
     *partitiontable[MAXCONNECTIONS],  
     maxpartitiontable,
     partitiontableexists, 
@@ -186,8 +188,10 @@ struct FemType {
     timesteps,     /* number of timesteps */
     periodicexist, /* does the periodic vector exist? */
     *periodic,     /* peridic ordering vector, if needed */
-    connectexist,  /* does the connection vector exist? */
-    *connect,      /* connections between nodes, if needed */
+    nodeconnectexist,  /* does the node connection vector exist? */
+    *nodeconnect,      /* connections between nodes, if needed */
+    elemconnectexist,  /* does the element connection vector exist? */
+    *elemconnect,      /* connections between elements, if needed */
     partitionexist,/* does the partitioning exist? */
     nopartitions,  /* number of partitions */
     *elempart,     /* which partition owns the element */
@@ -352,6 +356,7 @@ struct ElmergridType {
     partitionindirect, /* should one create indirect connections between nodes */
     partbw, /* minimize bandwidth for partitions */
     parthypre, /* renumber for hypre */
+    partdual, 
     nofilesin,
     saveinterval[3],
     elementsredone,
@@ -377,6 +382,6 @@ struct ElmergridType {
 
   char filesin[MAXCASES][MAXFILESIZE],
     filesout[MAXCASES][MAXFILESIZE], 
-    mapfile[MAXFILESIZE],infofile[MAXFILESIZE];
+    infofile[MAXFILESIZE];
 };
 

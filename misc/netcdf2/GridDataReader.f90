@@ -21,7 +21,7 @@
 ! *
 ! *****************************************************************************
 !
-!******************************************************************************
+! ******************************************************************************
 ! *
 ! *  Authors: Peter Råback, Vili Forsell, Juha Ruokolainen
 ! *  Email:   Juha.Ruokolainen@csc.fi
@@ -32,6 +32,10 @@
 ! *
 ! *  Original Date: 7.6.2011
 ! *  Modification Date: 2.12.2011
+! *
+! *  Modified by Rupert Gladstone on 17.12.2012 to allow for 2D and non-
+! *  uniform coordinate variables in the netcdf file (netcdf cells should be 
+! *  rectangular)
 ! *
 ! ****************************************************************************
 
@@ -44,38 +48,46 @@ MODULE NetCDFInterface
   ! These global variables hide the NetCDF specific Id:s from the calling level.
   !----------------------------------------------------------------------------
   INTEGER :: FileId = -1
-  INTEGER :: DimIds(4)
+  INTEGER :: DimIds(4),CoordVarIds(4)
   INTEGER :: VarId          
   INTEGER :: NetCDFStatus
-  LOGICAL :: Debug = .TRUE.
+  LOGICAL :: Debug = .FALSE.
   
-  SAVE FileId, DimIds, VarId, Debug
-  PRIVATE Fileid, DimIds, VarId, Debug, NetCDFStatus
+  SAVE FileId, DimIds, CoordVarIds, VarId, Debug
+  PRIVATE Fileid, DimIds, CoordVarIds, VarId, Debug, NetCDFStatus
+
+  INTERFACE  NetCDFCoordVar
+     MODULE PROCEDURE NetCDFCoordVar1D
+     MODULE PROCEDURE NetCDFCoordVar2D
+     MODULE PROCEDURE NetCDFCoordVar3D
+  END INTERFACE
 
   CONTAINS
     
     !------------------------------------------------------------------------------------
     !> Gathers and initializes all the necessary NetCDF information for picking variables.
     !------------------------------------------------------------------------------------
-    SUBROUTINE NetCDFInit(Params, NetDim, DimSize, TimeSize, x0, dx, t0, dt )
+    SUBROUTINE NetCDFInit(Params, NetDim, DimSize, CoordVarNDims, TimeSize, x0, dx, t0, dt, UniformCoords )
       !--------------------------------------------------
       TYPE(ValueList_t), POINTER, INTENT(IN) :: Params
       INTEGER, INTENT(OUT) :: NetDim                  ! Dimension of the NetCDF file
       INTEGER, INTENT(OUT) :: DimSize(:)              ! Lengths for all space dimensions
+      INTEGER, INTENT(OUT) :: CoordVarNDims(:)        ! Number of dimensions of coordinate variables (time should always be one dimensional) (assumptions will be made about which dimensions apply to which coord vars)
       INTEGER, INTENT(OUT) :: TimeSize                ! Length for time dimension
       REAL(KIND=dp), INTENT(OUT) :: x0(:)             ! Minimum coordinate values for the NetCDF grid
       REAL(KIND=dp), INTENT(OUT) :: dx(:)             ! Grid resolution for the NetCDF grid     
       REAL(KIND=dp), INTENT(OUT) :: t0                ! Minimum time value
       REAL(KIND=dp), INTENT(OUT) :: dt                ! Time resolution
+      LOGICAL, INTENT(OUT)       :: UniformCoords     ! Will only be true if all coordinate variables appear to be uniform
       !------------------------------------------------------------------------------
       LOGICAL :: Found
-      CHARACTER (len=MAX_NAME_LEN) :: CoordName       ! Name of the space or time coordinate
+      CHARACTER (len=MAX_NAME_LEN) :: DimName         ! Name of the space or time dimension
+      CHARACTER (len=MAX_NAME_LEN) :: CoordName       ! Name of the space or time coordinate variable (may be same as dimension)
       CHARACTER (len=MAX_NAME_LEN) :: FileName        ! File name for reading the data (of .nc format)
       CHARACTER (len=MAX_NAME_LEN) :: str
-      INTEGER :: i, j, k
-      INTEGER, PARAMETER :: IndVec(2) = [1,2], CountVec(1) = [2]
-      REAL(KIND=dp) :: FirstTwo(2)
-      
+      INTEGER :: i, j, k, dimid, size, VarDim, IndVec(1) 
+      REAL(KIND=dp) :: FirstTwo(2), LastTwo(2), dx0, dx1, dx2
+
       ! Opening the NetCDF file  
       !------------------------------------------------------------------------------
       FileName = GetString( Params, "Filename", Found )
@@ -84,81 +96,234 @@ MODULE NetCDFInterface
       IF ( NetCDFstatus /= NF90_NOERR ) THEN 
         CALL Fatal( 'GridDataReader', 'NetCDF file could not be opened: '//TRIM(FileName)) 
       END IF
-      
+
+      UniformCoords = .TRUE.
       x0 = 0.0_dp
       dx = 0.0_dp
       t0 = 0.0_dp
       dt = 0.0_dp
       DimIds = 0
       DimSize = 0
+      CoordVarNDims = 0
       TimeSize = 0
       NetDim = 0
 
       DO i=1,4
+        
         IF( i == 1 ) THEN
-          CoordName = GetString( Params, "X Name", Found )
+           DimName = GetString( Params, "X Dim Name", Found )
+           IF ( .NOT. found ) THEN 
+              DimName = GetString( Params, "X Name", Found )
+           END IF
         ELSE IF( i== 2 ) THEN
-          CoordName = GetString( Params, "Y Name", Found )
+           DimName = GetString( Params, "Y Dim Name", Found )
+           IF ( .NOT. found ) THEN 
+              DimName = GetString( Params, "Y Name", Found )
+           END IF
         ELSE IF( i == 3 ) THEN
-          CoordName = GetString( Params, "Z Name", Found )
+           DimName = GetString( Params, "Z Dim Name", Found )
+           IF ( .NOT. found ) THEN 
+              DimName = GetString( Params, "Z Name", Found )
+           END IF
         ELSE IF( i == 4 ) THEN
-          CoordName = GetString( Params, "Time Name", Found ) 
+           DimName = GetString( Params, "Time Dim Name", Found ) 
+           IF ( .NOT. found ) THEN 
+              DimName = GetString( Params, "Time Name", Found )
+           END IF
         END IF
         
         IF(.NOT. Found ) THEN
           IF( i > 2 ) THEN
             CYCLE
           ELSE
-            CALL Fatal('GridDataReader',"Unable to find compulsory coordinate name:"//TRIM(CoordName))
+            CALL Fatal('GridDataReader',"Unable to find compulsory coordinate name:"//TRIM(DimName))
           END IF
         END IF
         IF( i <= 3 ) NetDim = i
         
-        NetCDFstatus = NF90_INQ_DIMID(FileId,CoordName,j)
+        ! Get the dimension id
+        NetCDFstatus = NF90_INQ_DIMID(FileId,DimName,dimid)
         IF ( NetCDFstatus /= NF90_NOERR ) THEN 
-          CALL Fatal('GridDataReader','Dimension identifier could not be found:'//TRIM(CoordName)) 
+          CALL Fatal('GridDataReader','Dimension identifier could not be found:'//TRIM(DimName)) 
         END IF
-        
-        ! Takes the first two values for each dimension and computes the grid resolution from the data.
-        ! Assumes the NetCDF grid is uniform, the indexing of the dimensions enabled via the usual convention.
-        !----------------------------------------------------------------------------------------------------
-        NetCDFstatus = NF90_INQUIRE_DIMENSION(FileId,j,str,k)
+
+        IF( i == 1 ) THEN
+           CoordName = GetString( Params, "X Var Name", Found )
+        ELSE IF( i== 2 ) THEN
+           CoordName = GetString( Params, "Y Var Name", Found )
+        ELSE IF( i == 3 ) THEN
+           CoordName = GetString( Params, "Z Var Name", Found )
+        ELSE IF( i == 4 ) THEN
+           CoordName = GetString( Params, "Time Var Name", Found ) 
+        END IF
+
+        IF ( .NOT. Found ) THEN
+           CoordName = DimName
+        END IF
+
+        ! Get the variable id and check whether it is 1D or 2D
+        NetCDFstatus = NF90_INQ_VARID(FileId,CoordName,varid)
+        IF ( NetCDFstatus /= NF90_NOERR ) THEN 
+          WRITE(Message,'(A,I0)') 'Variable identifier could not be found: '//TRIM(CoordName)
+          CALL Fatal('GridDataReader',Message)
+        END IF
+
+        CoordVarIds(i)=varid
+
+        NetCDFstatus = NF90_INQUIRE_VARIABLE(FileId,varid,ndims=vardim)
+        SELECT CASE ( VarDim )
+        CASE (1)
+           WRITE(Message,'(A,I0)') 'Found 1 dimensional coordinate variable > '&
+                //TRIM(CoordName)//' < : ',VarDim
+           CALL Info('GridDataReader',message,level=7)
+        CASE(2)
+           WRITE(Message,'(A,I0)') 'Found 2 dimensional coordinate variable (assuming non-uniform) > '&
+                //TRIM(CoordName)//' < : ',VarDim
+           CALL Info('GridDataReader',message,level=7)
+           UniformCoords = .FALSE.
+        CASE DEFAULT
+           WRITE(Message,'(A,I0)') 'Invalid dimensions for coordinate variable > '&
+                //TRIM(CoordName)//' < : ',VarDim
+           CALL Fatal('GridDataReader',Message)
+        END SELECT
+        CoordVarNDims(i) = VarDim
+      
+        ! Get the size of the coordinate dimension
+        NetCDFstatus = NF90_INQUIRE_DIMENSION(FileId,dimid,str,size)
         IF ( NetCDFstatus /= NF90_NOERR ) THEN 
           CALL Fatal('GridDataReader','Dimension could not be inquired.')
         END IF
-        IF (k <= 1) THEN
-          CALL Fatal('GridDataReader','Scalar dimension encountered; No obtainable difference')
-        END IF        
+        IF (size <= 1) THEN
+           IF (i.eq.4) THEN
+              TimeSize = 1
+              dt = 0
+           ELSE
+              CALL Fatal('GridDataReader','Scalar dimension encountered; No obtainable difference: '//TRIM(str))
+           END IF
+        END IF
         
-        NetCDFstatus = NF90_GET_VAR(FileId,j,FirstTwo,IndVec,CountVec)
-        IF ( NetCDFstatus /= NF90_NOERR ) THEN 
-          CALL Fatal('GridDataReader','NetCDF dimension values access failed.') 
+        WRITE(Message,'(A,I0,A,I0)') 'Found dimension > '&
+            //TRIM(CoordName)//' < with id ',dimid,' and size ',size
+        CALL Info('GridDataReader',Message, Level=6 )
+        
+        ! A simple check whether the grid is uniform.  If it is, take the first two 
+        ! values for each dimension and compute the grid resolution from the data.
+        !---------------------------------------------------------------------------
+
+        IF ( (i.EQ.4).AND.(TimeSize.EQ.1) ) THEN 
+           ! can't find first 2 if time is scalar, so treat seperately
+           FirstTwo = 0.0_dp
+           IndVec = 1
+           NetCDFstatus = NF90_GET_VAR(FileId,varid,FirstTwo(1),IndVec)
+           IF ( NetCDFstatus /= NF90_NOERR ) THEN 
+              CALL Fatal('GridDataReader','NetCDF time values access failed.') 
+           END IF
+
+        ELSE
+
+           FirstTwo = 0.0_dp
+           IndVec = 1
+           NetCDFstatus = NF90_GET_VAR(FileId,varid,FirstTwo,IndVec)
+           IF ( NetCDFstatus /= NF90_NOERR ) THEN 
+              CALL Fatal('GridDataReader','NetCDF dimension values access failed.') 
+           END IF
+           
+           IndVec = size - 1
+           NetCDFstatus = NF90_GET_VAR(FileId,varid,LastTwo,IndVec)
+           IF ( NetCDFstatus /= NF90_NOERR ) THEN 
+              CALL Fatal('GridDataReader','NetCDF dimension values access failed.') 
+           END IF
+           
+           DimIds(i) = dimid
+           
+           dx0 = FirstTwo(2)-FirstTwo(1)
+           dx1 = LastTwo(2)-LastTwo(1)
+           dx2 = (LastTwo(2)-FirstTwo(1))/(size-1)
+           
+           IF( ABS(dx1-dx0) > 1.0d-3 * ABS(dx0) ) THEN
+              UniformCoords = .FALSE.
+           END IF
+           IF( ABS(dx2-dx0) > 1.0d-3 * ABS(dx0) ) THEN
+              UniformCoords = .FALSE.
+           END IF
+
+           IF (UniformCoords) THEN
+              WRITE(Message,'(A,ES12.3)') 'Grid parameter of dimension > '&
+                   //TRIM(CoordName)//' < is ',dx0
+              CALL Info('GridDataReader',Message, Level=6 )
+           
+              WRITE(Message,'(A,2ES12.3,A)') 'Range of dimension > '&
+                   //TRIM(CoordName)//' < is [',FirstTwo(1),LastTwo(2),']'
+              CALL Info('GridDataReader',Message, Level=6 )
+           END IF
         END IF
 
-        DimIds(i) = j
-                
         IF( i <= 3 ) THEN
-          DimSize(i) = k
-          x0(i) = FirstTwo(1)
-          dx(i) = FirstTwo(2) - FirstTwo(1)
-          
-          IF(Debug) THEN
-            PRINT *,'InitCoord: ',TRIM(CoordName),j,k,x0(i),dx(i)     
-            PRINT *,'FirstTwo: ',FirstTwo
-          END IF
+           DimSize(i) = size
+           x0(i) = FirstTwo(1)
+           dx(i) = dx0
         ELSE
-          TimeSize = k
-          t0 = FirstTwo(1)
-          dt = FirstTwo(2) - FirstTwo(1)        
-          
-          IF(Debug) THEN
-            PRINT *,'InitTime: ',TRIM(CoordName),j,k,t0,dt       
-            PRINT *,'FirstTwo: ',FirstTwo           
-          END IF
+           t0 = FirstTwo(1)
+           IF (TimeSize.NE.1) THEN
+              TimeSize = size
+              dt = dx0
+           END IF
         END IF        
+
       END DO
       
     END SUBROUTINE NetCDFInit
+
+
+    !-------------------------------------------------------------------------------
+    !> Get data array for given netcdf coordinate variable
+    !-------------------------------------------------------------------------------
+    SUBROUTINE NetCDFCoordVar1D( i, values ) 
+    
+      IMPLICIT NONE
+  
+      INTEGER, INTENT(IN) :: i ! index of coord var identifier
+      
+      REAL (KIND=dp), INTENT(OUT) :: values(:) 
+      
+      NetCDFstatus = NF90_GET_VAR(FileId,CoordVarIds(i),values)
+      IF ( NetCDFstatus /= NF90_NOERR ) THEN 
+        CALL Fatal('GridDataReader','NetCDF coord variable 1D read failed ') 
+      END IF
+
+    END SUBROUTINE NetCDFCoordVar1D
+
+    !-------------------------------------------------------------------------------
+    SUBROUTINE NetCDFCoordVar2D( i, values ) 
+    
+      IMPLICIT NONE
+  
+      INTEGER, INTENT(IN) :: i ! index of coord var identifier
+      
+      REAL (KIND=dp), INTENT(OUT) :: values(:,:) 
+      
+      NetCDFstatus = NF90_GET_VAR(FileId,CoordVarIds(i),values)
+      IF ( NetCDFstatus /= NF90_NOERR ) THEN 
+        CALL Fatal('GridDataReader','NetCDF coord variable 2D read failed ') 
+      END IF
+
+    END SUBROUTINE NetCDFCoordVar2D
+
+    !-------------------------------------------------------------------------------
+    SUBROUTINE NetCDFCoordVar3D( i, values ) 
+    
+      IMPLICIT NONE
+  
+      INTEGER, INTENT(IN) :: i ! index of coord var identifier
+      
+      REAL (KIND=dp), INTENT(OUT) :: values(:,:,:) 
+      
+      NetCDFstatus = NF90_GET_VAR(FileId,CoordVarIds(i),values)
+      IF ( NetCDFstatus /= NF90_NOERR ) THEN 
+        CALL Fatal('GridDataReader','NetCDF coord variable 3D read failed ') 
+      END IF
+
+    END SUBROUTINE NetCDFCoordVar3D
 
 
     !-------------------------------------------------------------------------------
@@ -166,6 +331,8 @@ MODULE NetCDFInterface
     !-------------------------------------------------------------------------------
     SUBROUTINE NetCDFVariableInit( VarName ) 
       
+      IMPLICIT NONE
+
       CHARACTER(*), INTENT(IN) :: VarName
       !-----------------------------------------------------------------------------      
 
@@ -185,10 +352,9 @@ MODULE NetCDFInterface
     !> There are two versions since ideally the dimensions of the vectors and are different. 
     !> This is the 2D version. 
     !----------------------------------------------------------------------------------------------
-    SUBROUTINE NetCDFDataCell2D( outcome, NetDim, DimIndex, TimeIndex )
+    SUBROUTINE NetCDFDataCell2D( outcome, DimIndex, TimeIndex )
       !------------------------------------------------------
       REAL (KIND=dp), INTENT(OUT) :: outcome(:,:,:) 
-      INTEGER, INTENT(IN) :: NetDim
       INTEGER, INTENT(IN) :: DimIndex(:)
       INTEGER, INTENT(IN) :: TimeIndex
       !------------------------------------------------------      
@@ -229,10 +395,9 @@ MODULE NetCDFInterface
     !----------------------------------------------------------------------------------------------
     !> The 3D version of the previous routine.
     !----------------------------------------------------------------------------------------------
-   SUBROUTINE NetCDFDataCell3D( outcome, NetDim, DimIndex, TimeIndex )
+   SUBROUTINE NetCDFDataCell3D( outcome, DimIndex, TimeIndex )
       !------------------------------------------------------
       REAL (KIND=dp), INTENT(OUT) :: outcome(:,:,:) 
-      INTEGER, INTENT(IN) :: NetDim
       INTEGER, INTENT(IN) :: DimIndex(:)
       INTEGER, INTENT(IN) :: TimeIndex
       !------------------------------------------------------      
@@ -306,6 +471,10 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
 
   IMPLICIT NONE
  
+  TYPE array3D
+     REAL(KIND=dp), POINTER :: values(:,:,:)
+  END type array3D
+
   !------------------------------------------------------------------------------
   TYPE(Solver_t), TARGET :: Solver
   TYPE(Model_t) :: Model
@@ -317,27 +486,28 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
   TYPE(Mesh_t), POINTER :: Mesh
   TYPE(Solver_t), POINTER :: PSolver
   TYPE(ValueList_t), POINTER :: Params
+  TYPE(array3D) :: coordVar(3)
   INTEGER :: n,k,node,MeshDim, NetDim,iTime,nTime
   INTEGER, POINTER :: FieldPerm(:)
   REAL(KIND=dp), POINTER :: Field(:)
   REAL(KIND=dp) :: x(3),dx(3),x0(3),x1(3),u1(3),u2(3),dt,t0,val,&
-                   Eps(3),Time,x0e(3),x1e(3),pTime,EpsTime,q,r
-  
-  INTEGER :: DimSize(3),i 
+                   Eps(3),Time,x0e(3),x1e(3),pTime,EpsTime,q,r  
+  INTEGER :: DimSize(3), CoordVarNDims(3), i 
   INTEGER :: TimeSize, IntTimeIndex,tnmax, NoVar
-  INTEGER :: status, time_begin,time_end,NoHits,NoMisses
-  CHARACTER (len = MAX_NAME_LEN) :: str, VarName, TargetName, &
+  INTEGER :: status, time_begin,time_end,NoHits,NoMisses,MaskNodes
+  CHARACTER (len = MAX_NAME_LEN) :: str, VarName, TargetName, MaskName, &
       CoordSystem, TimeInterpolationMethod
   REAL(KIND=dp) :: Coeff, InterpMultiplier, InterpBias, TimeIndex, acc
   LOGICAL :: Found, IsTime, DoCoordinateTransformation, DoCoordMapping, &
-      DoScaling, DoBoundingBox, DoPeriodic 
+      DoScaling, DoBoundingBox, DoPeriodic, UniformCoords
   INTEGER, POINTER :: CoordMapping(:), PeriodicDir(:)
 
   ! General initializations
   !------------------------------------------------------------------------------
   
-  CALL Info('GridDataReader','-----------------------------------------', Level=4 )
-  CALL Info('GridDataReader','Obtaining field(s) from grid NetCDF format',Level=4) 
+  CALL Info('GridDataReader','-----------------------------------------', Level=5 )
+  CALL Info('GridDataReader','Obtaining field(s) from grid NetCDF format',Level=5 )
+  CALL ResetTimer('GridDataReader')
   
   !-- Pointer declarations
   PSolver => Solver
@@ -373,20 +543,54 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
   !------------------------------------------------------------------------------
   ! Initialize NetCDF data locations, sizes and resolution
   !------------------------------------------------------------------------------
-  CALL NetCDFInit(Params, NetDim, DimSize, TimeSize, x0, dx, t0, dt )
+  CALL NetCDFInit(Params, NetDim, DimSize, CoordVarNDims, TimeSize, x0, dx, t0, dt, UniformCoords )
 
   IF( NetDim < 1 .OR. NetDim > 3 ) THEN
     CALL Fatal('GridDataReader','NetCDF dimensions must be either 2 or 3!')
   END IF
   IF (MeshDim > NetDim ) THEN
-    CALL Info('GridDataReader','Omitting the extra dimensions of Elmer mesh')
+    CALL Info('GridDataReader','Omitting the extra dimensions of Elmer mesh',Level=6)
   END IF
   x1 = x0 + (DimSize-1) * dx
 
+  !------------------------------------------------------------------------------
+  ! If any coordinate variables have more than one dimension and or are non uniform 
+  ! then scrap assumptions about coordinates and read in the full coordinate 
+  ! variables for use in interpolation.
+  !------------------------------------------------------------------------------
+  IF ( (.NOT. UniformCoords) .OR. (maxval(CoordVarNDims) .GT. 1) ) THEN
+     DO i=1,3 ! spatial dimensions, time is not considered in this loop.
+        SELECT CASE (CoordVarNDims(i))
+        CASE (0)
+           ALLOCATE(coordVar(i)%values(1,1,1))
+        CASE (1)
+           ALLOCATE(coordVar(i)%values(DimSize(1),1,1))
+           CALL NetCDFCoordVar( i, coordVar(i)%values(:,1,1) ) 
+        CASE (2)
+           IF (i.NE.3) THEN
+              ! if first two coord variables are 2D assume their 2 dimensions are 
+              ! the first 2 dims, i.e. assume they both refer to the 2 horizontal 
+              ! dims.
+              ALLOCATE(coordVar(i)%values(DimSize(1),DimSize(2),1))
+              CALL NetCDFCoordVar( i, coordVar(i)%values(:,:,1) ) 
+           ELSE
+              CALL Fatal('GridDataReader',"Third coordinate variable has 2 dimensions, not expected, code some more...")
+           END IF
+        CASE(3)
+              ALLOCATE(coordVar(i)%values(DimSize(1),DimSize(2),DimSize(3)))
+              CALL NetCDFCoordVar( i, coordVar(i)%values(:,:,:) ) 
+              CALL Fatal('GridDataReader',"Coordinate variable has 3 dimensions, not expected, code some more...")
+        CASE DEFAULT
+              CALL Fatal('GridDataReader',"Coordinate variable has more than 3 dimensions, not expected, code some more...")
+        END SELECT
+     END DO
+  END IF
+
   
   !------------------------------------------------------------------------------
-  ! Optionally map the Elmer mesh so that it coinsides with the NetCDF mesh
+  ! Optionally map the Elmer mesh so that it coincides with the NetCDF mesh
   ! This is intended mainly for testing purposes etc.
+  !
   !------------------------------------------------------------------------------
   DoScaling = ListGetLogical( Params,'Enable Scaling',Found ) 
   
@@ -400,13 +604,6 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
   END IF
 
   IF( DoBoundingBox ) THEN
-    
-    PRINT *,'NetCDF Bounding Box:'
-    PRINT *,'Min: ',x0
-    PRINT *,'Max: ',x1
-    PRINT *,'NetDim: ',NetDim
-    PRINT *,'Sizes: ',DimSize,TimeSize
-
     x = 0.0_dp
     x0e = HUGE( x0e )
     x1e = -HUGE( x1e )
@@ -424,7 +621,7 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
       IF( NetDim == 3 ) x(3) = Mesh % Nodes % z(node)
       
       IF( DoCoordinateTransformation ) THEN
-        x = CoordinateTransformation( x, CoordSystem )
+        x = LocalCoordinateTransformation( x, CoordSystem )
       END IF
       
       IF( DoCoordMapping ) THEN
@@ -435,10 +632,11 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
       x1e = MAX( x1e, x )
     END DO
 
-    PRINT *,'Elmer Bounding Box:'
-    PRINT *,'Min: ',x0e
-    PRINT *,'Max: ',x1e
-     
+    DO i=1,NetDim
+      WRITE(Message,'(A,I0,A,2ES12.3,A)') 'Initial Elmer coordinate ',i,' range is [',x0e(i),x1e(i),']'
+      CALL Info('GridDataReader',Message, Level=6 )
+    END DO
+
     IF( DoScaling ) THEN
       Found = .FALSE.
       DO i=1,NetDim
@@ -468,13 +666,14 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
         x1e(2) = MAXVAL(Mesh % Nodes % y)
         x1e(3) = MAXVAL(Mesh % Nodes % z)
         
-        PRINT *,'Modified Elmer Bounding Box:'
-        PRINT *,'x0: ',x0e
-        PRINT *,'x1: ',x1e
+        DO i=1,NetDim
+          WRITE(Message,'(A,I0,A,2ES12.3,A)') 'Modified Elmer coordinate ',i,' range is [',x0e(i),x1e(i),']'
+          CALL Info('GridDataReader',Message, Level=6 )
+        END DO
       END IF
     ELSE
       IF( ALL( x0e >= x0 ) .AND. ALL( x1e <= x1 ) ) THEN
-        CALL Info('GridDataReader','Elmer bounding box is within the NetCDF one!')
+        CALL Info('GridDataReader','Elmer bounding box is within the NetCDF one!',Level=6)
       END IF
 
     END IF
@@ -484,15 +683,16 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
 
   !--------------------------------------------------------------------------------------
   ! Get the timestep at which interpolation is desired
-  ! If the time does not coninside with a timestep in the file, two timesteps are needed.
+  ! If the time does not coincide with a timestep in the file, two timesteps are needed.
   !--------------------------------------------------------------------------------------
   IF( TimeSize == 0 ) THEN
-    CALL Info('GridDataReader','No time given, using 1st step')
+    CALL Info('GridDataReader','No time given, using 1st step',Level=6)
     IntTimeIndex = 0
     nTime = 1
     pTime = 1.0_dp
-  ELSE
+ ELSE
     CALL GetTimePoint(Params, t0, dt, TimeIndex )
+
     IntTimeIndex = NINT( TimeIndex ) 
 
     IF( ABS( TimeIndex - IntTimeIndex ) > EpsTime ) THEN
@@ -505,11 +705,11 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
       pTime = 1.0_dp
       WRITE (Message,'(A,ES10.3,A)') 'Given time value ', TimeIndex, ', no time interpolation used.'
     END IF
-    CALL Info('GridDataReader',Message,Level=8)
+    CALL Info('GridDataReader',Message,Level=6)
   END IF
 
   IF( Debug ) THEN
-    PRINT *,'nTime',nTime,TimeIndex,pTime
+    PRINT *,'nTime B',nTime,TimeIndex,pTime
   END IF
   
   !-------------------------------------------------------------------------------
@@ -518,6 +718,11 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
   !-------------------------------------------------------------------------------
   NULLIFY( PrevFieldVar )
 
+  IF ( (.NOT. UniformCoords) .OR. (maxval(CoordVarNDims) .GT. 1) ) THEN
+     WRITE(Message, '(A)') 'Coordinate variables are non-uniform and or more than &
+          &one dimensional.  CELLS ASSUMED RECTANGULAR IN THIS CODE.'
+     CALL Warn('GridDataReader',Message)
+  END IF
   NoVar = 0
   DO WHILE (.TRUE.) 
     ! Get NetCDF variable
@@ -540,11 +745,33 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
     IF( .NOT. Found ) TargetName = VarName
     FieldVar => VariableGet( Mesh % Variables,TargetName )
     IF( .NOT. ASSOCIATED( FieldVar ) ) THEN
-      CALL VariableAddVector( Mesh % Variables,Mesh,PSolver,TargetName,1) 
-      FieldVar => VariableGet( Mesh % Variables,TargetName )      
+      WRITE( str,'(A,I0)') 'Mask Name ',NoVar
+      MaskName = GetString( Params,str, Found )
+      IF( Found ) THEN
+        NULLIFY(FieldPerm)
+        ALLOCATE( FieldPerm( Mesh % NumberOfNodes ) )
+        CALL MakePermUsingMask( Model, Solver, Mesh, MaskName,.FALSE.,FieldPerm,&
+            MaskNodes,RequireLogical=.TRUE.)
+        IF( MaskNodes == 0 ) THEN
+          DEALLOCATE( FieldPerm )
+          CALL Fatal('GridDataReader','No active nodes for mask: '//TRIM(MaskName))
+        END IF
+
+        WRITE (Message, '(A,I0,A,I0)') 'The mask > '//TRIM(MaskName)//' < resulted to '&
+            ,MaskNodes,' nodes out of ',Mesh % NumberOfNodes
+        CALL Info('GridDataReader',Message,Level=6)
+  
+        CALL VariableAddVector( Mesh % Variables,Mesh,PSolver,TargetName,1,Perm=FieldPerm) 
+        FieldVar => VariableGet( Mesh % Variables,TargetName )              
+        NULLIFY(FieldPerm)
+      ELSE
+        CALL VariableAddVector( Mesh % Variables,Mesh,PSolver,TargetName,1) 
+        FieldVar => VariableGet( Mesh % Variables,TargetName )      
+      END IF
     END IF
     Field => FieldVar % Values
     FieldPerm => FieldVar % Perm
+
 
     ! Set a constant background to the field. This can be done a priori
     ! since it does not interfere with the interpolation.
@@ -600,12 +827,12 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
       x = 0.0_dp
       DO node=1, Mesh % NumberOfNodes
         IF( ASSOCIATED( FieldPerm ) ) THEN
-          k = FieldPerm(node) 
-          IF( k == 0 ) CYCLE
+           k = FieldPerm(node) 
+           IF( k == 0 ) CYCLE
         ELSE        
-          k = node
+           k = node
         END IF
-          
+         
         ! The Elmer point of interest
         ! Use the leading dimension of NetCDF data - not of Elmer. 
         !-------------------------------------------------------------------------
@@ -616,7 +843,7 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
         ! Coordinate mapping from Elmer (x,y) to the one used by NetCDF.
         !-------------------------------------------------------------------------
         IF( DoCoordinateTransformation ) THEN
-          x = CoordinateTransformation( x, CoordSystem )
+          x = LocalCoordinateTransformation( x, CoordSystem )
         END IF
 
         IF( DoCoordMapping ) THEN
@@ -633,7 +860,11 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
 
         END IF
 
-        Found = FDInterpolation(NetDim,x,DimSize,x0,dx,x1,Eps,IntTimeIndex,val) 
+        IF ( (.NOT. UniformCoords) .OR. (maxval(CoordVarNDims) .GT. 1) ) THEN
+           Found = NUInterpolation(NetDim,x,DimSize,Eps,IntTimeIndex,val,coordVar,coordVarNDims) 
+        ELSE
+           Found = FDInterpolation(NetDim,x,DimSize,x0,dx,x1,Eps,IntTimeIndex,val) 
+        END IF
 
         IF( Found ) THEN
           Field(k) = Field(k) + Coeff * val
@@ -650,12 +881,18 @@ SUBROUTINE GridDataReader( Model,Solver,dtime,TransientSimulation )
     PRINT *,'Number of misses:',NoMisses 
   END IF
   
-  ! Close the NetCDF file
-  !------------------------------------------------------------------------------
   CALL NetCDFClose()
 
-  CALL Info('GridDataReader','All done',Level=4)
-  CALL Info('GridDataReader', '-----------------------------------------', Level=4 )
+  DO i = 1,3  
+     IF (ASSOCIATED(coordVar(i)%values)) NULLIFY(coordVar(i)%values)
+  END DO
+
+  CALL CheckTimer('GridDataReader',Delete=.TRUE.)
+  CALL Info('GridDataReader','All done',Level=5)
+  CALL Info('GridDataReader', '-----------------------------------------', Level=5 )
+
+!  WRITE(Message,'(A,ES20.10)') 'NCTESTSTAT: ',SUM(field)
+!  CALL Info('GridDataReader',Message,Level=2)
 
 CONTAINS
 
@@ -680,13 +917,13 @@ CONTAINS
     END IF
     Eps(2) = GetConstReal(Params, "Y Epsilon", Found ) 
     IF ( .NOT. Found ) THEN
-      CALL Info('GridDataReader', 'Keyword > Y Epsilon < not given, setting equal to > X Epsilon <')
+      CALL Info('GridDataReader', 'Keyword > Y Epsilon < not given, setting equal to > X Epsilon <',Level=6)
       Eps(2) = Eps(1)
     END IF
     IF( NetDim == 3 ) THEN
       Eps(3) = GetConstReal(Params, "Z Epsilon", Found ) 
       IF ( .NOT. Found ) THEN
-        CALL Info('GridDataReader', 'Keyword > Z Epsilon < not given, setting equal to > X Epsilon <')
+        CALL Info('GridDataReader', 'Keyword > Z Epsilon < not given, setting equal to > X Epsilon <',Level=6)
         Eps(3) = Eps(1)
       END IF
     END IF
@@ -743,6 +980,7 @@ CONTAINS
     ELSE
       TimeIndex =  1.0 + ( Time - t0 ) / dt
     END IF
+
   END SUBROUTINE GetTimePoint
 
 
@@ -783,10 +1021,168 @@ CONTAINS
   END FUNCTION TriLinearInterpolation
       
   !-------------------------------------------------------------------------------
+  !> Non-Uniform interpolation.  Interpolation where the full coordinate variables 
+  !  are used because they are non-uniform or have more than one dimension.  Uses
+  !  (bi)linear interpolation.
+  !-------------------------------------------------------------------------------
+  FUNCTION NUInterpolation(NetDim,x,DimSize,Eps,TimeIndex,val,coordVar,coordVarNDims) &
+       RESULT( success )
+    
+    IMPLICIT NONE
+
+    INTEGER, INTENT(IN) :: NetDim, DimSize(:), CoordVarNDims(:)
+    INTEGER, INTENT(IN) :: TimeIndex
+    REAL(KIND=dp), INTENT(IN) :: x(:),Eps(:)
+    TYPE(array3D), INTENT(IN) :: coordVar(:)
+    REAL(KIND=dp), INTENT(OUT) :: val ! Final Elmer point and interpolated value 
+    LOGICAL :: success
+
+    INTEGER       :: Ind(NetDim) ! lower index of netcdf cell containing Elmer node
+    REAL(KIND=dp) :: stencil(2,2,2)
+    REAL(KIND=dp) :: Weights(netDim)
+
+    ! check coord variable dimensions
+    IF (MAXVAL(CoordVarNDims).EQ.1) THEN 
+       ! all coord variable dimensions are 1D so search each seperately
+       DO i = 1,NetDim
+          success = findCell1D(coordVar(i),x(i),Ind(i),weights(i))
+          WRITE(Message, '(A)') 'Not yet tested this combination of netcdf &
+               &coordinate variable dimensions &
+               &(non-uniform, all single), pls remove this comment if it works...'
+          CALL Warn('GridDataReader',Message)
+       END DO
+
+    ELSEIF ((CoordVarNDims(1).EQ.2).AND.(CoordVarNDims(2).EQ.2)) THEN
+       ! First 2 coordinate variables are 2D, handle them together
+       success = findCell2D(coordVar(1:2),x(1:2),Ind(1:2),weights(1:2))       
+
+       IF (CoordVarNDims(3).EQ.1) THEN
+          success = findCell1D(coordVar(3),x(3),Ind(3),weights(3))
+          WRITE(Message, '(A)') 'Not yet tested this combination of netcdf &
+               &coordinate variable dimensions &
+               &(2,2,1), pls remove this comment if it works...'
+          CALL Warn('GridDataReader',Message)
+       END IF
+
+    ELSE
+       WRITE(Message, '(A)') 'Cannot handle this combination of netcdf &
+            &coordinate variable dimensions, code some more...'
+       CALL Fatal('GridDataReader',message)    
+    END IF
+    
+    SELECT CASE(netDim)
+    CASE(2)
+       CALL NetCDFDataCell2D( stencil, Ind, TimeIndex  )     
+       val = BiLinearInterpolation(stencil(:,:,1),weights)
+    CASE(3)
+       CALL NetCDFDataCell3D( stencil, Ind, TimeIndex  )     
+       val = TriLinearInterpolation(stencil,weights)
+    CASE DEFAULT
+       CALL FATAL('GridDataReader','expected 2 or 3 dimensional netcdf data')
+    END SELECT
+
+    success = .TRUE.
+
+  END FUNCTION NUInterpolation
+
+  !-------------------------------------------------------------------------------
+  FUNCTION findCell2D(coordVar,xe,ind,weights) &
+       RESULT( success )
+
+    IMPLICIT NONE
+
+    TYPE(array3D), INTENT(IN)  :: coordVar(:)
+    REAL(KIND=dp), INTENT(IN)  :: xe(:)
+
+    INTEGER, INTENT(OUT)       :: ind(:)
+    REAL(KIND=dp), INTENT(OUT) :: Weights(:)
+
+    LOGICAL :: success
+
+    REAL(KIND=dp),POINTER :: dist(:,:),distCum(:,:)
+    REAL(KIND=dp)         :: xu(2),yu(2)   ! unit vectors in x and y coord directions
+    REAL(KIND=dp)         :: xer(2)        ! Elmer node relative to netcdf ll cell corner
+    INTEGER               :: nx,ny
+
+    nx = SIZE(coordVar(1)%values(:,1,1))
+    ny = SIZE(coordVar(1)%values(1,:,1))
+
+    ALLOCATE( dist    ( nx,  ny   ) )
+    ALLOCATE( distCum ( nx-1,ny-1 ) )
+
+    ! distance of each netcdf point from the current Elmer node
+    dist = SQRT( (xe(1)-coordVar(1)%values(1:nx,1:ny,1))**2 + &
+         (xe(2)-coordVar(2)%values(1:nx,1:ny,1) )**2 )
+
+    ! cumlative distance of four netcdf points (comprising a cell) from current ELmer node 
+    distCum = dist(1:nx-1,1:ny-1) + dist(2:nx,1:ny-1)+ &
+         dist(2:nx,2:ny) + dist(1:nx-1,2:ny)
+
+    ind = MINLOC(distCum)
+
+    WRITE(Message,'(A,ES12.3)') 'Found cell with min dist ',MINVAL(dist)
+    CALL Info('GridDataReader',message,level=8)
+
+    IF(( xe(2) .LT. MINVAL(coordVar(2)%values(ind(1):ind(1)+1,ind(2):ind(2)+1,1)) ) .OR. &
+       ( xe(2) .GT. MAXVAL(coordVar(2)%values(ind(1):ind(1)+1,ind(2):ind(2)+1,1)) ) .OR. &
+       ( xe(1) .LT. MINVAL(coordVar(1)%values(ind(1):ind(1)+1,ind(2):ind(2)+1,1)) ) .OR. &
+       ( xe(1) .GT. MAXVAL(coordVar(1)%values(ind(1):ind(1)+1,ind(2):ind(2)+1,1)) ) ) THEN
+       WRITE(Message, '(A)') 'Elmer node not contained in netcdf cell, need to implement &
+            &proper tolerance checks (Epsilon not currently used in this case)'
+       CALL Warn('GridDataReader',Message)
+    END IF
+
+!    print*,shape(xer),shape(xe)
+!    print*,11shape(coordVar(1)%values(ind(1),ind(2)))
+
+    xer(1) = xe(1) - coordVar(1)%values(ind(1),ind(2),1)
+    xer(2) = xe(2) - coordVar(2)%values(ind(1),ind(2),1) 
+
+    xu(1)  = coordVar(1)%values(ind(1)+1,ind(2),1) - coordVar(1)%values(ind(1),ind(2),1) 
+    xu(2)  = coordVar(2)%values(ind(1)+1,ind(2),1) - coordVar(2)%values(ind(1),ind(2),1) 
+
+    yu(1)  = coordVar(1)%values(ind(1),ind(2)+1,1) - coordVar(1)%values(ind(1),ind(2),1) 
+    yu(2)  = coordVar(2)%values(ind(1),ind(2)+1,1) - coordVar(2)%values(ind(1),ind(2),1) 
+
+    ! normalise xer and unit vectors
+    xer(1) = xer(1) / sqrt(xu(1)**2+xu(2)**2)
+    xer(2) = xer(2) / sqrt(yu(1)**2+yu(2)**2)
+    xu     = xu / sqrt(xu(1)**2+xu(2)**2)
+    yu     = yu / sqrt(yu(1)**2+yu(2)**2)
+
+    weights(1) = SUM(xer * xu)
+    weights(2) = SUM(xer * yu)
+    
+    DEALLOCATE(dist)
+    DEALLOCATE(distCum)
+
+    success = .TRUE.
+
+  END FUNCTION findCell2D
+
+
+  FUNCTION findCell1D(coordVar,xe,ind,weights) &
+       RESULT( success )
+
+    IMPLICIT NONE
+
+    TYPE(array3D), INTENT(IN)  :: coordVar
+    REAL(KIND=dp), INTENT(IN)  :: xe
+
+    INTEGER, INTENT(OUT)       :: ind
+    REAL(KIND=dp), INTENT(OUT) :: Weights
+
+    LOGICAL :: success
+
+    success = .FALSE.
+
+  END FUNCTION findCell1D
+
+  !-------------------------------------------------------------------------------
   !> Interpolates one grid point given data on a finite difference stencil.
   !-------------------------------------------------------------------------------
   FUNCTION FDInterpolation(NetDim,x,DimSize,x0,dx,x1,Eps,TimeIndex,val) &
-      RESULT( success )
+       RESULT( success )
     
     IMPLICIT NONE
     INTEGER, INTENT(IN) :: NetDim,DimSize(:)
@@ -806,7 +1202,6 @@ CONTAINS
 !      WRITE (*,*) 'NMAX: ', NMAX
 !      WRITE (*,*) 'EPS: ', EPS
 !      WRITE (*,*) 'TIME: ', TIMEIndex
-
     
     xf = x
     val = 0.0_dp
@@ -833,7 +1228,7 @@ CONTAINS
         ELSE ! The index is too far to be salvaged            
           WRITE (Message, '(A,I0,A,I0,A,F14.3,A)') 'ind(',i,') = ', ind(i), ' from Elmer coordinate ',&
               Xf(i), ' Not in bounding box'
-          PRINT *,'Boundint box:',x0(i),x1(i)
+          PRINT *,'Bounding box:',x0(i),x1(i)
           CALL Warn( 'GridDataReader',Message)
           RETURN
         END IF
@@ -849,10 +1244,10 @@ CONTAINS
     weights(1:NetDim) = (xf(1:NetDim)-xi(1:NetDim)) / dx(1:NetDim)
     
     IF( NetDim == 2 ) THEN
-      CALL NetCDFDataCell2D( stencil, NetDim, Ind, TimeIndex  )     
+      CALL NetCDFDataCell2D( stencil, Ind, TimeIndex  )     
       val = BiLinearInterpolation(stencil(:,:,1),weights)
     ELSE
-      CALL NetCDFDataCell3D( stencil, NetDim, Ind, TimeIndex  )           
+      CALL NetCDFDataCell3D( stencil, Ind, TimeIndex  )           
       val = TriLinearInterpolation(stencil,weights)
     END IF
     
@@ -864,7 +1259,7 @@ CONTAINS
   !------------------------------------------------------------------------------------
   ! Transforms Elmer input coordinates into the given coordinate system of the netCDF file.
   !------------------------------------------------------------------------------------
-  FUNCTION CoordinateTransformation( vec0, CoordSystem ) RESULT( vec1 )
+  FUNCTION LocalCoordinateTransformation( vec0, CoordSystem ) RESULT( vec1 )
     !--------------------------------------------------------------
     USE DefUtils, ONLY: dp
     USE Messages
@@ -880,7 +1275,7 @@ CONTAINS
     SELECT CASE ( CoordSystem )
       
     CASE ('lat-long')
-      CALL Info('GridDataReader','Applies latitude-longitude coordinate transformation; TODO!')
+      CALL Warn('GridDataReader','Applies latitude-longitude coordinate transformation; TODO!')
       vec1 = vec0
       
     CASE ('cylindrical')
@@ -898,7 +1293,7 @@ CONTAINS
       vec1 = vec0
     END SELECT
 
-  END FUNCTION CoordinateTransformation
+  END FUNCTION LocalCoordinateTransformation
 
     
 !------------------------------------------------------------------------------

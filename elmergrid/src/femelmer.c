@@ -375,8 +375,8 @@ int FuseSolutionElmerPartitioned(char *prefix,char *outfile,int decimals,int par
 static int FindParentSide(struct FemType *data,struct BoundaryType *bound,
 			  int sideelem,int sideelemtype,int *sideind)
 {
-  int i,j,k,sideelemtype2,elemind,parent,normal;
-  int elemsides,side,sidenodes,nohits,hit,noparent, bulknodes;
+  int i,j,k,sideelemtype2,elemind,parent,normal,elemtype;
+  int elemsides,side,sidenodes,sidenodes2,nohits,hit,noparent, bulknodes;
   int sideind2[MAXNODESD1];
 
   hit = FALSE;
@@ -390,10 +390,12 @@ static int FindParentSide(struct FemType *data,struct BoundaryType *bound,
       elemind = bound->parent2[sideelem];
 
     if(elemind > 0) {
-      elemsides = data->elementtypes[elemind] / 100;
-      bulknodes = data->elementtypes[elemind] % 100;
+      elemtype = data->elementtypes[elemind];
+      elemsides = elemtype / 100;
+      bulknodes = elemtype % 100;
 
       if(elemsides == 8) elemsides = 6;
+      else if(elemsides == 7) elemsides = 5;
       else if(elemsides == 6) elemsides = 5;
       else if(elemsides == 5) elemsides = 4;
       
@@ -462,19 +464,26 @@ static int FindParentSide(struct FemType *data,struct BoundaryType *bound,
 
   skip:  
     if(!hit) {
+      if(!elemind) {
+	printf("elemind is zero\n");
+	return(1);
+      }
+
       printf("FindParentSide: unsuccesfull (elemtype=%d elemsides=%d parent=%d)\n",
 		    sideelemtype,elemsides,parent);
+      
+      printf("bulknodes = %d\n",bulknodes);
 
       printf("parents = %d %d\n",bound->parent[sideelem],bound->parent2[sideelem]);
 
       printf("sideind =");
       for(i=0;i<sideelemtype%100;i++)
-      printf(" %d ",sideind[i]);
+	printf(" %d ",sideind[i]);
       printf("\n");
 
-      printf("elemind =");
-      for(i=0;i<elemsides;i++)
-      printf(" %d ",data->topology[elemind][i]);
+      printf("elemind = %d %d\n",elemtype,elemind);
+      for(i=0;i<elemtype/100;i++)
+	printf(" %d ",data->topology[elemind][i]);
       printf("\n");      
     }
 
@@ -897,12 +906,14 @@ int SaveElmerInput(struct FemType *data,struct BoundaryType *bound,
     return(2);
   }
 
+  
   connodes = 0;
-  if(data->connectexist) {
+  /* if(data->nodeconnectexist) {
     for(i=1;i<=data->noknots;i++) 
-      connodes = MAX( connodes, data->connect[i]);
+      connodes = MAX( connodes, data->nodeconnect[i]);
     if(info) printf("Creating %d new nodes for connectivity conditions\n",connodes);
-  }
+    } 
+  */
   
   if(data->dim == 1) {
     sprintf(outstyle,"%%d %%d %%.%dlg 0.0 0.0\n",decimals);
@@ -991,7 +1002,7 @@ int SaveElmerInput(struct FemType *data,struct BoundaryType *bound,
   }
 
 
-  /* Save additional connection arising from discontinuous boundaries */
+  /* Save additional nodeconnection arising from discontinuous boundaries */
   if(0) for(j=0;j < MAXBOUNDARIES;j++) {
      
     if(bound[j].created == FALSE) continue;
@@ -1026,9 +1037,9 @@ int SaveElmerInput(struct FemType *data,struct BoundaryType *bound,
   }
   
 
-  if(data->connectexist) {
+  if(0 && data->nodeconnectexist) {
     int *connect,newsides,newline,count;
-    connect = data->connect;
+    connect = data->nodeconnect;
     
     for(k=1;;k++) {
       newsides = 0;
@@ -1177,7 +1188,7 @@ int SaveElmerInputFemBem(struct FemType *data,struct BoundaryType *bound,
     return(1);
   }
 
-  if(data->connectexist) smallerror("Connectivity data is not saved in the FEM/BEM version");
+  if(data->nodeconnectexist) smallerror("Connectivity data is not saved in the FEM/BEM version");
   if(data->nopartitions > 1) smallerror("Partitioning data is not saved in the FEM/BEM version");
 
   noelements = data->noelements;
@@ -1413,184 +1424,6 @@ int SaveElmerInputFemBem(struct FemType *data,struct BoundaryType *bound,
   
   return(0);
 }
-
-
-
-
-int ElmerToElmerMapQuick(struct FemType *data1,struct FemType *data2,
-			 char *mapfile,int info)
-/* Requires that the mapping matrix is provided in a external file. */
-{
-  int i,j,k,l,idx,mink,maxk,unknowns;
-  Real weight;
-  FILE *out;
-
-  if ((out = fopen(mapfile,"r")) == NULL) {
-    printf("The opening of the mapping file %s wasn't succesfull!\n",
-	   mapfile);
-    return(1);
-  }
-
-  if(info) printf("Mapping results utilizing matrix in file %s.\n",mapfile);
-
-  mink = MAXDOFS-1;
-  maxk = 1;
-  for(k=1;k<MAXDOFS;k++)
-    if(data1->edofs[k]) {
-      if(k < mink) mink = k;
-      if(k > maxk) maxk = k;
-      CreateVariable(data2,k,data1->edofs[k],
-		     0.0,data1->dofname[k],FALSE);
-    }
-
-  for(j=1;j <= data2->noknots;j++) {
-    fscanf(out,"%d",&idx);
-    for(i=0;i<4;i++) {
-      fscanf(out,"%d",&idx);
-      fscanf(out,"%le",&weight);
-      for(k=mink;k <= maxk;k++) 
-	if(unknowns = data1->edofs[k]) {
-	  for(l=1;l<=unknowns;l++)
-	    data2->dofs[k][unknowns*(j-1)+l] += 
-	      weight * data1->dofs[k][unknowns*(idx-1)+l];
-	}
-    }
-  }
-  return(0);
-}
-
-
-int ElmerToElmerMap(struct FemType *data1,struct FemType *data2,int info)
-/* Maps Elmer results to another Elmer file. 
-   Does not need the mapping a'priori. 
-   */
-{
-  Real x1,x2,y1,y2;
-  Real *xmin,*xmax;
-  Real *ymin,*ymax;
-  Real eta,xi;
-  Real shapefunc1[MAXNODESD2],shapeder1[DIM*MAXNODESD2];
-  Real coord1[MAXNODESD2],tiny;
-  int elemno,ind1[MAXNODESD2];
-  int *ymaxi;
-  int i1,i2,j1,j2,hit,i,j,k,l;
-  int mink,maxk,unknowns;
-  int noelems1,noknots2;
-  int material1;
-  long tests;
-
-  tests = 0;
-
-  if(info) printf("Performing Elmer to Elmer mapping.\n");
-
-  noelems1 = data1->noelements;
-  noknots2 = data2->noknots;
-
-  mink = MAXDOFS-1;
-  maxk = 1;
-  for(k=1;k<MAXDOFS;k++)
-    if(data1->edofs[k]) {
-      if(k < mink) mink = k;
-      if(k > maxk) maxk = k;
-      CreateVariable(data2,k,data1->edofs[k],
-		     0.0,data1->dofname[k],FALSE);
-    }
-
-  xmin = Rvector(1,noelems1);
-  xmax = Rvector(1,noelems1);
-  ymin = Rvector(1,noelems1);
-  ymax = Rvector(1,noelems1);
-
-  ymaxi = ivector(1,noelems1);
-
-  for(j1=1;j1<=noelems1;j1++) {
-    xmax[j1] = xmin[j1] = data1->x[data1->topology[j1][0]];
-    ymax[j1] = ymin[j1] = data1->y[data1->topology[j1][0]];
-
-    for(i1=1;i1<4;i1++) {
-      x1 = data1->x[data1->topology[j1][i1]];
-      if (x1 < xmin[j1]) xmin[j1] = x1;
-      if (x1 > xmax[j1]) xmax[j1] = x1;
-
-      y1 = data1->y[data1->topology[j1][i1]];
-      if (y1 < ymin[j1]) ymin[j1] = y1;
-      if (y1 > ymax[j1]) ymax[j1] = y1;
-    }
-  }
-
-  /* ymaxi must be ordered so that it points to the elements of 
-     ymax in increasing order. In rectangular structures mesh 
-     this is automatically the case. */
-  if(info) printf("Ordering elements\n");
-  for(j1=1;j1<=noelems1;j1++)
-    ymaxi[j1] = j1;
-#if 0
-  /* This does not seem to function as intended. */
-  indexx(noelems1,ymax,ymaxi);
-#endif
-  tiny = 1.0e-10*fabs(ymax[1]-ymax[noelems1]);
-
-  j1 = 1;
-
-  for(j2=1;j2<=noknots2;j2++) {
-
-    x2 = data2->x[j2];
-    y2 = data2->y[j2];
-
-    /* Find first possible element using xmax */
-    while(j1<noelems1 && ymax[ymaxi[j1]] < y2-tiny) 
-      {j1++; tests++;} 
-    while(j1>1 && ymax[ymaxi[j1]-1] > y2-tiny) 
-      {j1--; tests++;}
-    
-  omstart:
-    
-    hit = FALSE;
-    do {
-      tests++;
-      if(j1 > noelems1) break;
-      elemno = ymaxi[j1];
-
-      if(ymin[elemno] > y2+tiny) break;
-
-      if(xmax[elemno] > x2-tiny  &&  xmin[elemno] < x2+tiny) 
-	hit = TRUE;
-      else 
-	j1++;
-      if(j1 > noelems1) break;
-    }
-    while (hit == FALSE);
-
-    if(hit == FALSE) {
-      if(j1 > noelems1) j1=noelems1;
-      printf("No hits for element %d at (%.3lg,%.3lg)\n",j2,x2,y2);
-      printf("j1 = %d  noelems1 = %d\n",j1,noelems1);
-    }
-    else {
-      GetElementInfo(j1,data1,coord1,ind1,&material1);
-      hit = GlobalToLocalD2(coord1,x2,y2,&xi,&eta);
-      if(hit == FALSE) {
-	j1++;
-	goto omstart;
-      }
-      else {
-	Squad404(&xi,&eta,shapefunc1,shapeder1);
-	for(k=mink;k <= maxk;k++) 
-	  if(unknowns = data1->edofs[k]) {
-	    for(l=1;l<=unknowns;l++)
-	      for(i=0;i<4;i++)
-		data2->dofs[k][unknowns*(j2-1)+l] += 
-		  shapefunc1[i] * data1->dofs[k][unknowns*(ind1[i]-1)+l];
-	  }
-      }
-    }
-  }
-  if(info) printf("Mapped %d knots with %.3lg average trials.\n",
-		  noknots2,(1.0*tests)/noknots2);
-
-  return(0);
-}
-
 
 
 
@@ -2451,7 +2284,8 @@ int PartitionSimpleNodes(struct FemType *data,int dimpart[],int dimper[],
 
 
 #if PARTMETIS 
-int PartitionMetisElements(struct FemType *data,int partitions,int dual,int info)
+int PartitionMetisMesh(struct FemType *data,struct ElmergridType *eg,
+		       int partitions,int dual,int info)
 {
   int i,j,periodic, highorder, noelements, noknots, ne, nn, sides;
   int nodesd2, etype, numflag, nparts, edgecut;
@@ -2461,32 +2295,15 @@ int PartitionMetisElements(struct FemType *data,int partitions,int dual,int info
   if(info) printf("Making a Metis partitioning for %d elements in %d-dimensions.\n",
 		  data->noelements,data->dim);
 
-  if(!data->partitionexist) {
-    data->partitionexist = TRUE;
-    data->elempart = Ivector(1,data->noelements);
-    data->nodepart = Ivector(1,data->noknots);
-    data->nopartitions = partitions;
-  }
-  inpart = data->elempart;
-
-  /* Are there periodic boundaries. This information is used to join the boundaries. */
-  periodic = data->periodicexist;
-  if(periodic) {
-    if(info) printf("There seems to be peridic boundaries\n");
-    indxper = data->periodic;
-  }
-
   highorder = FALSE;
   noelements = data->noelements;
   noknots = data->noknots;
-  
-  ne = noelements;
-  nn = noknots;
 
   sides = data->elementtypes[1]/100;
   for(i=1;i<=noelements;i++) {
     if(sides != data->elementtypes[i]/100) {
-      printf("Nodal Metis partition requires that all the elements are of the same type!\n");
+      printf("Elemental Metis partition requires that all the elements are of the same type!\n");
+      printf("Use Metis algorithms based on the nodal graph\n");
       bigerror("Partitioning not performed");
     }
     if(sides == 3 && data->elementtypes[i]%100 > 3) highorder = TRUE;
@@ -2518,9 +2335,35 @@ int PartitionMetisElements(struct FemType *data,int partitions,int dual,int info
     etype = 3;
   }
   else {
-    printf("Nodal Metis partition only for triangles, quads, tets and bricks!\n");
-    bigerror("Partitioning not performed");
+    printf("Elemental Metis partition only for triangles, quads, tets and bricks!\n");
+    printf("Using Metis algorithms based on the graph\n");
+    return(-1);
   }
+
+  if( eg->connect ) {
+    printf("Elemental Metis partition cannot deal with constraints!\n");
+    printf("Using Metis algorithms based on the graph\n");
+    return(-2);
+  }
+
+
+  if(!data->partitionexist) {
+    data->partitionexist = TRUE;
+    data->elempart = Ivector(1,data->noelements);
+    data->nodepart = Ivector(1,data->noknots);
+    data->nopartitions = partitions;
+  }
+  inpart = data->elempart;
+
+  /* Are there periodic boundaries. This information is used to join the boundaries. */
+  periodic = data->periodicexist;
+  if(periodic) {
+    if(info) printf("There seems to be peridic boundaries\n");
+    indxper = data->periodic;
+  }
+  
+  ne = noelements;
+  nn = noknots;
 
   neededby = Ivector(1,noknots);
   metistopo = Ivector(0,noelements*nodesd2-1);
@@ -2609,8 +2452,9 @@ int PartitionMetisElements(struct FemType *data,int partitions,int dual,int info
 
 
 
-int PartitionMetisNodes(struct FemType *data,struct BoundaryType *bound,
-			struct ElmergridType *eg,int partitions,int metisopt,int info)
+int PartitionMetisGraph(struct FemType *data,struct BoundaryType *bound,
+			struct ElmergridType *eg,int partitions,int metisopt,
+			int dual,int info)
 {
   int i,j,k,l,noelements,noknots;
   int nn,con,maxcon,totcon,options[5];
@@ -2620,121 +2464,160 @@ int PartitionMetisNodes(struct FemType *data,struct BoundaryType *bound,
 
   if(info) printf("Making a Metis partitioning for %d nodes in %d-dimensions.\n",
 		  data->noknots,data->dim);
-
-  CreateDualGraph(data,TRUE,info);
+  if(partitions < 2 ) bigerror("There should be at least two partitions for partitioning!");
 
   noknots = data->noknots;
   noelements = data->noelements;
-  maxcon = data->dualmaxconnections;
+
+  if(data->periodicexist && dual ) {
+    printf("Dual graph not implemented for periodic system!\n");
+    printf("Enforcing nodal graph for partitioning\n");
+    dual = FALSE;
+  }
+
+  nparts = partitions;
+  if( dual ) {
+    CreateDualGraph(data,TRUE,info);
+    maxcon = data->dualmaxconnections;
+    if( data->elemconnectexist ) {
+      nn = data->elemconnectexist;
+      nparts -= 1;
+    }
+    else {
+      nn = noelements;
+    }
+  }
+  else {
+    CreateNodalGraph(data,TRUE,info);
+    maxcon = data->nodalmaxconnections;
+    nn = noknots;
+  }
+
 
   totcon = 0;
-  for(i=1;i<=noknots;i++) {
+  for(i=1;i<=nn;i++) {
     for(j=0;j<maxcon;j++) {
-      con = data->dualgraph[j][i];
+      if( dual ) {
+	con = data->dualgraph[j][i];
+      }
+      else {
+	con = data->nodalgraph[j][i];
+      }
       if(con) totcon++;
     }
   }
-
-  if(0) printf("There are %d connections alltogether.\n",totcon);
-
-  xadj = Ivector(0,noknots);
+  
+  printf("There are %d connections alltogether in the graph.\n",totcon);
+  
+  xadj = Ivector(0,nn);
   adjncy = Ivector(0,totcon-1);
   for(i=0;i<totcon;i++) 
     adjncy[i] = 0;
-
+  
   totcon = 0;
-  for(i=1;i<=noknots;i++) {
+  for(i=1;i<=nn;i++) {
     xadj[i-1] = totcon;
     for(j=0;j<maxcon;j++) {
-      con = data->dualgraph[j][i];
+      if( dual ) {
+	con = data->dualgraph[j][i];
+      }
+      else {
+	con = data->nodalgraph[j][i];
+      }
       if(con) {
 	adjncy[totcon] = con-1;
 	totcon++;
       }
     }
   }
-  xadj[noknots] = totcon;
+  xadj[nn] = totcon;
 
 
-  nn = noknots;
   numflag = 0;
-  nparts = partitions;
-  npart = Ivector(0,noknots-1);
+  npart = Ivector(0,nn-1);
   wgtflag = 0;
-  for(i=0;i<5;i++) options[i] = 0;
   options[0] = 0;
   options[1] = 3;
   options[2] = 1;
   options[3] = 3;
-
+  options[4] = 0;
+  
   vwgt = NULL;
   adjwgt = NULL;
 
-  /* Make the periodic connections the strongest ones */
-  if(data->periodicexist) {
-    if(info) printf("Setting periodic connections to dominate %d\n",totcon);
-    adjwgt = Ivector(0,totcon-1);
-    for(i=0;i<totcon;i++)
-      adjwgt[i] = 1;
-    for(i=0;i<noknots;i++) {
-      j = data->periodic[i+1]-1;
-      if(j == i) continue;
-      for(k=xadj[i];k<xadj[i+1];k++) 
-	if(adjncy[k] == j) adjwgt[k] = maxcon;
-    }
-    if(data->periodicexist && metisopt != 3) {
-      printf("For periodic BCs Metis subroutine METIS_PartGraphKway is enforced\n");
-      metisopt = 3;
-    }
-    wgtflag = 1;
-  }
-  
-  /* Add weight if there is a constraint */
-  if(eg->connect) {
-    int maxweight;
-    int con,bc,bctype,sideelemtype,sidenodes;
-    int j2,ind,ind2;
-    int sideind[MAXNODESD1];
-
-    maxweight = noknots+noelements;
-
-    printf("Adding weight of %d\n",maxweight);
-
-    adjwgt = Ivector(0,totcon-1);
-    for(i=0;i<totcon;i++)
-      adjwgt[i] = 1;
-    wgtflag = 1;
-
-    for(con=1;con<=eg->connect;con++) {
-      bctype = eg->connectbounds[con-1];
-
-      for(bc=0;bc<MAXBOUNDARIES;bc++) {    
-	if(bound[bc].created == FALSE) continue;
-	if(bound[bc].nosides == 0) continue;
-	
-	for(i=1;i<=bound[bc].nosides;i++) {
-	  if(bound[bc].types[i] != bctype) continue;
-	  
-	  GetElementSide(bound[bc].parent[i],bound[bc].side[i],bound[bc].normal[i],
-			 data,sideind,&sideelemtype);
-	  sidenodes = sideelemtype%100;
+  if( !dual ) {
+    /* Create weights if needed */
+    if(data->periodicexist || eg->connect) {
+      if(info) printf("Creating weight for %d connections.\n",totcon);
+      wgtflag = 1;
+      adjwgt = Ivector(0,totcon-1);
+      for(i=0;i<totcon;i++)
+	adjwgt[i] = 1;
       
-	  for(j=0;j<sidenodes;j++) {
-	    for(j2=0;j2<sidenodes;j2++) {
-	      if(j==j2) continue;
-
-	      ind = sideind[j]-1;
-	      ind2 = sideind[j2]-1;
-
-	      for(k=xadj[ind];k<xadj[ind+1];k++) 
-		if(adjncy[k] == ind2) adjwgt[k] = maxweight;
+      if(metisopt != 3) {
+	printf("For weighted partitioning Metis subroutine METIS_PartGraphKway is enforced\n");
+	metisopt = 3;
+      }
+    }
+    
+    /* Make the periodic connections stronger */
+    if(data->periodicexist) {
+      if(info) printf("Setting periodic connections to dominate %d\n",totcon);
+      for(i=0;i<noknots;i++) {
+	j = data->periodic[i+1]-1;
+	if(j == i) continue;
+	for(k=xadj[i];k<xadj[i+1];k++) 
+	  if(adjncy[k] == j) adjwgt[k] = maxcon;
+      }
+    }
+    
+    /* Make the contraint connections stronger */
+    if(eg->connect) {
+      int maxweight;
+      int con,bc,bctype,sideelemtype,sidenodes;
+      int j2,ind,ind2;
+      int sideind[MAXNODESD1];
+      
+      maxweight = noknots+noelements;
+      printf("Adding weight of %d for constrained nodes\n",maxweight);
+      
+      for(con=1;con<=eg->connect;con++) {
+	bctype = eg->connectbounds[con-1];
+	
+	for(bc=0;bc<MAXBOUNDARIES;bc++) {    
+	  if(bound[bc].created == FALSE) continue;
+	  if(bound[bc].nosides == 0) continue;
+	  
+	  for(i=1;i<=bound[bc].nosides;i++) {
+	    if(bound[bc].types[i] != bctype) continue;
+	    
+	    GetElementSide(bound[bc].parent[i],bound[bc].side[i],bound[bc].normal[i],
+			   data,sideind,&sideelemtype);
+	    sidenodes = sideelemtype%100;
+	    
+	    for(j=0;j<sidenodes;j++) {
+	      for(j2=0;j2<sidenodes;j2++) {
+		if(j==j2) continue;
+		
+		ind = sideind[j]-1;
+		ind2 = sideind[j2]-1;
+		
+		for(k=xadj[ind];k<xadj[ind+1];k++) 
+		  if(adjncy[k] == ind2) adjwgt[k] = maxweight;
+	      }
 	    }
 	  }
 	}
       }
     }
-  }
+  }    
 
+
+  if( nparts == 1 ) {
+    if(info) printf("There is just one free partition, no partitioning needed.\n");      
+    for(i=0;i<nn;i++)
+      npart[i] = 0;
+  }
   if(metisopt == 2) {
     if(info) printf("Starting graph partitioning METIS_PartGraphRecursive.\n");  
     METIS_PartGraphRecursive(&nn,xadj,adjncy,vwgt,adjwgt,&wgtflag,
@@ -2750,8 +2633,9 @@ int PartitionMetisNodes(struct FemType *data,struct BoundaryType *bound,
     METIS_PartGraphVKway(&nn,xadj,adjncy,vwgt,adjwgt,&wgtflag,
 			&numflag,&nparts,&options[0],&edgecut,npart);
   }
-  else 
+  else {
     printf("Unknown Metis option %d\n",metisopt);
+  }
 
   if(info) printf("Finished Metis graph partitioning call.\n");
 
@@ -2761,16 +2645,41 @@ int PartitionMetisNodes(struct FemType *data,struct BoundaryType *bound,
 
   if(!data->partitionexist) {
     data->partitionexist = TRUE;
-    data->elempart = Ivector(1,data->noelements);
-    data->nodepart = xadj; /* Dirty reuse to save little memory and time */
+    data->elempart = Ivector(1,noelements);
+    data->nodepart = Ivector(1,noknots);
     data->nopartitions = partitions;
   }
 
   /* Set the partition given by Metis for each node. */
-  for(i=1;i<=noknots;i++) 
-    data->nodepart[i] = npart[i-1]+1;
+  if( dual ) {
+    printf("dual\n");
+    if( data->elemconnectexist ) {
+      for(i=1;i<=noelements;i++) {
+	j = data->elemconnect[i];
+	if(!j) {
+	  data->elempart[i] = 1;
+	}
+	else {
+	  data->elempart[i] = npart[j-1]+2;  
+	}
+      }
+    }
+    else {
+      for(i=1;i<=nn;i++) 
+	data->elempart[i] = npart[i-1]+1;
+    }
+    PartitionNodesByElements(data,info);
+    printf("done\n");
+  }
+  else {
+    for(i=1;i<=nn;i++) 
+      data->nodepart[i] = npart[i-1]+1;
+    PartitionElementsByNodes(data,info);
+  }
 
-  if(eg->connect) {
+
+  /* Finally check that the constraint is really honored */
+  if(!dual && eg->connect) {
     int con,bc,bctype,sideelemtype,sidenodes,par;
     int ind,sideind[MAXNODESD1];
     int *sidehits,sidepartitions;
@@ -2808,24 +2717,25 @@ int PartitionMetisNodes(struct FemType *data,struct BoundaryType *bound,
 	if( sidehits[i] ) sidepartitions += 1;
 
       if(sidepartitions != 1) {
-	printf("PartitionMetisNodes: side %d belongs to %d partitions\n",bctype,sidepartitions);
-	if(1) 
-	  bigerror("Parallel constraints may not be set!");
-	else
-	  printf("**************** Warning *******************\n");
+	printf("PartitionMetisGraph: side %d belongs to %d partitions\n",bctype,sidepartitions);
+	bigerror("Parallel constraints might not be set!");
       }
     }
   }
 
+  free_Ivector(npart,0,nn-1);
+  free_Ivector(xadj,0,nn);
 
-  PartitionElementsByNodes(data,info);
-
-  free_Ivector(npart,0,noknots-1);
-
-  if(info) printf("Successfully made a Metis partition using the dual graph.\n");
+  if(info) {
+    if( dual ) 
+      printf("Successfully made a Metis partition using the dual graph.\n");
+    else
+      printf("Successfully made a Metis partition using the nodal graph.\n");
+  }
 
   return(0);
 }
+
 #endif  
 
 
@@ -2889,7 +2799,7 @@ static void CheckPartitioning(struct FemType *data,int info)
 
   if(info) {
     printf("Information on partition bandwidth\n");
-    if(partitions <= 4) {
+    if(partitions <= 10) {
       printf("Distribution of elements, nodes and shared nodes\n");
       printf("     %-10s %-10s %-10s %-10s\n","partition","elements","nodes","shared");
       for(i=1;i<=partitions;i++)
@@ -4532,13 +4442,13 @@ int ReorderElementsMetis(struct FemType *data,int info)
   if(info) printf("Indexwidth of the original node order is %d.\n",i);
 
 
-  CreateDualGraph(data,TRUE,info);
-  maxcon = data->dualmaxconnections;
+  CreateNodalGraph(data,TRUE,info);
+  maxcon = data->nodalmaxconnections;
 
   totcon = 0;
   for(i=1;i<=noknots;i++) {
     for(j=0;j<maxcon;j++) {
-      con = data->dualgraph[j][i];
+      con = data->nodalgraph[j][i];
       if(con) totcon++;
     }
   }
@@ -4553,7 +4463,7 @@ int ReorderElementsMetis(struct FemType *data,int info)
   for(i=1;i<=noknots;i++) {
     xadj[i-1] = totcon;
     for(j=0;j<maxcon;j++) {
-      con = data->dualgraph[j][i];
+      con = data->nodalgraph[j][i];
       if(con) {
 	adjncy[totcon] = con-1;
 	totcon++;

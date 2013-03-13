@@ -45,14 +45,15 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
   INTEGER :: i,nInterval=1, nstep=0, OutputCount = 0, MeshDim,MeshLevel,nlen
   INTEGER, POINTER :: OutputIntervals(:), TimeSteps(:)
 
-  TYPE(Mesh_t), POINTER :: Mesh, iMesh
+  TYPE(Mesh_t), POINTER :: Mesh, iMesh, ListMesh
   CHARACTER(10) :: OutputFormat
   CHARACTER(LEN=MAX_NAME_LEN) :: FilePrefix, MeshName, iMeshName
   LOGICAL :: SubroutineVisited=.FALSE.,Found
   TYPE(ValueList_t), POINTER :: Params
   TYPE(Variable_t), POINTER :: ModelVariables
     
-  SAVE SubroutineVisited, OutputCount, ListSet, MeshDim
+  SAVE SubroutineVisited, OutputCount, ListSet, MeshDim, ListMesh
+
   INTERFACE
     RECURSIVE SUBROUTINE ElmerPostOutputSolver( Model, Solver,dt,TransientSimulation,ONOEfound )
       USE DefUtils
@@ -139,11 +140,12 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
   DO WHILE( ASSOCIATED(iMesh) )
     
     IF ( .NOT. iMesh % OutputActive ) THEN
+      CALL Info('ResultOutputSolver','Skipping mesh: '//TRIM(iMesh % Name), Level=10 )
       iMesh => iMesh % next
       CYCLE 
     END IF    
 
-    CALL Info('ResultOutputSolver','Working on mesh: '//TRIM(iMesh % Name) )
+    CALL Info('ResultOutputSolver','Working on mesh: '//TRIM(iMesh % Name), Level=7 )
     WRITE(Message,'(A,I0)') 'Dimension of mesh: ',iMesh % MeshDim 
     CALL Info('ResultOutputSolver',Message) 
 
@@ -167,12 +169,13 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
       CALL Info('ResultOutputSolver','Creating list for saving - if not present')
       CALL CreateListForSaving( Model, Params,.TRUE. )    
       ListSet = .TRUE.
-    ELSE IF( MeshDim /= Model % Mesh % MeshDim ) THEN
+    ELSE IF( MeshDim /= Model % Mesh % MeshDim .OR. .NOT. ASSOCIATED(iMesh, ListMesh)) THEN
       CALL Info('ResultOutputSolver','Recreating list for saving')
-      CALL CreateListForSaving( Model, Params,.TRUE.)
+      CALL CreateListForSaving( Model, Params,.TRUE.,.TRUE.)
     END IF
 
     MeshDim = Model % Mesh % MeshDim
+    ListMesh => iMesh
 
     ! In case there are multiple mesh levels one may also save coarser ones
     !----------------------------------------------------------------------
@@ -3033,7 +3036,7 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
   INTEGER, SAVE :: nTime = 0
   LOGICAL :: GotIt, Parallel, FixedMesh
   CHARACTER(MAX_NAME_LEN), SAVE :: FilePrefix
-  CHARACTER(MAX_NAME_LEN) :: VtuFile, PvtuFile, PvdFile, DataSetFile
+  CHARACTER(MAX_NAME_LEN) :: BaseFile, VtuFile, PvtuFile, PvdFile, DataSetFile
   TYPE(Mesh_t), POINTER :: Mesh
   TYPE(Variable_t), POINTER :: Var
   INTEGER :: i, j, k, Partitions, Part, ExtCount, FileindexOffSet, MeshDim, PrecBits, &
@@ -3246,16 +3249,19 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
     END IF
   END IF
 
-  Dir = GetString( Params,'Output Directory',GotIt) 
-  IF(.NOT. GotIt ) THEN
-    IF (LEN_TRIM(Mesh % Name) > 0 ) THEN
-      Dir = TRIM(Mesh % Name) 
-    ELSE
-      Dir = "."
+  BaseFile = FilePrefix
+  IF ( .NOT. FileNameQualified(FilePrefix) ) THEN
+    Dir = GetString( Params,'Output Directory',GotIt) 
+    IF( GotIt ) THEN
+      IF( LEN_TRIM(Dir) > 0 ) THEN
+        BaseFile = TRIM(Dir)// '/' //TRIM(FilePrefix)
+        CALL MakeDirectory( TRIM(Dir) // CHAR(0) )
+      END IF
+    ELSE 
+      BaseFile = TRIM(OutputPath) // '/' // TRIM(Mesh % Name) // '/' //TRIM(FilePrefix)
     END IF
-  END IF  
-  CALL MakeDirectory( TRIM(Dir) // CHAR(0) )
-  Dir = TRIM(Dir)// "/"
+  END IF
+
 
   ActiveModes => ListGetIntegerArray( Params,'Active EigenModes',GotActiveModes ) 
   IF( GotActiveModes ) THEN
@@ -3294,11 +3300,11 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
 
   IF(Parallel) THEN
     IF( NoFileindex ) THEN
-      WRITE( PvtuFile,'(A,A,".pvtu")' ) TRIM(Dir),TRIM(FilePrefix)
+      WRITE( PvtuFile,'(A,".pvtu")' ) TRIM(BaseFile)
     ELSE IF( FileIndex < 10000 ) THEN
-      WRITE( PvtuFile,'(A,A,I4.4,".pvtu")' ) TRIM(Dir),TRIM(FilePrefix),FileIndex
+      WRITE( PvtuFile,'(A,I4.4,".pvtu")' ) TRIM(BaseFile),FileIndex
     ELSE   
-      WRITE( PvtuFile,'(A,A,I0,".pvtu")' ) TRIM(Dir),TRIM(FilePrefix),FileIndex
+      WRITE( PvtuFile,'(A,I0,".pvtu")' ) TRIM(BaseFile),FileIndex
     END IF
     CALL WritePvtuFile( PvtuFile, Model )
   END IF
@@ -3309,21 +3315,21 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
   IF( NumberOfNodes > 0 ) THEN
     IF ( Parallel ) THEN
       IF( NoFileindex ) THEN
-        WRITE( VtuFile,'(A,A,I4.4,A,".vtu")' ) TRIM(Dir),TRIM(FilePrefix),Part+1,"par"
+        WRITE( VtuFile,'(A,I4.4,A,".vtu")' ) TRIM(BaseFile),Part+1,"par"
       ELSE IF( FileIndex < 10000 ) THEN
-        WRITE( VtuFile,'(A,A,I4.4,A,I4.4,".vtu")' ) TRIM(Dir),TRIM(FilePrefix),Part+1,"par",&
+        WRITE( VtuFile,'(A,I4.4,A,I4.4,".vtu")' ) TRIM(BaseFile),Part+1,"par",&
             FileIndex
       ELSE
-        WRITE( VtuFile,'(A,A,I4.4,A,I0,".vtu")' ) TRIM(Dir),TRIM(FilePrefix),Part+1,"par",&
+        WRITE( VtuFile,'(A,I4.4,A,I0,".vtu")' ) TRIM(BaseFile),Part+1,"par",&
             FileIndex
       END IF
     ELSE
       IF( NoFileindex ) THEN
-        WRITE( VtuFile,'(A,A,".vtu")' ) TRIM(Dir),TRIM(FilePrefix)
+        WRITE( VtuFile,'(A,".vtu")' ) TRIM(BaseFile)
       ELSE IF( FileIndex < 10000 ) THEN
-        WRITE( VtuFile,'(A,A,I4.4,".vtu")' ) TRIM(Dir),TRIM(FilePrefix),FileIndex
+        WRITE( VtuFile,'(A,I4.4,".vtu")' ) TRIM(BaseFile),FileIndex
       ELSE
-        WRITE( VtuFile,'(A,A,I0,".vtu")' ) TRIM(Dir),TRIM(FilePrefix),FileIndex
+        WRITE( VtuFile,'(A,I0,".vtu")' ) TRIM(BaseFile),FileIndex
       END IF
     END IF
 
@@ -3335,7 +3341,7 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
   !-----------------------------------------------------------
   IF( GetLogical( Params,'Vtu Time Collection', GotIt ) ) THEN
     IF( TransientSimulation .AND. .NOT. NoFileIndex ) THEN
-      WRITE( PvdFile,'(A,A,".pvd")' ) TRIM(Dir),TRIM(FilePrefix)
+      WRITE( PvdFile,'(A,".pvd")' ) TRIM(BaseFile)
       IF( Parallel ) THEN
         DataSetFile = PvtuFile
       ELSE
@@ -4272,7 +4278,6 @@ CONTAINS
       n = MAX( LEN_TRIM( Str ), n ) 
       
       RecLen = ((n/4)+1)*4
-      PRINT *,'Record Length: ',RecLen
     END IF
 
     IF( nTime == 1 ) THEN
@@ -4560,7 +4565,7 @@ CONTAINS
     CASE( 820 )
       VTKCode = 25
     CASE DEFAULT
-      PRINT *,'ElmerCode',ElmerCode
+      WRITE(Message,'(A,I0)') 'Not implemented for elementtype: ',ElmerCode
       CALL Fatal('Elmer2VtkElement','Not Implemented for elementtype')
       
     END SELECT

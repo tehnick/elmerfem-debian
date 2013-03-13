@@ -1117,7 +1117,7 @@ CONTAINS
        INTEGER, ALLOCATABLE:: RInd(:)
        LOGICAL :: Found, EpsAbsGiven,EpsRelGiven, MaskExists, ProjectorAllocated
        INTEGER :: eps_tries, nrow
-       REAL(KIND=dp) :: eps1 = 0.1, eps2, eps_global, eps_local, eps_basis
+       REAL(KIND=dp) :: eps1 = 0.1, eps2, eps_global, eps_local, eps_basis,eps_numeric
        REAL(KIND=dp), POINTER :: Values(:), LocalU(:), LocalV(:), LocalW(:)
 !------------------------------------------------------------------------------
 
@@ -1136,7 +1136,7 @@ CONTAINS
            END IF
            Projector => Projector % Next
          END DO
-         
+
          n = NewMesh % NumberOfNodes
          ALLOCATE( LocalU(n), LocalV(n), LocalW(n), ElemPtrs(n) )
          DO i=1,n
@@ -1146,6 +1146,7 @@ CONTAINS
 !
 !      Check if using the spatial division hierarchy for the search:
 !      -------------------------------------------------------------
+
        RootQuadrant => OldMesh % RootQuadrant
        dim = CoordinateSystemDimension()
        
@@ -1185,15 +1186,19 @@ CONTAINS
        
        eps_global = ListGetConstReal( CurrentModel % Simulation,  &
            'Interpolation Global Epsilon', Stat)
-       IF(.NOT. Stat) eps_global = 2.0e-10
+       IF(.NOT. Stat) eps_global = 2.0d-10
        
        eps_local = ListGetConstReal( CurrentModel % Simulation,  &
            'Interpolation Local Epsilon', Stat )
-       IF(.NOT. Stat) eps_local = 1.0e-10
+       IF(.NOT. Stat) eps_local = 1.0d-10
 
        eps_tries = ListGetInteger( CurrentModel % Simulation,  &
            'Interpolation Max Iterations', Stat )
        IF(.NOT. Stat) eps_tries = 12
+
+       eps_numeric = ListGetConstReal( CurrentModel % Simulation, &
+           'Interpolation Numeric Epsilon', Stat)
+       IF(.NOT. Stat) eps_numeric = 1.0e-10
 
        QTreeFails = 0
        TotFails = 0
@@ -1248,7 +1253,7 @@ CONTAINS
                  ElementNodes % z(1:n) = OldMesh % Nodes % z(NodeIndexes)
                  
                  Found = PointInElement( Element, ElementNodes, &
-                     Point, LocalCoordinates, Eps1, Eps2, NumericEps=1.d-12 )
+                     Point, LocalCoordinates, Eps1, Eps2, NumericEps=eps_numeric )
                  IF ( Found ) EXIT
                END DO
                IF ( Found ) EXIT  
@@ -1276,7 +1281,7 @@ CONTAINS
              ElementNodes % z(1:n) = OldMesh % Nodes % z(NodeIndexes)
              
              Found =  PointInElement( Element, ElementNodes, &
-                 Point, LocalCoordinates ) 
+                 Point, LocalCoordinates  ) 
              IF( Found ) THEN
                IF( TryQTree ) QTreeFails = QtreeFails + 1
                EXIT
@@ -1287,8 +1292,8 @@ CONTAINS
          IF (.NOT.Found) THEN
            Element => NULL()
            IF (.NOT.PRESENT(FoundNodes) ) THEN
-             WRITE( Message, * ) 'Point was not found in any of the elements!',i
-             CALL Info( 'InterpolateMeshToMesh', Message, Level=5 )
+             WRITE( Message,'(A,I0,A)' ) 'Point ',i,' was not found in any of the elements!'
+             CALL Info( 'InterpolateMeshToMesh', Message, Level=20 )
              TotFails = TotFails + 1
            END IF
            CYCLE
@@ -1390,7 +1395,8 @@ CONTAINS
            IF( TotFails == 0 ) THEN
              CALL Info('InterpolateMeshToMesh','Found all nodes in the target mesh',Level=6)
            ELSE
-             WRITE( Message,'(A,I0)') 'Number of points not found: ',TotFails
+             WRITE( Message,'(A,I0,A,I0,A)') 'Points not found: ',TotFails,' (found ',&
+                 NewMesh % NumberOfNodes - TotFails,')'
              CALL Warn( 'InterpolateMeshToMesh', Message )
            END IF
          END IF
@@ -1635,11 +1641,10 @@ CONTAINS
 !------------------------------------------------------------------------------
       TYPE(Mesh_t), POINTER :: Mesh
       TYPE(Projector_t), POINTER :: Projector
-      TYPE(Variable_t), POINTER :: Var,PVar,Tmp
-!------------------------------------------------------------------------------
+      TYPE(Variable_t), POINTER :: Var,PVar,Tmp,AidVar
       REAL(KIND=dp), POINTER :: Vals(:)
       INTEGER :: i,k,n, DOFs
-      LOGICAL :: Found, GlobalBubbles
+      LOGICAL :: Found, GlobalBubbles, UseProjector
       CHARACTER(LEN=LEN_TRIM(Name)) :: str
       CHARACTER(LEN=MAX_NAME_LEN) :: tmpname
       DOUBLE PRECISION :: t1,CPUTime
@@ -1831,19 +1836,28 @@ CONTAINS
 !------------------------------------------------------------------------------
 ! interpolation call
 !------------------------------------------------------------------------------
-t1 = CPUTime()
+      t1 = CPUTime()
+
+      UseProjector = ListGetLogical(CurrentModel % Simulation,'Use Mesh Projector',Found)
+      IF( .NOT. Found ) UseProjector = .TRUE.
 
       IF( PRESENT( MaskName ) ) THEN
        CALL InterpolateMeshToMesh( PVar % PrimaryMesh, &
             CurrentModel % Mesh, Var, Variables, MaskName=MaskName )
-      ELSE
+      ELSE IF( UseProjector ) THEN
         CALL InterpolateMeshToMesh( PVar % PrimaryMesh, &
             CurrentModel % Mesh, Var, Variables, Projector=Projector )
+      ELSE
+        AidVar => VariableGet( CurrentModel % Mesh % Variables, Name, ThisOnly = .TRUE. ) 
+        IF( ASSOCIATED( AidVar ) ) THEN
+          AidVar % Values = 0.0_dp
+        END IF
+        CALL InterpolateMeshToMesh( PVar % PrimaryMesh, &
+            CurrentModel % Mesh, Var, Variables )        
       END IF
 
-
-WRITE( Message, * ) 'Interpolation time: ', CPUTime()-t1
-CALL Info( 'VariableGet', Message, Level=7 )
+      WRITE( Message,'(A,ES12.3)' ) 'Interpolation time for > '//TRIM(Name)//' < :', CPUTime()-t1
+      CALL Info( 'VariableGet', Message, Level=7 )
 
 !------------------------------------------------------------------------------
 ! free the temporary list
@@ -2860,6 +2874,90 @@ CALL Info( 'VariableGet', Message, Level=7 )
 !------------------------------------------------------------------------------
 
 
+
+!------------------------------------------------------------------------------
+!> Gets a real valued parameter in one single point with value x.
+!> Note that this uses same logical on sif file as ListGetReal 
+!> but the variable is just a dummy as the dependent function is 
+!> assumed to be set inside the code. This should be used with caution
+!> is it sets some confusing limitations to the user. 
+!------------------------------------------------------------------------------
+   RECURSIVE FUNCTION ListGetFun( List,Name,x,Found,minv,maxv ) RESULT(F)
+!------------------------------------------------------------------------------
+     TYPE(ValueList_t), POINTER :: List
+     CHARACTER(LEN=*)  :: Name
+     REAL(KIND=dp) :: x     
+     REAL(KIND=dp)  :: f
+     LOGICAL, OPTIONAL :: Found
+     REAL(KIND=dp), OPTIONAL :: minv,maxv
+!------------------------------------------------------------------------------
+     TYPE(Variable_t), POINTER :: Variable, CVar, TVar
+     TYPE(ValueList_t), POINTER :: ptr
+     REAL(KIND=dp) :: T(1)
+     INTEGER :: i,j,k,k1,l,l0,l1,lsize
+     CHARACTER(LEN=MAX_NAME_LEN) ::  cmd, tmp_str
+     LOGICAL :: AllGlobal
+!------------------------------------------------------------------------------
+
+     F = 0.0_dp
+     ptr => ListFind(List,Name,Found)
+     IF ( .NOT.ASSOCIATED(ptr) ) RETURN
+
+     k = 0
+     T(1) = x
+
+     SELECT CASE(ptr % TYPE)
+
+     CASE( LIST_TYPE_VARIABLE_SCALAR )
+
+       IF ( ptr % PROCEDURE /= 0 ) THEN
+         F = ExecRealFunction( ptr % PROCEDURE,CurrentModel, k, T(1) )
+       ELSE
+         IF ( .NOT. ASSOCIATED(ptr % FValues) ) THEN
+           WRITE(Message,*) 'VALUE TYPE for property [', TRIM(Name), &
+               '] not used consistently.'
+           CALL Fatal( 'ListGetFun', Message )
+           RETURN
+         END IF
+         F = InterpolateCurve( ptr % TValues,ptr % FValues(1,1,:), &
+             X, ptr % CubicCoeff )
+       END IF
+
+     CASE( LIST_TYPE_VARIABLE_SCALAR_STR )
+       WRITE( cmd, * ) 'tx=', X
+       k1 = LEN_TRIM(cmd)
+       CALL matc( cmd, tmp_str, k1 )
+       
+       cmd = ptr % CValue
+       k1 = LEN_TRIM(cmd)
+       CALL matc( cmd, tmp_str, k1 )
+       READ( tmp_str(1:k1), * ) F
+
+     CASE DEFAULT
+       CALL Fatal('ListGetFun','LIST_TYPE not implemented!')
+
+     END SELECT
+
+     IF ( PRESENT( minv ) ) THEN
+        IF ( F < minv ) THEN
+           WRITE( Message,*) 'Given VALUE ', F, ' for property: ', '[', TRIM(Name),']', &
+               ' smaller than given minimum: ', minv
+           CALL Fatal( 'ListGetFun', Message )
+        END IF
+     END IF
+
+     IF ( PRESENT( maxv ) ) THEN
+        IF ( F > maxv ) THEN
+           WRITE( Message,*) 'Given VALUE ', F, ' for property: ', '[', TRIM(Name),']', &
+               ' larger than given maximum ', maxv
+           CALL Fatal( 'ListGetFun', Message )
+        END IF
+     END IF
+
+   END FUNCTION ListGetFun
+!------------------------------------------------------------------------------
+
+
 !------------------------------------------------------------------------------
 !> Gets a real valued parameter in the Gaussian integration point defined 
 !> by the local basis function. To speed up things there is a handle associated
@@ -3600,6 +3698,11 @@ CALL Info( 'VariableGet', Message, Level=7 )
     Params => Model % Solver % Values
     Variables => Model % Mesh % Variables
 
+    IF( .NOT. ASSOCIATED( Variables ) ) THEN
+      CALL Warn('CreateListForSaving','Mesh does not include any variables!')
+      RETURN
+    END IF
+
 !------------------------------------------------------------------------------
 ! Sometimes the list must be cleared in order to use it for a different mesh
 !-----------------------------------------------------------------------------
@@ -3634,8 +3737,15 @@ CALL Info( 'VariableGet', Message, Level=7 )
     ! First check that there is a need to create the list i.e. it is not
     ! already manually defined
     !-------------------------------------------------------------------
-    IF( ListCheckPresent( List,'Scalar Field 1' ) ) RETURN
-    IF( ListCheckPresent( List,'Vector Field 1' ) ) RETURN
+    IF( ListCheckPresent( List,'Scalar Field 1' ) ) THEN
+      CALL Info('CreateListForSaving','Scalar Field 1 exists, creating no list!',Level=10)
+      RETURN
+    END IF
+
+    IF( ListCheckPresent( List,'Vector Field 1' ) ) THEN
+      CALL Info('CreateListForSaving','Vector Field 1 exists, creating no list!',Level=10)
+      RETURN
+    END IF
 
     Nscalar = 0
     Nvector = 0
@@ -3645,6 +3755,8 @@ CALL Info( 'VariableGet', Message, Level=7 )
     dim = Model % Mesh % MeshDim
     
     Var => Variables
+
+
     DO WHILE( ASSOCIATED( Var ) )
       
       IF ( .NOT. Var % Output ) THEN
@@ -3730,13 +3842,30 @@ CALL Info( 'VariableGet', Message, Level=7 )
                 IsVector = .NOT. ASSOCIATED(Var1)
               END IF
             END IF
-	    IF( IsVector ) THEN
-              WRITE(VarName,'(A)') TRIM(str(1:j-2))
-              ! Loop over the 2nd (and 3rd) components as they are already accounted for
-	      DO k=2,dim
-                Var => Var % Next
-              END DO
+            IF( IsVector ) WRITE(VarName,'(A)') TRIM(str(1:j-2))
+
+            ! Associated to the previous case, cycle the other components of the vector
+            ! and cycle them if they are part of the vector that will be detected above.
+          ELSE IF( str(j:j) == '2' ) THEN
+            Var1 => VariableGet(Variables,TRIM(str(1:j-2))//' 1',ThisOnly)		
+            IF( ASSOCIATED( Var1 ) ) THEN
+              IF( dim == 2 ) THEN 
+                Var1 => VariableGet(Variables,TRIM(str(1:j-2))//' 3',ThisOnly)		
+              ELSE IF( dim == 3 ) THEN
+                Var1 => VariableGet(Variables,TRIM(str(1:j-2))//' 4',ThisOnly)		
+              END IF
+              Set = ASSOCIATED( Var1 )
             END IF
+
+          ELSE IF( str(j:j) == '3' ) THEN
+            IF( dim == 3 ) THEN
+              Var1 => VariableGet(Variables,TRIM(str(1:j-2))//' 1',ThisOnly)		
+              IF( ASSOCIATED( Var1 ) ) THEN
+                Var1 => VariableGet(Variables,TRIM(str(1:j-2))//' 4',ThisOnly)		
+                Set = ASSOCIATED( Var1 )
+              END IF
+            END IF
+
           END IF
         END IF
       END SELECT
@@ -3788,7 +3917,6 @@ CALL Info( 'VariableGet', Message, Level=7 )
         END IF
       END DO
     END IF
-
 
   END SUBROUTINE CreateListForSaving
   
@@ -3855,9 +3983,8 @@ CALL Info( 'VariableGet', Message, Level=7 )
       ct = CPUTime() - ct0
       rt = RealTime() - rt0 
       
-      WRITE(Message,'(a,f9.3,f9.3,a)') 'Execution time (CPU,REAL) for '&
-          //TRIM(TimerName)//': ',ct,rt,' (s)'
-      CALL Info('CheckTimer',Message,Level=Level)          
+      WRITE(Message,'(a,2f10.4,a)') 'Elapsed time (CPU,REAL): ',ct,rt,' (s)'
+      CALL Info(TRIM(TimerName),Message,Level=Level)          
 
       IF( TimerResults ) THEN
         CALL ListAddConstReal(CurrentModel % Simulation,&
