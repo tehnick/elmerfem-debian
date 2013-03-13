@@ -4,7 +4,7 @@ Priority: extra
 Maintainer: Debian Science Maintainers <debian-science-maintainers@lists.alioth.debian.org>
 Uploaders: "Adam C. Powell, IV" <hazelsct@debian.org>, Boris Pek <tehnick-8@mail.ru>
 Standards-Version: 3.9.4
-Build-Depends: debhelper (>= 5), quilt, po-debconf, autoconf, automake,
+Build-Depends: debhelper (>= 8), quilt, po-debconf, autoconf, automake,
  gfortran, libblas-dev | libblas-3gf.so, liblapack-dev | liblapack-3gf.so,
  mpi-default-dev, mpi-default-bin,
  libhypre-dev, libsuitesparse-dev, libarpack2-dev, libparpack2-dev,
