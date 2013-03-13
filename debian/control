@@ -22,7 +22,6 @@ Homepage: http://www.csc.fi/elmer/
 
 Package: elmer
 Architecture: any
-Section: science
 Depends: elmer-common (= ${source:Version}), ${shlibs:Depends}, mpi-default-bin, ${misc:Depends}
 Conflicts: elmer-common (<< 5.5.0.svn.4499.dfsg-1)
 Suggests: elmer-doc
@@ -44,8 +43,8 @@ Description: finite element multiphysics suite - binaries
  multi-processor versions), GUI, and post-processor.
 
 Package: elmer-dbg
-Architecture: any
 Section: debug
+Architecture: any
 Depends: elmer (= ${binary:Version}), ${misc:Depends}
 Description: finite element multiphysics suite - debugging symbols
  The Elmer multiphysics simulation package includes physical models of
@@ -65,7 +64,6 @@ Description: finite element multiphysics suite - debugging symbols
 
 Package: elmer-common
 Architecture: all
-Section: science
 Depends: ttf-freefont, ${misc:Depends}
 Recommends: elmer (>= ${source:Version})
 Description: finite element multiphysics suite - architecture-independent files
@@ -85,8 +83,8 @@ Description: finite element multiphysics suite - architecture-independent files
  This package provides the architecture-independent files for Elmer.
 
 Package: libelmersolver-6.1
-Architecture: any
 Section: libs
+Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Suggests: libelmer-dev
 Conflicts: libelmersolver-5.4.1
@@ -108,8 +106,8 @@ Description: finite element multiphysics suite - library
  This package provides the Elmer solver shared library.
 
 Package: libelmersolver-dbg
-Architecture: any
 Section: debug
+Architecture: any
 Depends: libelmersolver-6.1 (= ${binary:Version}), ${misc:Depends}
 Description: finite element multiphysics suite - library debugging symbols
  The Elmer multiphysics simulation package includes physical models of
@@ -128,13 +126,13 @@ Description: finite element multiphysics suite - library debugging symbols
  This package provides the Elmer solver shared library's debugging symbols.
 
 Package: libelmer-dev
+Section: libdevel
 Architecture: any
 Depends: elmer (= ${binary:Version}), libelmersolver-6.1 (= ${binary:Version}),
  libhypre-dev, libsuitesparse-dev, libarpack2-dev, libmumps-scotch-dev,
  libblas-dev | libblas-3gf.so, liblapack-dev | liblapack-3gf.so,
  mpi-default-dev, mpi-default-bin, gfortran, ${misc:Depends}
 Conflicts: elmer-common (<< 5.5.0.svn.4499.dfsg-1), elmer (<< 5.5.0.svn.5210.dfsg-1)
-Section: libdevel
 Description: finite element multiphysics suite - development files
  The Elmer multiphysics simulation package includes physical models of
  fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
@@ -155,7 +153,6 @@ Description: finite element multiphysics suite - development files
 
 Package: elmergui-samples
 Architecture: all
-Section: science
 Depends: ${misc:Depends}
 Suggests: elmer, elmer-doc
 Description: ElmerGUI samples directory
