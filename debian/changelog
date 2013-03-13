@@ -1,18 +1,28 @@
-elmerfem (7.0.svn.5862+dfsg-1) UNRELEASED; urgency=low
+elmerfem (7.0.svn.6034+dfsg-1) UNRELEASED; urgency=low
 
-  * Team upload.
   * New upstream revision.
-  * Update debian/copyright.
+  * Add myself to Uploaders. (See: #691875)
+  * Bump Standards-Version to 3.9.4 (was 3.9.2).
+  * Bump debhelper version to 8 (was 5); update debian/compat.
   * Update debian/patches/no-tetgen.patch.
   * Update debian/patches/libav_071.patch.
-  * Use bzip2 compression for the binary packages.
+  * Update debian/control:
+    - fix lintian note binary-control-field-duplicates-source
+    - fix lintian note conflicts-with-version
+  * Update debian/rules:
+    - use hardening flags in compiler options
+    - add -Wl,--as-needed to LDFLAGS
+    - use bzip2 compression for the binary packages
   * Update debian/elmerfem_get-orig-source.sh:
     - new version scheme (fix lintian note dfsg-version-with-period)
     - use xz compression for orig tarball
     - small cosmetic fixes
+  * Add debian/patches/fix-build-with-hardening-compiler-options.patch.
   * Add debian/watch: fix lintian note debian-watch-file-is-missing.
+  * Delete debian/README.source: there are no useful information in it.
+  * Update debian/copyright.
 
- -- Boris Pek <tehnick-8@mail.ru>  Thu, 01 Nov 2012 00:21:08 +0200
+ -- Boris Pek <tehnick-8@mail.ru>  Thu, 14 Mar 2013 00:05:05 +0200
 
 elmerfem (6.1.0.svn.5396.dfsg2-1) unstable; urgency=low
 
