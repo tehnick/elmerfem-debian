@@ -4,20 +4,20 @@
 ! *
 ! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
 ! * 
-! *  This program is free software; you can redistribute it and/or
-! *  modify it under the terms of the GNU General Public License
-! *  as published by the Free Software Foundation; either version 2
-! *  of the License, or (at your option) any later version.
-! * 
-! *  This program is distributed in the hope that it will be useful,
-! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
-! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-! *  GNU General Public License for more details.
+! * This library is free software; you can redistribute it and/or
+! * modify it under the terms of the GNU Lesser General Public
+! * License as published by the Free Software Foundation; either
+! * version 2.1 of the License, or (at your option) any later version.
 ! *
-! *  You should have received a copy of the GNU General Public License
-! *  along with this program (in file fem/GPL-2); if not, write to the 
-! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-! *  Boston, MA 02110-1301, USA.
+! * This library is distributed in the hope that it will be useful,
+! * but WITHOUT ANY WARRANTY; without even the implied warranty of
+! * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! * Lesser General Public License for more details.
+! * 
+! * You should have received a copy of the GNU Lesser General Public
+! * License along with this library (in file ../LGPL-2.1); if not, write 
+! * to the Free Software Foundation, Inc., 51 Franklin Street, 
+! * Fifth Floor, Boston, MA  02110-1301  USA
 ! *
 ! *****************************************************************************/
 !
@@ -128,7 +128,7 @@ INCLUDE "mpif.h"
       LOGICAL   ::     First, Stat, Direct = .FALSE., &
                        Iterative = .FALSE., NewSystem
       LOGICAL :: Factorize, FreeFactorize,FoundFactorize,FoundFreeFactorize
-      REAL(KIND=dp) :: SigmaR, SigmaI, TOL, s, Residual(n), Solution(n), ForceVector(n), LinConv, ILUTOL
+      REAL(KIND=dp) :: SigmaR, SigmaI, TOL, s, Residual(n), Solution(n), Solution_im(n),ForceVector(n), LinConv, ILUTOL
 !
       REAL(KIND=dp), POINTER :: SaveValues(:)
       CHARACTER(LEN=MAX_NAME_LEN) :: str
@@ -373,8 +373,7 @@ INCLUDE "mpif.h"
                   Solution    = 0
                   j = 0
                   DO i=1,n
-                     k = Matrix % INVPerm(i)
-                     IF ( OwnerList(k) % Neighbours(1) == me ) THEN
+                     IF ( OwnerList(i) % Neighbours(1) == me ) THEN
                         j = j + 1
                         Solution(i)    = x(j)
                         ForceVector(i) = b(j)
@@ -383,8 +382,7 @@ INCLUDE "mpif.h"
                   CALL DirectSolver( Matrix,Solution,ForceVector,Solver )
                   j = 0
                   DO i=1,n
-                     k = Matrix % INVPerm(i)
-                     IF ( OwnerList(k) % Neighbours(1) == me ) THEN
+                     IF ( OwnerList(i) % Neighbours(1) == me ) THEN
                         j = j + 1
                         x(j) = Solution(i)
                      END IF
@@ -394,8 +392,7 @@ INCLUDE "mpif.h"
                   Solution    = 0
                   j = 0
                   DO i=1,n
-                     k = Matrix % INVPerm(i)
-                     IF ( OwnerList(k) % Neighbours(1) == me ) THEN
+                     IF ( OwnerList(i) % Neighbours(1) == me ) THEN
                         j = j + 1
                         Solution(i)    = x(j)
                         ForceVector(i) = b(j)
@@ -407,8 +404,7 @@ INCLUDE "mpif.h"
 
                   j = 0
                   DO i=1,n
-                     k = Matrix % INVPerm(i)
-                     IF ( OwnerList(k) % Neighbours(1) == me ) THEN
+                     IF ( OwnerList(i) % Neighbours(1) == me ) THEN
                         j = j + 1
                         x(j) = Solution(i)
                      END IF
@@ -431,8 +427,7 @@ INCLUDE "mpif.h"
                   Solution    = 0
                   j = 0
                   DO i=1,n
-                     k = Matrix % INVPerm(i)
-                     IF ( OwnerList(k) % Neighbours(1) == me ) THEN
+                     IF ( OwnerList(i) % Neighbours(1) == me ) THEN
                         j = j + 1
                         Solution(i)    = x(j)
                         ForceVector(i) = b(j)
@@ -441,8 +436,7 @@ INCLUDE "mpif.h"
                   CALL DirectSolver( Matrix,Solution,ForceVector,Solver )
                   j = 0
                   DO i=1,n
-                     k = Matrix % INVPerm(i)
-                     IF ( OwnerList(k) % Neighbours(1) == me ) THEN
+                     IF ( OwnerList(i) % Neighbours(1) == me ) THEN
                         j = j + 1
                         x(j) = Solution(i)
                      END IF
@@ -452,8 +446,7 @@ INCLUDE "mpif.h"
                   Solution    = 0
                   j = 0
                   DO i=1,n
-                     k = Matrix % INVPerm(i)
-                     IF ( OwnerList(k) % Neighbours(1) == me ) THEN
+                     IF ( OwnerList(i) % Neighbours(1) == me ) THEN
                         j = j + 1
                         Solution(i)    = x(j)
                         ForceVector(i) = b(j)
@@ -465,8 +458,7 @@ INCLUDE "mpif.h"
 
                   j = 0
                   DO i=1,n
-                     k = Matrix % INVPerm(i)
-                     IF ( OwnerList(k) % Neighbours(1) == me ) THEN
+                     IF ( OwnerList(i) % Neighbours(1) == me ) THEN
                         j = j + 1
                         x(j) = Solution(i)
                      END IF
@@ -627,22 +619,31 @@ INCLUDE "mpif.h"
            END IF
         END DO
 
-        Solution = 0.0d0
         Residual = 0.0d0
+        Solution = 0.0d0; Solution_im = 0.0d0
+
         DO j=1,PN
           IF ( D(p,2) /= 0.0d0 ) THEN
             Matrix % ParMatrix % SplittedMatrix % TmpXVec(j) = V(j,k)
-            Matrix % ParMatrix % SplittedMatrix % TmpRVec(j) = V(j,k+1)
           ELSE
             Matrix % ParMatrix % SplittedMatrix % TmpXVec(j) = V(j,k)
-            Matrix % ParMatrix % SplittedMatrix % TmpRVec(j) = 0.0d0
           END IF
         END DO
 
         CALL ParallelUpdateResult( Matrix, Solution, Residual )
 
+        DO j=1,PN
+          IF ( D(p,2) /= 0.0d0 ) THEN
+            Matrix % ParMatrix % SplittedMatrix % TmpXVec(j) = V(j,k+1)
+          ELSE
+            Matrix % ParMatrix % SplittedMatrix % TmpXVec(j) = 0.0d0
+          END IF
+        END DO
+        CALL ParallelUpdateResult( Matrix, Solution_im, Residual )
+
+
         DO j=1,N
-          EigVectors(i,j) = CMPLX( Solution(j), Residual(j), KIND=dp )
+          EigVectors(i,j) = CMPLX( Solution(j), Solution_im(j), KIND=dp )
         END DO
 
       END DO

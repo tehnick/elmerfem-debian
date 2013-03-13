@@ -57,25 +57,28 @@
             <Name>Porosity Model</Name>
             <Type>String </Type>
             <Whatis> The porosity models for the medium. </Whatis>
+            <Activate> /Richards Equation/Material/Saturated Hydraulic Conductivity</Activate>
+            <Activate> /Richards Equation/Material/Saturated Water Content</Activate>
+            <Item> <Name> Always saturated </Name>
+            </Item>
             <Item> <Name> van Genuchten </Name> 
-              <Activate> /Richards Equation/Material/Saturated Hydraulic Conductivity</Activate>
-              <Activate> /Richards Equation/Material/Saturated Water Content</Activate>
               <Activate> /Richards Equation/Material/Residual Water Content</Activate>
               <Activate> /Richards Equation/Material/van Genuchten Alpha</Activate>
               <Activate> /Richards Equation/Material/van Genuchten N</Activate>
               <Activate> /Richards Equation/Material/van Genuchten M</Activate>
             </Item>
-            <Item> <Name> Default </Name>
-              <Activate> /Richards Equation/Material/Hydraulic Conductivity</Activate>
-              <Activate> /Richards Equation/Material/Water Content</Activate>
-            </Item>
-           <DefaultValue> Default </DefaultValue>
+            <Item> <Name> Brooks and Corey </Name> 
+              <Activate> /Richards Equation/Material/Residual Water Content</Activate>
+              <Activate> /Richards Equation/Material/Brooks and Corey Air entry value</Activate>
+              <Activate> /Richards Equation/Material/Brooks and Corey Lambda</Activate>
+            </Item>            
+           <DefaultValue> Always saturated </DefaultValue>
           </Parameter>  
 
-         <Parameter Widget="Edit"  Enabled="False" Visible="False">
+         <Parameter Widget="Edit"  Enabled="True" Visible="True">
             <Name> Saturated Hydraulic Conductivity  </Name>
          </Parameter>
-         <Parameter Widget="Edit"  Enabled="False" Visible="False">
+         <Parameter Widget="Edit"  Enabled="True" Visible="True">
             <Name> Saturated Water Content </Name>
          </Parameter>
          <Parameter Widget="Edit"  Enabled="False" Visible="False">
@@ -92,10 +95,10 @@
          </Parameter>
 
          <Parameter Widget="Edit"  Enabled="False" Visible="False">
-            <Name> Hydraulic Conductivity  </Name>
+            <Name> Brooks and Corey Air entry value </Name>
          </Parameter>
          <Parameter Widget="Edit"  Enabled="False" Visible="False">
-            <Name> Water Content  </Name>
+            <Name> Brooks and Corey Lambda </Name>
          </Parameter>
       </Material>
 

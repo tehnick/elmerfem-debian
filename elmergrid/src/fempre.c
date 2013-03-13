@@ -62,7 +62,6 @@
 #include "femelmer.h"
 #include "femfilein.h"
 #include "femfileout.h"
-#include "femfact.h"
 
 
 static void Instructions()
@@ -89,7 +88,6 @@ static void Instructions()
   printf("6)  .fil      : Abaqus output format\n");
   printf("7)  .FDNEUT   : Gambit (Fidap) neutral file\n");
   printf("8)  .unv      : Universal mesh file format\n");
-  if(0) printf("8)  .d        : Easymesh input format\n");
   printf("9)  .mphtxt   : Comsol Multiphysics mesh format\n");
   printf("10) .dat      : Fieldview format\n");
   printf("11) .node,.ele: Triangle 2D mesh format\n");
@@ -98,8 +96,9 @@ static void Instructions()
   printf("14) .msh      : Gmsh mesh format\n");
   printf("15) .ep.i     : Partitioned ElmerPost format\n");
 #if 0
-  printf("16) .unv      : Universal mesh file format\n");
+  printf("16)  .d       : Easymesh input format\n");
   printf("17) .msh      : Nastran format\n");
+  printf("18) .msh      : CGsim format\n");
   printf("19) .geo      : Geo format\n");
 #endif 
 
@@ -107,6 +106,7 @@ static void Instructions()
   printf("1)  .grd      : ElmerGrid file format\n");
   printf("2)  .mesh.*   : ElmerSolver format (also partitioned .part format)\n");
   printf("3)  .ep       : ElmerPost format\n");
+  printf("4)  .msh      : Gmsh mesh format\n");
 #if 0
   printf("5)  .inp      : Abaqus input format\n");
   printf("7)  .fidap    : Fidap format\n");
@@ -160,7 +160,7 @@ static void Instructions()
   printf("-nobound             : disable saving of boundary elements in ElmerPost format\n");
   printf("-nosave              : disable saving part alltogether\n");
   printf("-timer               : show timer information\n");
-  printf("-infofile            : file for saving the timer and size information\n");
+  printf("-infofile str        : file for saving the timer and size information\n");
 
   printf("\nThe following keywords are related only to the parallel Elmer computations.\n");
   printf("-partition int[4]    : the mesh will be partitioned in main directions\n");
@@ -168,27 +168,25 @@ static void Instructions()
 #if PARTMETIS
   printf("-metis int[2]        : the mesh will be partitioned with Metis\n");
 #endif
+  printf("-partdual            : use the dual graph in the partitioning\n");
   printf("-halo                : create halo for the partitioning\n");
   printf("-indirect            : create indirect connections in the partitioning\n");
   printf("-periodic int[3]     : decleare the periodic coordinate directions for parallel meshes\n");
   printf("-partjoin int        : number of partitions in the data to be joined\n");
   printf("-saveinterval int[3] : the first, last and step for fusing parallel data\n");
   printf("-partorder real[3]   : in the above method, the direction of the ordering\n");
-  printf("-partoptim           : apply agressive optimization to node sharing\n");
-  printf("-partbw              : minimize the bandwith of partition-partion couplings\n");
-  printf("-parthypre           : number the nodes continously partitionwise\n");
+  printf("-partoptim           : apply aggressive optimization to node sharing\n");
+  printf("-partbw              : minimize the bandwidth of partition-partion couplings\n");
+  printf("-parthypre           : number the nodes continuously partitionwise\n");
 
   if(0) printf("-names               : conserve name information where applicable\n");
-#if 0
-  printf("-map str             : file with mapping info for mesh-to-mesh interpolation\n");
-#endif
 }
 
 
 static void Goodbye()
 {
   printf("\nThank you for using Elmergrid!\n");
-  printf("Send bug reports and feature wishes to peter.raback@csc.fi\n");
+  printf("Send bug reports and feature wishes to elmeradm@csc.fi\n");
   exit(0);
 }
 
@@ -347,29 +345,17 @@ int main(int argc, char *argv[])
     nomeshes++;
     break;
 
-#if 0
-  case 8: 
-    InitializeKnots(&(data[nofile]));
-    if( Easymesh(argc,argv,&data[nofile].noknots,
-		 &data[nofile].noelements,&sides)) 
-      Goodbye();	
-    
-    data[nofile].dim = 2;
-    data[nofile].coordsystem = COORD_CART2;
-    data[nofile].maxnodes = 3;
-    
-    AllocateKnots(&(data[nofile]));
+  case 8:
     boundaries[nofile] = (struct BoundaryType*)
       malloc((size_t) (MAXBOUNDARIES)*sizeof(struct BoundaryType)); 	
     for(i=0;i<MAXBOUNDARIES;i++) {
       boundaries[nofile][i].created = FALSE; 
       boundaries[nofile][i].nosides = 0;
     }
-    if(EasymeshCopy(&(data[nofile]),boundaries[nofile]))
-      Goodbye();    
+    if (LoadUniversalMesh(&(data[nofile]),boundaries[nofile],eg.filesin[nofile],TRUE))
+      Goodbye();
     nomeshes++;
     break;
-#endif
 
  case 9:
     boundaries[nofile] = (struct BoundaryType*)
@@ -462,19 +448,29 @@ int main(int argc, char *argv[])
     Goodbye();
     break;
 
-  case 8:
-  case 16:
+#if 0
+  case 16: 
+    InitializeKnots(&(data[nofile]));
+    if( Easymesh(argc,argv,&data[nofile].noknots,
+		 &data[nofile].noelements,&sides)) 
+      Goodbye();	
+    
+    data[nofile].dim = 2;
+    data[nofile].coordsystem = COORD_CART2;
+    data[nofile].maxnodes = 3;
+    
+    AllocateKnots(&(data[nofile]));
     boundaries[nofile] = (struct BoundaryType*)
       malloc((size_t) (MAXBOUNDARIES)*sizeof(struct BoundaryType)); 	
     for(i=0;i<MAXBOUNDARIES;i++) {
       boundaries[nofile][i].created = FALSE; 
       boundaries[nofile][i].nosides = 0;
     }
-    if (LoadUniversalMesh(&(data[nofile]),eg.filesin[nofile],TRUE))
-      Goodbye();
-    if(1) ElementsToBoundaryConditions(&(data[nofile]),boundaries[nofile],TRUE,TRUE);
+    if(EasymeshCopy(&(data[nofile]),boundaries[nofile]))
+      Goodbye();    
     nomeshes++;
     break;
+#endif
 
   case 17:
     boundaries[nofile] = (struct BoundaryType*)
@@ -487,7 +483,6 @@ int main(int argc, char *argv[])
       Goodbye();
     nomeshes++;
     break;
-
 
   case 18:
     boundaries[nofile] = (struct BoundaryType*)
@@ -502,9 +497,7 @@ int main(int argc, char *argv[])
     nomeshes++;
     break;
 
-
   case 19:
-
     boundaries[nofile] = (struct BoundaryType*)
       malloc((size_t) (MAXBOUNDARIES)*sizeof(struct BoundaryType)); 	
     for(i=0;i<MAXBOUNDARIES;i++) {
@@ -588,7 +581,7 @@ int main(int argc, char *argv[])
   /* Make a connected boundary (specific to Elmer format) needed in linear constraints */
   for(k=0;k<nomeshes;k++) 
     for(i=1;i<=eg.connect;i++) 
-      SetConnectedBoundary(&(data[k]),boundaries[k],eg.connectbounds[i-1],i,info);
+      SetConnectedNodes(&(data[k]),boundaries[k],eg.connectbounds[i-1],i,info);
   
 
   /* Divide quadrilateral meshes into triangular meshes */
@@ -750,7 +743,11 @@ int main(int argc, char *argv[])
     if(eg.merge) 
       MergeElements(&data[k],boundaries[k],eg.order,eg.corder,eg.cmerge,FALSE,TRUE);
     else if(eg.order == 3) 
+#if PARTMETIS 
       ReorderElementsMetis(&data[k],TRUE);
+#else
+      printf("Cannot order nodes by Metis as it is not even compiled!\n");
+#endif    
     else if(eg.order) 
       ReorderElements(&data[k],boundaries[k],eg.order,eg.corder,TRUE);
     
@@ -867,31 +864,41 @@ int main(int argc, char *argv[])
 
 
   for(k=0;k<nomeshes;k++) {
-    int noopt = 0;
+    int noopt = 0, partopt, fail, partdual;
 
     noopt = eg.partoptim;
+    partdual = eg.partdual;
 
     if(eg.partitions || eg.metis) {
       printf("\nElmergrid partitioning meshes:\n");
       printf(  "------------------------------\n");
       timer_show();
 
+      partopt = eg.partopt;
 
       if(eg.periodicdim[0] || eg.periodicdim[1] || eg.periodicdim[2]) 
 	FindPeriodicNodes(&data[k],eg.periodicdim,info);
 
       if(eg.partitions) {
-	if(eg.partopt == 0) 
+	if(partopt == 0) 
 	  PartitionSimpleElements(&data[k],eg.partdim,eg.periodicdim,eg.partorder,eg.partcorder,info);	
 	else 
 	  PartitionSimpleNodes(&data[k],eg.partdim,eg.periodicdim,eg.partorder,eg.partcorder,info);	
       }
 #if PARTMETIS
       if(eg.metis) {
-	if(eg.partopt <= 1) 
-	  PartitionMetisElements(&data[k],eg.metis,eg.partopt,info);
-	else
-	  PartitionMetisNodes(&data[k],boundaries[k],&eg,eg.metis,eg.partopt,info);
+	if( partopt < 0 || partopt > 4 ) {
+	  printf("Metis optional parameter should be in range [0,4], not %d\n",partopt);
+	  bigerror("Cannot perform partitioning");
+	}
+	if(partopt <= 1) {
+	  if(!partdual) partdual = partopt;
+	  fail = PartitionMetisMesh(&data[k],&eg,eg.metis,partdual,info);
+	  if( fail ) partopt = 2;
+	}
+	if( partopt > 1 ) {
+	  PartitionMetisGraph(&data[k],boundaries[k],&eg,eg.metis,partopt,partdual,info);
+	} 
       }
 #endif
       if(data[k].periodicexist) 
@@ -921,8 +928,9 @@ int main(int argc, char *argv[])
 
 
   /********************************/
-  printf("\nElmergrid saving data:\n");
-  printf(  "----------------------\n");
+  printf("\nElmergrid saving data with method %d:\n",outmethod);
+  printf(  "-------------------------------------\n");
+
 
 
   switch (outmethod) {
@@ -948,7 +956,7 @@ int main(int argc, char *argv[])
     break;
 
 
-  case 3:
+  case 3: 
       /* Create a variable so that when saving data in ElmerPost format there is something to visualize */
     for(k=0;k<nomeshes;k++) {
       if(data[k].variables == 0) {
@@ -962,16 +970,9 @@ int main(int argc, char *argv[])
     break;
 
   case 4:
-    printf("The output number 4 still refers to ep-file but will become obsolite in time\n");
-    printf("Rather use number 3 for ElmerPost output format\n");
     for(k=0;k<nomeshes;k++) {
-      if(data[k].variables == 0) {
-	CreateVariable(&data[k],1,1,0.0,"Number",FALSE);
-	for(i=1;i<=data[k].alldofs[1];i++)
-	  data[k].dofs[1][i] = (Real)(i);	      
-      }
-      SaveSolutionElmer(&data[k],boundaries[k],eg.saveboundaries ? MAXBOUNDARIES:0,
-			eg.filesout[k],eg.decimals,info);
+      SaveMeshGmsh(&data[k],boundaries[k],eg.saveboundaries ? MAXBOUNDARIES:0,
+		   eg.filesout[k],eg.decimals,info);
     }
     break;
 
@@ -1010,54 +1011,6 @@ int main(int argc, char *argv[])
     }
     break;
     
-  case 102:
-    for(k=0;k<nogrids;k++) {   
-      for(i=0;i<grids[k].noboundaries;i++)
-	if(boundaries[k][i].created == TRUE) {
-	  sprintf(prefix,"%s%d",eg.filesout[k],i+1);
-	  boundaries[k][i].vf = Rmatrix(1,boundaries[k][i].nosides,
-					1,boundaries[k][i].nosides);
-	  boundaries[k][i].vfcreated = TRUE;
-	  SideAreas(&data[k],&boundaries[k][i]);
-	  ViewFactors(&data[k],&boundaries[k][i],TRUE);      
-	  SaveViewFactors(&data[k],&boundaries[k][i],prefix,info);
-	}
-    }
-    break;
-
-  case 103:
-    if(nogrids <= 1) printf("No mapping possible for %d grid.\n",nogrids);
-    for(k=0;k<nogrids-1;k++) {
-      sprintf(prefix,"%s%dto%d",eg.filesout[0],k+1,k+2);
-      SaveGridToGridMapping(cell[k],&(grids[k]),cell[k+1],&(grids[k+1]),prefix);
-      sprintf(prefix,"%s%dto%d",eg.filesout[0],k+2,k+1);
-      SaveGridToGridMapping(cell[k+1],&(grids[k+1]),cell[k],&(grids[k]),prefix);
-    }
-    break;
-
-  case 104:
-    if(LoadSolutionElmer(&(data[1]),FALSE,eg.filesin[1],info)) {
-      printf("The reading of the input file %s was not succesfull\n",eg.filesin[1]);
-      Goodbye();
-    }
-    ElmerToElmerMap(&(data[0]),&(data[1]),TRUE);
-    sprintf(prefix,"%s%s%s",eg.filesin[1],"_",eg.filesin[0]);
-    SaveSolutionElmer(&(data[1]),boundaries[0],0,prefix,eg.decimals,TRUE);
-    break;
-
-  case 105:
-    if(LoadSolutionElmer(&(data[1]),FALSE,eg.filesout[1],info)) {
-      printf("The reading of the input file %s was not succesfull\n",eg.filesout[1]);
-      Goodbye();
-    }
-    if(ElmerToElmerMapQuick(&(data[0]),&(data[1]),eg.mapfile,info))
-      Goodbye();
-    sprintf(prefix,"%s%s%s",eg.filesin[1],"_",eg.filesin[0]);
-    SaveSolutionElmer(&(data[1]),boundaries[0],0,prefix,eg.decimals,TRUE);
-    break;
-
-
-
   default:
     Instructions();
     break;

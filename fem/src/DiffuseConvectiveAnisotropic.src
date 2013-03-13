@@ -4,20 +4,20 @@
 ! *
 ! *  Copyright 1st April 1995 - , CSC - IT Center for Science Ltd., Finland
 ! * 
-! *  This program is free software; you can redistribute it and/or
-! *  modify it under the terms of the GNU General Public License
-! *  as published by the Free Software Foundation; either version 2
-! *  of the License, or (at your option) any later version.
-! * 
-! *  This program is distributed in the hope that it will be useful,
-! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
-! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-! *  GNU General Public License for more details.
+! *  This library is free software; you can redistribute it and/or
+! *  modify it under the terms of the GNU Lesser General Public
+! *  License as published by the Free Software Foundation; either
+! *  version 2.1 of the License, or (at your option) any later version.
 ! *
-! *  You should have received a copy of the GNU General Public License
-! *  along with this program (in file fem/GPL-2); if not, write to the 
-! *  Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
-! *  Boston, MA 02110-1301, USA.
+! *  This library is distributed in the hope that it will be useful,
+! *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+! *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+! *  Lesser General Public License for more details.
+! * 
+! *  You should have received a copy of the GNU Lesser General Public
+! *  License along with this library (in file ../LGPL-2.1); if not, write 
+! *  to the Free Software Foundation, Inc., 51 Franklin Street, 
+! *  Fifth Floor, Boston, MA  02110-1301  USA
 ! *
 ! *****************************************************************************/
 !
@@ -38,6 +38,8 @@
 !>  Diffuse-convective local matrix computing in cartesian coordinates.
 !> Used by a number of solvers.
 !----------------------------------------------------------------------
+!> \ingroup ElmerLib
+!> \{
 MODULE DiffuseConvective
 
   USE MaterialModels
@@ -58,8 +60,6 @@ MODULE DiffuseConvective
             NodaldPressureDt, NodalPressureCoeff, Compressible, Stabilize, &
               UseBubbles, Element,n,Nodes )
 !------------------------------------------------------------------------------
-!
-!  ARGUMENTS:
 !
 !  REAL(KIND=dp) :: MassMatrix(:,:)
 !     OUTPUT: time derivative coefficient matrix
@@ -190,7 +190,7 @@ MODULE DiffuseConvective
 !    Integration stuff
 !------------------------------------------------------------------------------
      IF ( Bubbles ) THEN
-        IntegStuff = GaussPoints( element, Element % Type % GaussPoints2 )
+        IntegStuff = GaussPoints( element, Element % TYPE % GaussPoints2 )
      ELSE
         IntegStuff = GaussPoints( element )
      END IF
@@ -217,9 +217,9 @@ MODULE DiffuseConvective
        dNodalBasisdx = 0._dp
        GradNodal = 0._dp
        DO p=1,n
-          u = Element % Type % NodeU(p)
-          v = Element % Type % NodeV(p)
-          w = Element % Type % NodeW(p)
+          u = Element % TYPE % NodeU(p)
+          v = Element % TYPE % NodeV(p)
+          w = Element % TYPE % NodeW(p)
           stat = ElementInfo( Element, Nodes, u,v,w, detJ, Basis, dBasisdx )
  
           dNodalBasisdx(1:n,p,:) = dBasisdx(1:n,:)
@@ -254,11 +254,11 @@ MODULE DiffuseConvective
        END IF
 
        LC1 = 2._dp/mK
-       LC(1,1:n) = Element % Type % NodeU(1:n)
-       LC(2,1:n) = Element % Type % NodeV(1:n)
-       LC(3,1:n) = Element % Type % NodeW(1:n)
+       LC(1,1:n) = Element % TYPE % NodeU(1:n)
+       LC(2,1:n) = Element % TYPE % NodeV(1:n)
+       LC(3,1:n) = Element % TYPE % NodeW(1:n)
 
-       DO i=1,Element % Type % Dimension
+       DO i=1,Element % TYPE % DIMENSION
          minl=MINVAL(LC(i,1:n))
          maxl=MAXVAL(LC(i,1:n))
          LC(i,1:n) = 2*(LC(i,1:n)-minl)/(maxl-minl)-1
@@ -269,9 +269,9 @@ MODULE DiffuseConvective
        mK = element % StabilizationMK
        dNodalBasisdx = 0._dp
        DO p=1,n
-         u = Element % Type % NodeU(p)
-         v = Element % Type % NodeV(p)
-         w = Element % Type % NodeW(p)
+         u = Element % TYPE % NodeU(p)
+         v = Element % TYPE % NodeV(p)
+         w = Element % TYPE % NodeW(p)
          stat = ElementInfo( Element, Nodes, u,v,w, detJ, Basis, dBasisdx )
          dNodalBasisdx(1:n,p,:) = dBasisdx(1:n,:)
        END DO
@@ -317,7 +317,13 @@ MODULE DiffuseConvective
             dTemp = dTemp + SUM( NodalTemperature(1:n) * dBasisdx(1:n,i) )**2
           END DO
 
-          CT = SQRT( dEnth/dTemp )
+          IF( dTemp > TINY( dTemp ) ) THEN
+            CT = SQRT( dEnth/dTemp )
+          ELSE
+            CALL Info('DiffuseConvectiveCompose',&
+                'Temperature difference almost zero, cannot account for phase change!',Level=7)
+            CT = 0.0
+          END IF
         END IF
 !------------------------------------------------------------------------------
 !      Coefficient of the diffusion term & it s derivatives at the
@@ -708,3 +714,5 @@ MODULE DiffuseConvective
 !------------------------------------------------------------------------------
 
 END MODULE DiffuseConvective
+
+!> \}

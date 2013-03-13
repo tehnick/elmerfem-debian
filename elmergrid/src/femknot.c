@@ -144,6 +144,7 @@ void GetElementSide(int element,int side,int normal,
   elemtype = data->elementtypes[element];
   elemind = data->topology[element];
   sides = elemtype/100;
+  *sideelemtype = 0;
 
   if(side < 0 && sides > 4) 
     side = -(side+1);
@@ -346,7 +347,7 @@ void GetElementSide(int element,int side,int normal,
 
     break;
 
-  case 706: /* Linear prism or vedge element */
+  case 706: /* Linear wedge element */
     if(side < 3) {
       *sideelemtype = 404;
       ind[0] = elemind[side];
@@ -380,6 +381,45 @@ void GetElementSide(int element,int side,int normal,
     }
     break;
 
+  case 715: /* Quadratic wedge element */
+    if(side < 3) {
+      *sideelemtype = 408;
+      ind[0] = elemind[side];
+      ind[1] = elemind[(side+1)%3];
+      ind[2] = elemind[(side+1)%3+3];
+      ind[3] = elemind[side+3];  
+      ind[4] = elemind[6+side];
+      ind[5] = elemind[9+(side+1)%3];
+      ind[6] = elemind[12+side];
+      ind[7] = elemind[9+side];      
+    }
+    else if (side < 5) {
+      *sideelemtype = 306;          
+      for(i=0;i<3;i++) {
+	ind[i] = elemind[3*(side-3)+i];
+	ind[i+3] = elemind[6*(side-3)+6+i];
+      }      
+    }
+    else if(side < 14) {
+      *sideelemtype = 202;
+      if(side < 8) {
+	ind[0] = elemind[side-5];
+	ind[1] = elemind[(side-4)%3];
+      }
+      if(side < 11) {
+	ind[0] = elemind[3+side-8];
+	ind[1] = elemind[3+(side-7)%3];
+      }
+      else {
+	ind[0] = elemind[side-11];
+	ind[1] = elemind[3+side-11];	
+      }
+    }
+    else if (side < 20) {
+      *sideelemtype = 101;
+      ind[0] = elemind[side-14];      
+    }
+    break;
 
   case 605: /* Linear pyramid */
     if(side < 4) {
@@ -483,8 +523,8 @@ void GetElementSide(int element,int side,int normal,
     break;
 
   case 820: /* 2nd order brick */
-    *sideelemtype = 408;
     if(side < 4) {
+      *sideelemtype = 408;
       ind[0] = elemind[side];
       ind[1] = elemind[(side+1)%4];
       ind[2] = elemind[(side+1)%4+4];
@@ -495,6 +535,7 @@ void GetElementSide(int element,int side,int normal,
       ind[7] = elemind[12+side];      
     }
     else if(side < 6) {
+      *sideelemtype = 408;
       for(i=0;i<4;i++)
 	ind[i] = elemind[4*(side-4)+i];
       for(i=0;i<4;i++)
@@ -503,8 +544,8 @@ void GetElementSide(int element,int side,int normal,
     break;
 
   case 827: 
-    *sideelemtype = 409;
     if(side < 4) {
+      *sideelemtype = 409;
       ind[0] = elemind[side];
       ind[1] = elemind[(side+1)%4];
       ind[2] = elemind[(side+1)%4+4];
@@ -516,6 +557,7 @@ void GetElementSide(int element,int side,int normal,
       ind[8] = elemind[20+side];
     }
     else {
+      *sideelemtype = 409;
       for(i=0;i<4;i++)
 	ind[i] = elemind[4*(side-4)+i];
       for(i=0;i<4;i++)
@@ -800,9 +842,10 @@ void InitializeKnots(struct FemType *data)
   data->nopartitions = 1;
   data->partitionexist = FALSE;
   data->periodicexist = FALSE;
-  data->connectexist = FALSE;
+  data->nodeconnectexist = FALSE;
+  data->elemconnectexist = FALSE;
 
-  data->dualexists = FALSE;
+  data->nodalexists = FALSE;
   data->invtopoexists = FALSE;
   data->partitiontableexists = FALSE;
 
@@ -2386,7 +2429,7 @@ int FindPeriodicBoundary(struct FemType *data,struct BoundaryType *bound,
 
 
 
-int SetConnectedBoundary(struct FemType *data,struct BoundaryType *bound,
+int SetConnectedNodes(struct FemType *data,struct BoundaryType *bound,
 			 int bctype,int connecttype,int info)
 /* Create connected boundary conditions for a given bctype */
 {
@@ -2401,11 +2444,11 @@ int SetConnectedBoundary(struct FemType *data,struct BoundaryType *bound,
     for(i=1;i<=bound[bc].nosides;i++) {
       if(bound[bc].types[i] != bctype) continue;
  
-      if(!data->connectexist) {
-	data->connect = Ivector(1,data->noknots);
+      if(!data->nodeconnectexist) {
+	data->nodeconnect = Ivector(1,data->noknots);
 	for(k=1;k<=data->noknots;k++)
-	  data->connect[k] = 0;
-	data->connectexist = TRUE;
+	  data->nodeconnect[k] = 0;
+	data->nodeconnectexist = TRUE;
       }
        
       GetElementSide(bound[bc].parent[i],bound[bc].side[i],bound[bc].normal[i],
@@ -2414,13 +2457,59 @@ int SetConnectedBoundary(struct FemType *data,struct BoundaryType *bound,
       
       for(j=0;j<sidenodes;j++) {
 	k = sideind[j];
-	data->connect[k] = connecttype;
+	data->nodeconnect[k] = connecttype;
       }
     }
   }
 
   return(0);
 }
+
+
+static int SetConnectedElements(struct FemType *data,int *nodeconnect,int info)
+/* Create connected boundary conditions for a given bctype */
+{
+  int i,j,k,l,nonodes,hit,nohits;
+
+  if(!data->elemconnectexist) {
+    data->elemconnect = Ivector(1,data->noelements);
+    for(k=1;k<=data->noelements;k++)
+      data->elemconnect[k] = 0;
+    data->elemconnectexist = TRUE;
+  }
+
+  nohits = 0;
+  for(i=1;i<=data->noelements;i++) {
+    nonodes = data->elementtypes[i] % 100;
+    hit = FALSE;
+    for(j=0;j<nonodes;j++) {
+      k = data->topology[i][j];
+      if( data->nodeconnect[k] ) {
+	hit = TRUE;
+	data->elemconnect[i] = nodeconnect[k];
+	break;
+      }
+    }
+    if(hit) nohits++;
+  }
+  if(info) printf("Number of connected elements is %d\n",nohits);
+
+  /* For time being set actually the inverse i.e. number the unconnected nodes */
+  j = 0;
+  for(i=1;i<=data->noelements;i++) {
+    if( data->elemconnect[i] ) {
+      data->elemconnect[i] = 0;
+    }
+    else {
+      j++;
+      data->elemconnect[i] = j;
+    }
+  }
+  data->elemconnectexist = j;
+    
+  return(0);
+}
+
 
 
 
@@ -3254,8 +3343,6 @@ int CloneMeshes(struct FemType *data,struct BoundaryType *bound,
       }
     }
   }
-  printf("a2\n");
-
 
   maxmaterial = 0;
   for(i=1;i<=data->noelements;i++) 
@@ -3278,8 +3365,6 @@ int CloneMeshes(struct FemType *data,struct BoundaryType *bound,
       }
     }
   }
-  printf("a3\n");
-
 
   maxtype = 0;
   for(j=0;j < MAXBOUNDARIES;j++) {
@@ -3287,8 +3372,6 @@ int CloneMeshes(struct FemType *data,struct BoundaryType *bound,
     for(i=1; i <= bound[j].nosides; i++) 
       if(maxtype < bound[j].types[i]) maxtype = bound[j].types[i];
   }
-
-  printf("a3 %d\n",maxtype);
 
   for(bndr=0;bndr < MAXBOUNDARIES;bndr++) {
 
@@ -3307,13 +3390,11 @@ int CloneMeshes(struct FemType *data,struct BoundaryType *bound,
     vareas = Rvector(1, nosides);
     vnormal = Ivector(1, nosides);
 
-    printf("b1\n");
     if(bound[bndr].ediscont) { 
       vdiscont = Ivector(1, nosides);
       for(i=1; i <= nosides; i++) 
 	vdiscont[i] = 0;
     }
-    printf("b2\n");
 
     for(l=0;l<ncopies[2];l++) {
       for(k=0;k<ncopies[1];k++) {
@@ -5019,11 +5100,11 @@ int IncreaseElementOrder(struct FemType *data,int info)
   
   if(info) printf("Trying to increase the element order of current elements\n");
 
-  CreateDualGraph(data,FALSE,info);
+  CreateNodalGraph(data,FALSE,info);
 
   noknots = data->noknots;
   noelements = data->noelements;
-  maxcon = data->dualmaxconnections;
+  maxcon = data->nodalmaxconnections;
 
   newnodetable = Imatrix(0,maxcon-1,1,noknots);
   for(i=1;i<=noknots;i++) 
@@ -5033,7 +5114,7 @@ int IncreaseElementOrder(struct FemType *data,int info)
   newknots = 0;
   for(i=1;i<=noknots;i++) {
     for(j=0;j<maxcon;j++) {
-      con = data->dualgraph[j][i];
+      con = data->nodalgraph[j][i];
       if(con > i) {
 	newknots++;
 	newnodetable[j][i] = noknots + newknots;
@@ -5055,7 +5136,7 @@ int IncreaseElementOrder(struct FemType *data,int info)
   }
   for(i=1;i<=noknots;i++) {
     for(j=0;j<maxcon;j++) {
-      con = data->dualgraph[j][i];
+      con = data->nodalgraph[j][i];
       ind = newnodetable[j][i];
       if(con && ind) {
 	newx[ind] = 0.5*(data->x[i] + data->x[con]);
@@ -5113,7 +5194,7 @@ int IncreaseElementOrder(struct FemType *data,int info)
 	ind2 = inds[1];
       }
       for(j=0;j<maxcon;j++) {
-	con = data->dualgraph[j][ind];
+	con = data->nodalgraph[j][ind];
 
 	if(con == ind2) {
 	  node = newnodetable[j][ind];
@@ -5126,7 +5207,7 @@ int IncreaseElementOrder(struct FemType *data,int info)
     data->elementtypes[element] = elemtype;
   }
 
-  DestroyDualGraph(data,info);
+  DestroyNodalGraph(data,info);
 
   free_Rvector(data->x,1,data->noknots);
   free_Rvector(data->y,1,data->noknots);
@@ -5949,6 +6030,7 @@ void CreateKnotsExtruded(struct FemType *dataxy,struct BoundaryType *boundxy,
     layers = 1;
   else 
     layers = 2;
+
   data->noknots = noknots = dataxy->noknots*(layers*grid->totzelems+1);
   data->noelements = dataxy->noelements * grid->totzelems;
   data->coordsystem = dataxy->coordsystem;
@@ -5958,7 +6040,8 @@ void CreateKnotsExtruded(struct FemType *dataxy,struct BoundaryType *boundxy,
   data->minsize = dataxy->minsize;
   data->partitionexist = FALSE;
   data->periodicexist = FALSE;
-  data->connectexist = FALSE;
+  data->nodeconnectexist = FALSE;
+  data->elemconnectexist = FALSE;
 
   maxsidetype = 0;
 
@@ -6904,7 +6987,7 @@ void ElementsToBoundaryConditions(struct FemType *data,
   int notfound,*notfounds;
 
 
-  if(info) printf("Making elements to boundary conditions\n");
+  if(info) printf("Moving bulk elements to boundary elements\n");
 
   for(j=0;j < MAXBOUNDARIES;j++) 
     bound[j].created = FALSE;
@@ -6966,11 +7049,12 @@ void ElementsToBoundaryConditions(struct FemType *data,
 
   j = 1;
   maxpossible = possible[1];
-  for(i=1;i<=noknots;i++)
+  for(i=1;i<=noknots;i++) {
     if(maxpossible < possible[i]) {
       maxpossible = possible[i]; 
       j = i;
     }  
+  }
   if(info) printf("Node %d belongs to maximum of %d elements\n",j,maxpossible);
 
   /* Make a table showing to which elements a node belongs to 
@@ -7024,16 +7108,19 @@ void ElementsToBoundaryConditions(struct FemType *data,
       if(hit > sidenodes) printf("Strange: elemhits %d vs. elemnodes %d\n",hit,sidenodes);
       if(hit >= sidenodes) elemhits++;
 
-
-      for(side=0;;side++) {
+      for(side=0;side<=100;side++) {
 
 	if(debug) printf("elem1=%d l=%d elem2=%d side=%d\n",elemind,l,elemind2,side);
 
 	GetElementSide(elemind2,side,1,data,&sideind2[0],&sideelemtype2);
 
+	if(debug) printf("elemtype=%d sidelemtype=%d %d\n",
+			 elemtype,sideelemtype,sideelemtype2);
+
+	if(sideelemtype2 == 0 ) break;
 	if(sideelemtype2 < 300 && sideelemtype > 300) break;	
 	if(sideelemtype2 < 200 && sideelemtype > 200) break;		
- 
+
 	sidenodes2 = sideelemtype2 % 100;	
 	if(sidenodes != sidenodes2) continue;
 	if(sidenodes2 == 1 && sidenodes > 1) break;
@@ -7196,7 +7283,7 @@ void ElementsToBoundaryConditions(struct FemType *data,
   free_Imatrix(invtopo,1,noknots,1,maxpossible);
   if(notfound) free_Ivector(notfounds,1,noelements);
 
-  if(info) printf("All done\n");
+  if(0) printf("All done\n");
 
   return;
 }
@@ -9176,15 +9263,17 @@ int RotateTranslateScale(struct FemType *data,struct ElmergridType *eg,int info)
 
 
 
-int CreateDualGraph(struct FemType *data,int full,int info)
+int CreateNodalGraph(struct FemType *data,int full,int info)
 {
   int i,j,k,l,m,totcon,noelements, noknots,elemtype,nonodes,hit,ind,ind2;
   int maxcon,percon,edge;
 
-  printf("Creating a dual graph of the finite element mesh\n");  
+  printf("Creating a nodal graph of the finite element mesh\n");  
 
-  if(data->dualexists) {
-    printf("The dual graph already exists! You shoule remove the old graph!\n");
+  if(data->nodalexists) {
+    printf("The nodal graph already exists!\n");
+    smallerror("Nodal graph not done");
+    return(1);
   }
 
   maxcon = 0;
@@ -9196,6 +9285,7 @@ int CreateDualGraph(struct FemType *data,int full,int info)
   for(i=1;i<=noelements;i++) {
     elemtype = data->elementtypes[i];
 
+    /* This sets only the connections resulting from element edges */
     if(!full) {
       int inds[2];
       for(edge=0;;edge++) {
@@ -9206,38 +9296,39 @@ int CreateDualGraph(struct FemType *data,int full,int info)
 
 	hit = FALSE;
 	for(l=0;l<maxcon;l++) { 
-	  if(data->dualgraph[l][ind] == ind2) hit = TRUE;
-	  if(data->dualgraph[l][ind] == 0) break;
+	  if(data->nodalgraph[l][ind] == ind2) hit = TRUE;
+	  if(data->nodalgraph[l][ind] == 0) break;
 	}
 	if(!hit) {
 	  if(l >= maxcon) {
-	    data->dualgraph[maxcon] = Ivector(1,noknots);
+	    data->nodalgraph[maxcon] = Ivector(1,noknots);
 	    for(m=1;m<=noknots;m++)
-	      data->dualgraph[maxcon][m] = 0;
+	      data->nodalgraph[maxcon][m] = 0;
 	    maxcon++;
 	  }
-	  data->dualgraph[l][ind] = ind2;
+	  data->nodalgraph[l][ind] = ind2;
 	  totcon++;
 	}
 
 	/* Make also so symmetric connection */
 	for(l=0;l<maxcon;l++) { 
-	  if(data->dualgraph[l][ind2] == ind) hit = TRUE;
-	  if(data->dualgraph[l][ind2] == 0) break;
+	  if(data->nodalgraph[l][ind2] == ind) hit = TRUE;
+	  if(data->nodalgraph[l][ind2] == 0) break;
 	}
 	if(!hit) {
 	  if(l >= maxcon) {
-	    data->dualgraph[maxcon] = Ivector(1,noknots);
+	    data->nodalgraph[maxcon] = Ivector(1,noknots);
 	    for(m=1;m<=noknots;m++)
-	      data->dualgraph[maxcon][m] = 0;
+	      data->nodalgraph[maxcon][m] = 0;
 	    maxcon++;
 	  }
-	  data->dualgraph[l][ind2] = ind;
+	  data->nodalgraph[l][ind2] = ind;
 	  totcon++;
 	}
       }
     }
 
+    /* This sets all elemental connections */
     else {
       nonodes = data->elementtypes[i] % 100;
       for(j=0;j<nonodes;j++) {
@@ -9248,17 +9339,17 @@ int CreateDualGraph(struct FemType *data,int full,int info)
 	  
 	  hit = FALSE;
 	  for(l=0;l<maxcon;l++) { 
-	    if(data->dualgraph[l][ind] == ind2) hit = TRUE;
-	    if(data->dualgraph[l][ind] == 0) break;
+	    if(data->nodalgraph[l][ind] == ind2) hit = TRUE;
+	    if(data->nodalgraph[l][ind] == 0) break;
 	  }
 	  if(!hit) {
 	    if(l >= maxcon) {
-	      data->dualgraph[maxcon] = Ivector(1,noknots);
+	      data->nodalgraph[maxcon] = Ivector(1,noknots);
 	      for(m=1;m<=noknots;m++)
-		data->dualgraph[maxcon][m] = 0;
+		data->nodalgraph[maxcon][m] = 0;
 	      maxcon++;
 	    }
-	    data->dualgraph[l][ind] = ind2;
+	    data->nodalgraph[l][ind] = ind2;
 	    totcon++;
 	  }
 	}
@@ -9267,6 +9358,7 @@ int CreateDualGraph(struct FemType *data,int full,int info)
 
   }
 
+  /* This adds the periodic connections */
   if( data->periodicexist ) {
     for(ind=1;ind<=noknots;ind++) {
       ind2 = data->periodic[ind];      
@@ -9274,53 +9366,53 @@ int CreateDualGraph(struct FemType *data,int full,int info)
 
       hit = FALSE;
       for(l=0;l<maxcon;l++) { 
-	if(data->dualgraph[l][ind] == ind2) hit = TRUE;
-	if(data->dualgraph[l][ind] == 0) break;
+	if(data->nodalgraph[l][ind] == ind2) hit = TRUE;
+	if(data->nodalgraph[l][ind] == 0) break;
       }
       if(!hit) {
 	if(l >= maxcon) {
-	  data->dualgraph[maxcon] = Ivector(1,noknots);
+	  data->nodalgraph[maxcon] = Ivector(1,noknots);
 	  for(m=1;m<=noknots;m++)
-	    data->dualgraph[maxcon][m] = 0;
+	    data->nodalgraph[maxcon][m] = 0;
 	  maxcon++;
 	}
-	data->dualgraph[l][ind] = ind2;
+	data->nodalgraph[l][ind] = ind2;
 	totcon++;
 	percon++;
       }
     }
   }
 
-  data->dualmaxconnections = maxcon;
-  data->dualexists = TRUE;
+  data->nodalmaxconnections = maxcon;
+  data->nodalexists = TRUE;
   
-  if(info) printf("There are at maximum %d connections in dual graph.\n",maxcon);
-  if(info) printf("There are at all in all %d connections in dual graph.\n",totcon);
-  if(info && percon) printf("There are %d periodic connections in dual graph.\n",percon);
+  if(info) printf("There are at maximum %d connections in nodal graph.\n",maxcon);
+  if(info) printf("There are at all in all %d connections in nodal graph.\n",totcon);
+  if(info && percon) printf("There are %d periodic connections in nodal graph.\n",percon);
 
   return(0);
 }
 
 
-int DestroyDualGraph(struct FemType *data,int info)
+int DestroyNodalGraph(struct FemType *data,int info)
 {
   int i,maxcon, noknots;
   
-  if(!data->dualexists) {
-    printf("You tried to destroy a non-existing dual graph\n");
+  if(!data->nodalexists) {
+    printf("You tried to destroy a non-existing nodal graph\n");
     return(1);
   }
 
-  maxcon = data->dualmaxconnections;
+  maxcon = data->nodalmaxconnections;
   noknots = data->noknots;
 
   for(i=0;i<maxcon;i++)    
-    free_Ivector(data->dualgraph[i],1,noknots);
+    free_Ivector(data->nodalgraph[i],1,noknots);
 
-  data->dualmaxconnections = 0;
-  data->dualexists = FALSE; 
+  data->nodalmaxconnections = 0;
+  data->nodalexists = FALSE; 
 
-  if(info) printf("The dual graph was destroyed\n");
+  if(info) printf("The nodal graph was destroyed\n");
   return(0);
 }
 
@@ -9336,6 +9428,7 @@ int CreateInverseTopology(struct FemType *data,int info)
   if(data->invtopoexists) {
     printf("The inverse topology already exists!\n");
     smallerror("The inverse topology not done");
+    return(1);
   }
 
   maxcon = 0;
@@ -9359,6 +9452,7 @@ int CreateInverseTopology(struct FemType *data,int info)
       if(l > maxcon) {
 	maxcon++;
 	data->invtopo[maxcon] = Ivector(1,noknots);
+	if(0) printf("allocating invtopo %d %d\n",maxcon,noknots);
 	for(m=1;m<=noknots;m++)
 	  data->invtopo[maxcon][m] = 0;
       }
@@ -9380,6 +9474,128 @@ int CreateInverseTopology(struct FemType *data,int info)
   return(0);
 }
 
+
+
+int DestroyInverseTopology(struct FemType *data,int info)
+{
+  int i,maxcon,noknots;
+  
+  if(!data->invtopoexists) {
+    printf("You tried to destroy a non-existing inverse topology\n");
+    return(1);
+  }
+
+  maxcon = data->maxinvtopo;
+  noknots = data->noknots;
+
+  for(i=1;i<=maxcon;i++)    
+    free_Ivector(data->invtopo[i],1,noknots);
+
+  data->maxinvtopo = 0;
+  data->invtopoexists = FALSE; 
+
+  if(info) printf("The nodal inverse topology was destroyed\n");
+  return(0);
+}
+
+
+
+int CreateDualGraph(struct FemType *data,int unconnected,int info)
+{
+  int totcon,noelements,noknots,elemtype,nonodes,i,j,k,l,i2,m,ind,hit,ci,ci2;
+  int dualmaxcon,invmaxcon,showgraph,freeelements;
+  int *elemconnect;
+
+  printf("Creating a dual graph of the finite element mesh\n");  
+
+  if(data->dualexists) {
+    printf("The dual graph already exists!\n");
+    smallerror("Dual graph not done");
+    return(1);
+  }
+
+  CreateInverseTopology(data,info);
+
+  dualmaxcon = 0;
+  totcon = 0;
+
+  noelements = data->noelements;
+  noknots = data->noknots;
+  invmaxcon = data->maxinvtopo;
+  
+  /* If a dual graph only for the unconnected nodes is requested do that */
+  freeelements = noelements;
+  if( unconnected ) {
+    if( data->nodeconnectexist ) {
+      SetConnectedElements(data,data->nodeconnect,info);
+    }
+    if( data->elemconnectexist ) {
+      elemconnect = data->elemconnect;
+      freeelements = data->elemconnectexist;
+    }
+    else {
+      unconnected = FALSE;
+    }
+  }
+
+
+  showgraph = FALSE;
+  if(showgraph) printf("elemental graph ij pairs\n");
+
+  for(i=1;i<=noelements;i++) {
+    if(showgraph) printf("%d :: ",i);
+
+    elemtype = data->elementtypes[i];    
+    nonodes = data->elementtypes[i] % 100;
+
+    for(j=0;j<nonodes;j++) {
+      ind = data->topology[i][j];
+
+      for(k=1;k<=invmaxcon;k++) {
+	i2 = data->invtopo[k][ind];
+
+	if( i2 == 0 ) break;
+	if( i2 == i ) continue;
+
+	if( unconnected ) {
+	  ci = elemconnect[i];
+	  ci2 = elemconnect[i2];
+	  if( !ci || !ci2 ) continue;
+	}
+	else {
+	  ci = i;
+	  ci2 = i2;
+	}
+	
+	hit = FALSE;
+	for(l=0;l<dualmaxcon;l++) { 
+	  if(data->dualgraph[l][ci] == ci2) hit = TRUE;
+	  if(data->dualgraph[l][ci] == 0) break;
+	}
+	if(!hit) {
+	  if(l >= dualmaxcon) {
+	    data->dualgraph[dualmaxcon] = Ivector(1,freeelements);
+	    for(m=1;m<=freeelements;m++)
+	      data->dualgraph[dualmaxcon][m] = 0;
+	    dualmaxcon++;
+	  }
+	  if(showgraph) printf("%d ",ci2);
+	  data->dualgraph[l][ci] = ci2;	    
+	  totcon++;
+	}
+      }
+    }
+    if(showgraph) printf("\n");
+  }
+
+  data->dualmaxconnections = dualmaxcon;
+  data->dualexists = TRUE;
+  
+  if(info) printf("There are at maximum %d connections in dual graph.\n",dualmaxcon);
+  if(info) printf("There are at all in all %d connections in dual graph.\n",totcon);
+  
+  DestroyInverseTopology(data,info);
+}
 
 
 int MeshTypeStatistics(struct FemType *data,int info)
