@@ -1,5 +1,7 @@
 #!/bin/sh -e
 
+set -e
+
 # Make alternatives links
 if [ "$1" = "configure" ]; then
   update-alternatives --install /usr/lib/elmersolver elmersolver \
