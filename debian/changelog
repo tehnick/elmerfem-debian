@@ -4,11 +4,14 @@ elmerfem (7.0.svn.6034+dfsg-1) UNRELEASED; urgency=low
   * Add myself to Uploaders. (See: #691875)
   * Bump Standards-Version to 3.9.4 (was 3.9.2).
   * Bump debhelper version to 8 (was 5); update debian/compat.
+  * Rename package libelmersolver-6.1 to libelmersolver-7.0 and update
+    all related files.
+  * Fix lintian notes maintainer-script-without-set-e.
   * Update debian/patches/no-tetgen.patch.
   * Update debian/patches/libav_071.patch.
   * Update debian/control:
-    - fix lintian note binary-control-field-duplicates-source
-    - fix lintian note conflicts-with-version
+    - fix lintian notes binary-control-field-duplicates-source
+    - fix lintian notes conflicts-with-version
   * Update debian/rules:
     - use hardening flags in compiler options
     - add -Wl,--as-needed to LDFLAGS
@@ -17,6 +20,8 @@ elmerfem (7.0.svn.6034+dfsg-1) UNRELEASED; urgency=low
     - new version scheme (fix lintian note dfsg-version-with-period)
     - use xz compression for orig tarball
     - small cosmetic fixes
+  * Update debian/*.desktop:
+    fix lintian notes desktop-entry-contains-encoding-key.
   * Add debian/patches/fix-build-with-hardening-compiler-options.patch.
   * Add debian/watch: fix lintian note debian-watch-file-is-missing.
   * Delete debian/README.source: there are no useful information in it.
