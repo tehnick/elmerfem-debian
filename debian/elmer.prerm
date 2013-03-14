@@ -1,4 +1,6 @@
-#! /bin/sh -e 
+#!/bin/sh
+
+set -e
 
 PROVIDED_MODELS="helmholtz navier-stokes resultoutput heatequation linearelasticity k-epsilon meshdeform advection-diffusion elasticplate electrostatics freesurface poissonboltzmann reynolds saveline savescalars statcurrent"
 
