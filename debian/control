@@ -82,7 +82,7 @@ Description: finite element multiphysics suite - architecture-independent files
  .
  This package provides the architecture-independent files for Elmer.
 
-Package: libelmersolver-6.1
+Package: libelmersolver-7.0
 Section: libs
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
@@ -108,7 +108,7 @@ Description: finite element multiphysics suite - library
 Package: libelmersolver-dbg
 Section: debug
 Architecture: any
-Depends: libelmersolver-6.1 (= ${binary:Version}), ${misc:Depends}
+Depends: libelmersolver-7.0 (= ${binary:Version}), ${misc:Depends}
 Description: finite element multiphysics suite - library debugging symbols
  The Elmer multiphysics simulation package includes physical models of
  fluid dynamics, structural mechanics, electromagnetics, heat transfer, and
@@ -128,7 +128,7 @@ Description: finite element multiphysics suite - library debugging symbols
 Package: libelmer-dev
 Section: libdevel
 Architecture: any
-Depends: elmer (= ${binary:Version}), libelmersolver-6.1 (= ${binary:Version}),
+Depends: elmer (= ${binary:Version}), libelmersolver-7.0 (= ${binary:Version}),
  libhypre-dev, libsuitesparse-dev, libarpack2-dev, libmumps-scotch-dev,
  libblas-dev | libblas-3gf.so, liblapack-dev | liblapack-3gf.so,
  mpi-default-dev, mpi-default-bin, gfortran, ${misc:Depends}
