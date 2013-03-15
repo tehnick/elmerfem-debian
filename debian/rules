@@ -8,6 +8,9 @@ CXXFLAGS:=$(shell dpkg-buildflags --get CXXFLAGS) $(CPPFLAGS)
 LDFLAGS:=$(shell dpkg-buildflags --get LDFLAGS) -Wl,--as-needed
 export CPPFLAGS CFLAGS CXXFLAGS LDFLAGS
 
+Q_OPTS = "QMAKE_CXXFLAGS += $(CXXFLAGS)" \
+         "QMAKE_LFLAGS += $(LDFLAGS)"
+
 DEB_VER = $(shell dpkg-parsechangelog | sed -ne 's/^Version: \(\([0-9]\+\):\)\?\(.*\)-[0-9]*/\3/p')
 
 package=elmer
@@ -137,9 +140,9 @@ stamp-build: patch
 	  export DEB_PY_VERSION=$(shell pyversions -d); \
 	  export ELMER_HOME=/usr; \
 	  export ELMERGUI_HOME=/usr/share/ElmerGUI; \
-	  qmake; \
+	  qmake $(Q_OPTS); \
 	  make)
-	(cd ElmerGUIlogger && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake -project && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI make)
+	(cd ElmerGUIlogger && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake -project && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake $(Q_OPTS) && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI make)
 	echo; echo INSTALLING ELMER MODULE ElmerGUI; echo
 	make -C ElmerGUI install ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI INSTALL_ROOT=$(CURDIR)/debian/tmp
 	mv debian/tmp/usr/share/ElmerGUI/ElmerGUI debian/tmp/usr/bin/
@@ -149,7 +152,7 @@ stamp-build: patch
 	    debian/tmp/usr/share/ElmerGUI/edf-extra/; \
 	done
 	cp ElmerGUIlogger/ElmerGUIlogger debian/tmp/usr/bin/
-	(cd utils/ElmerClips/ && qmake && make)
+	(cd utils/ElmerClips/ && qmake $(Q_OPTS) && make)
 	install utils/ElmerClips/ElmerClips debian/tmp/usr/bin/ElmerClips
 # Last shifts and cleanups
 	mv debian/tmp/usr/share/elmerpost/modules debian/tmp/usr/lib/elmerpost
