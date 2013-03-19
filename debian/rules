@@ -4,7 +4,9 @@ CPPFLAGS:=$(shell dpkg-buildflags --get CPPFLAGS)
 CFLAGS:=$(shell dpkg-buildflags --get CFLAGS) $(CPPFLAGS)
 CXXFLAGS:=$(shell dpkg-buildflags --get CXXFLAGS) $(CPPFLAGS)
 LDFLAGS:=$(shell dpkg-buildflags --get LDFLAGS) -Wl,--as-needed
-export CPPFLAGS CFLAGS CXXFLAGS LDFLAGS
+FFLAGS:=$(shell dpkg-buildflags --get FFLAGS) $(CPPFLAGS)
+FCFLAGS:=$(shell dpkg-buildflags --get FFLAGS) $(CPPFLAGS)
+export CPPFLAGS CFLAGS CXXFLAGS LDFLAGS FFLAGS FCFLAGS
 
 Q_OPTS = "QMAKE_CXXFLAGS += $(CXXFLAGS)" "QMAKE_LFLAGS += $(LDFLAGS)"
 
@@ -120,6 +122,7 @@ stamp-build: patch
 	     FCPPFLAGS="$(FCPPFLAGS) -I$(CURDIR)/debian/tmp/usr/include" \
 	     CFLAGS="$(CFLAGS) -I$(CURDIR)/debian/tmp/usr/include -fPIC" \
 	     CXXFLAGS="$(CXXFLAGS) -I$(CURDIR)/debian/tmp/usr/include -I/usr/include/freetype2 -fPIC" \
+	     FFLAGS="$(FFLAGS) -I$(CURDIR)/debian/tmp/usr/include -fPIC" \
 	     FCFLAGS="$(FCFLAGS) -I$(CURDIR)/debian/tmp/usr/include -fPIC" \
 	     ./configure --prefix=/usr --with-metis=/usr \
 	       --with-mpi-dir=/usr --with-mpi-inc-dir=/usr/include/mpi \
@@ -198,6 +201,7 @@ binary-indep: patch
 	dh_movefiles -i
 	dh_installdocs -i
 	dh_installchangelogs -i
+	dh_lintian -i
 	dh_compress -i
 	dh_fixperms -i
 	dh_installdeb -i
@@ -217,6 +221,7 @@ binary-arch:
 	dh_strip -pelmer --dbg-package=elmer-dbg
 	dh_strip -plibelmersolver-7.0 --dbg-package=libelmersolver-dbg
 	dh_makeshlibs -a
+	dh_lintian -a
 	dh_compress -a
 	dh_fixperms -a
 	dh_installdeb -a
