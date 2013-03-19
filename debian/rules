@@ -1,6 +1,4 @@
 #!/usr/bin/make -f
-# Made with the aid of debmake, by Christoph Lameter,
-# based on the sample debian/rules file for GNU hello by Ian Jackson.
 
 CPPFLAGS:=$(shell dpkg-buildflags --get CPPFLAGS)
 CFLAGS:=$(shell dpkg-buildflags --get CFLAGS) $(CPPFLAGS)
@@ -8,19 +6,14 @@ CXXFLAGS:=$(shell dpkg-buildflags --get CXXFLAGS) $(CPPFLAGS)
 LDFLAGS:=$(shell dpkg-buildflags --get LDFLAGS) -Wl,--as-needed
 export CPPFLAGS CFLAGS CXXFLAGS LDFLAGS
 
-Q_OPTS = "QMAKE_CXXFLAGS += $(CXXFLAGS)" \
-         "QMAKE_LFLAGS += $(LDFLAGS)"
+Q_OPTS = "QMAKE_CXXFLAGS += $(CXXFLAGS)" "QMAKE_LFLAGS += $(LDFLAGS)"
 
-DEB_VER = $(shell dpkg-parsechangelog | sed -ne 's/^Version: \(\([0-9]\+\):\)\?\(.*\)-[0-9]*/\3/p')
+# get-orig-source target may be called from any directory by policy
+PKG_ROOT := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+PKG_ROOT := $(realpath $(PKG_ROOT)/..)
+DEB_VER = $(shell cd $(PKG_ROOT) && dpkg-parsechangelog | sed -ne 's/^Version: \(\([0-9]\+\):\)\?\(.*\)-[0-9]*/\3/p')
 
 package=elmer
-
-# Support multiple makes at once
-ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
-NJOBS := $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
-else
-NJOBS := 1
-endif
 
 ELMER_MODULES = eio matc elmerparam hutiter meshgen2d fem front elmergrid post
 
@@ -49,7 +42,8 @@ BACKUP_FILES = eio/Makefile.in eio/configure eio/include/Makefile.in \
   post/src/graphics/Makefile.in post/src/modules/Makefile.in \
   post/src/objects/Makefile.in post/src/sico2elmer/Makefile.in \
   post/src/tcl/Makefile.in post/src/tk/Makefile.in \
-  post/src/visuals/Makefile.in ElmerGUIlogger/ElmerGUIlogger.pro
+  post/src/visuals/Makefile.in ElmerGUIlogger/ElmerGUIlogger.pro \
+  fem/src/modules/Makefile.in
 
 MISSING_FILES = eio/NEWS eio/README eio/AUTHORS eio/ChangeLog \
   matc/NEWS matc/README matc/AUTHORS matc/ChangeLog matc/COPYING \
@@ -59,7 +53,8 @@ MISSING_FILES = eio/NEWS eio/README eio/AUTHORS eio/ChangeLog \
   front/NEWS front/README front/AUTHORS front/COPYING front/INSTALL \
   elmergrid/NEWS elmergrid/README elmergrid/AUTHORS elmergrid/ChangeLog \
   elmergrid/COPYING elmergrid/INSTALL elmergrid/src/metis/Makefile.am \
-  post/NEWS post/AUTHORS post/ChangeLog post/COPYING post/INSTALL
+  post/NEWS post/AUTHORS post/ChangeLog post/COPYING post/INSTALL \
+  fem/test.cpp
 
 # This needs patch because otherwise ElmerGUI clean won't work
 clean: patch
@@ -235,4 +230,5 @@ binary: binary-arch binary-indep
 .PHONY: build binary-indep binary-arch binary
 
 get-orig-source:
-	$(CURDIR)/debian/elmerfem_get-orig-source.sh $(DEB_VER)
+	$(PKG_ROOT)/debian/elmerfem_get-orig-source.sh $(DEB_VER)
+
