@@ -13,21 +13,28 @@ elmerfem (7.0.svn.6034+dfsg-1) UNRELEASED; urgency=low
     - fix lintian notes binary-control-field-duplicates-source
     - fix lintian notes conflicts-with-version
   * Update debian/rules:
+    - fix package build twice a row
     - use hardening flags in compiler options
     - add -Wl,--as-needed to LDFLAGS
     - use bzip2 compression for the binary packages
+    - fix get-orig-source section in according with Debian Policy §4.9
   * Update debian/elmerfem_get-orig-source.sh:
     - new version scheme (fix lintian note dfsg-version-with-period)
     - use xz compression for orig tarball
     - small cosmetic fixes
   * Update debian/*.desktop:
     fix lintian notes desktop-entry-contains-encoding-key.
-  * Add debian/patches/fix-build-with-hardening-compiler-options.patch.
+  * Add debian/patches/fix-build-with-hardening-compiler-options.patch:
+    fix FTBFS with GCC >= 4.7 and hardening compiler options.
+  * Add debian/libelmersolver-7.0.lintian-overrides:
+    ignore false positives for lintian tags hardening-no-relro and
+    hardening-no-fortify-functions: these modules are compiled by gfortran,
+    so LDFLAGS and CPPFLAGS variables are not applicable.
   * Add debian/watch: fix lintian note debian-watch-file-is-missing.
   * Delete debian/README.source: there are no useful information in it.
   * Update debian/copyright.
 
- -- Boris Pek <tehnick-8@mail.ru>  Thu, 14 Mar 2013 00:05:05 +0200
+ -- Boris Pek <tehnick-8@mail.ru>  Wed, 20 Mar 2013 00:56:05 +0200
 
 elmerfem (6.1.0.svn.5396.dfsg2-1) unstable; urgency=low
 
