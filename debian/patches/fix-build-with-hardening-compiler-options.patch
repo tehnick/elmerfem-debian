@@ -2,8 +2,8 @@ Description: Fix FTBFS with GCC >= 4.7 and hardening compiler options
 Author: Boris Pek <tehnick-8@mail.ru>
 Last-Update: 2013-03-13
 
---- a/ElmerGUI/matc/src/str.c
-+++ b/ElmerGUI/matc/src/str.c
+--- elmerfem.orig/ElmerGUI/matc/src/str.c
++++ elmerfem/ElmerGUI/matc/src/str.c
 @@ -82,7 +82,7 @@
    }
    else 
@@ -13,8 +13,8 @@ Last-Update: 2013-03-13
    }
  
    FREEMEM(fmt);
---- a/matc/src/str.c
-+++ b/matc/src/str.c
+--- elmerfem.orig/matc/src/str.c
++++ elmerfem/matc/src/str.c
 @@ -82,7 +82,7 @@
    }
    else 
@@ -24,8 +24,8 @@ Last-Update: 2013-03-13
    }
  
    FREEMEM(fmt);
---- a/post/src/glaux/vect3d.c
-+++ b/post/src/glaux/vect3d.c
+--- elmerfem.orig/post/src/glaux/vect3d.c
++++ elmerfem/post/src/glaux/vect3d.c
 @@ -29,7 +29,7 @@
      if (errfunc)
  	(*errfunc)(s);
