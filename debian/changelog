@@ -6,7 +6,8 @@ elmerfem (7.0.svn.6034+dfsg-1) UNRELEASED; urgency=low
   * Bump debhelper version to 8 (was 5); update debian/compat.
   * Rename package libelmersolver-6.1 to libelmersolver-7.0 and update
     all related files.
-  * Fix lintian notes maintainer-script-without-set-e.
+  * Fix lintian notes maintainer-script-without-set-e and
+    package-contains-empty-directory.
   * Update debian/patches/no-tetgen.patch.
   * Update debian/patches/libav_071.patch.
   * Update debian/control:
@@ -30,6 +31,13 @@ elmerfem (7.0.svn.6034+dfsg-1) UNRELEASED; urgency=low
     ignore false positives for lintian tags hardening-no-relro and
     hardening-no-fortify-functions: these modules are compiled by gfortran,
     so LDFLAGS and CPPFLAGS variables are not applicable.
+  * Add debian/libelmer-dev.lintian-overrides:
+    ignore lintian note arch-dep-package-has-big-usr-share:
+    size of compressed package is less than 4 MiB, so there is no reason
+    to move directory usr/share/elmersolver/include/ into separate package.
+  * Add debian/elmer-common.lintian-overrides:
+    ignore lintian notes package-contains-broken-symlink:
+    these symlinks point to directories from other packages.
   * Add debian/watch: fix lintian note debian-watch-file-is-missing.
   * Delete debian/README.source: there are no useful information in it.
   * Update debian/copyright.
