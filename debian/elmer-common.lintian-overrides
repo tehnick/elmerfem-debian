@@ -1,0 +1,3 @@
+# Ignore lintian notes package-contains-broken-symlink:
+# these symlinks point to directories from other packages.
+elmer-common: package-contains-broken-symlink
