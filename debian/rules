@@ -213,7 +213,6 @@ binary-arch:
 	dh_testdir -a
 	dh_testroot -a
 	dh_installdirs -a
-	install -d debian/elmer/usr/share/ElmerGUI/edf
 	dh_movefiles -a
 	dh_installdebconf -a
 	dh_installdocs -a

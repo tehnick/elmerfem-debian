@@ -11,6 +11,8 @@ PROVIDED_MODELS="helmholtz navier-stokes resultoutput heatequation linearelastic
 db_get elmer/models
 SELECTED_MODELS="$(echo $RET | sed -e 's/, / /g')"
 
+mkdir -p /usr/share/ElmerGUI/edf
+
 # Remove old symlinks, if any
 for model in $PROVIDED_MODELS; do
     rm -f /usr/share/ElmerGUI/edf/$model.xml;
