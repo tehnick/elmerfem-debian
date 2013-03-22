@@ -10,3 +10,4 @@ libav_071.patch
 glu.patch
 no-tetgen.patch
 fix-build-with-hardening-compiler-options.patch
+fix-spelling-errors.patch
