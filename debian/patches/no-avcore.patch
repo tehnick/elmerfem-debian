@@ -1,5 +1,7 @@
-Index: elmerfem/utils/ElmerClips/ElmerClips.pro
-===================================================================
+Description: Remove libavcore from dependencies
+Author: "Adam C. Powell, IV" <hazelsct@debian.org>
+Last-Update: 2013-03-22
+
 --- elmerfem.orig/utils/ElmerClips/ElmerClips.pro
 +++ elmerfem/utils/ElmerClips/ElmerClips.pro
 @@ -11,7 +11,7 @@
