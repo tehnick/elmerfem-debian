@@ -1,0 +1,2 @@
+# Ignore false positives for lintian tag spelling-error-in-binary.
+elmer: spelling-error-in-binary usr/bin/ElmerPost ment meant
