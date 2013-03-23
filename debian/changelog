@@ -10,6 +10,7 @@ elmerfem (7.0.svn.6034+dfsg-1) UNRELEASED; urgency=low
     package-contains-empty-directory.
   * Update debian/patches/no-tetgen.patch.
   * Update debian/patches/libav_071.patch.
+  * Update debian/patches/no-avcore.patch: add description.
   * Update debian/control:
     - fix lintian notes binary-control-field-duplicates-source
     - fix lintian notes conflicts-with-version
@@ -27,10 +28,17 @@ elmerfem (7.0.svn.6034+dfsg-1) UNRELEASED; urgency=low
     fix lintian notes desktop-entry-contains-encoding-key.
   * Add debian/patches/fix-build-with-hardening-compiler-options.patch:
     fix FTBFS with GCC >= 4.7 and hardening compiler options.
+  * Add debian/patches/add-linking-flags-for-elmerparam-library.patch:
+    use additional linking flags for elmerparam shared library.
+  * Add debian/patches/fix-spelling-errors.patch.
   * Add debian/libelmersolver-7.0.lintian-overrides:
-    ignore false positives for lintian tags hardening-no-relro and
-    hardening-no-fortify-functions: these modules are compiled by gfortran,
-    so LDFLAGS and CPPFLAGS variables are not applicable.
+    - ignore false positives for lintian tags hardening-no-relro and
+      hardening-no-fortify-functions: these modules are compiled by gfortran,
+      so LDFLAGS and CPPFLAGS variables are not applicable
+    - ignore false positives for lintian tag spelling-error-in-binary
+  * Add debian/elmer.lintian-overrides:
+    - ignore false positives for lintian tag hardening-no-fortify-functions
+    - ignore false positives for lintian tag spelling-error-in-binary
   * Add debian/libelmer-dev.lintian-overrides:
     ignore lintian note arch-dep-package-has-big-usr-share:
     size of compressed package is less than 4 MiB, so there is no reason
