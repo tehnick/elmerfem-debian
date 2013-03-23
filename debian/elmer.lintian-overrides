@@ -1,2 +1,7 @@
+# Ignore false positives for lintian tag hardening-no-fortify-functions.
+elmer: hardening-no-fortify-functions usr/bin/ElmerMesh2D
+elmer: hardening-no-fortify-functions usr/bin/GebhardtFactors
+elmer: hardening-no-fortify-functions usr/bin/Mesh2D
+
 # Ignore false positives for lintian tag spelling-error-in-binary.
 elmer: spelling-error-in-binary usr/bin/ElmerPost ment meant
