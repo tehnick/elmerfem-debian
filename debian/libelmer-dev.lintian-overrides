@@ -1,0 +1,4 @@
+# Ignore lintian note arch-dep-package-has-big-usr-share:
+# size of compressed package is less than 4 MiB, so there is no reason
+# to move directory usr/share/elmersolver/include/ into separate package.
+libelmer-dev: arch-dep-package-has-big-usr-share

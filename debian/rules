@@ -1,17 +1,21 @@
 #!/usr/bin/make -f
-# Made with the aid of debmake, by Christoph Lameter,
-# based on the sample debian/rules file for GNU hello by Ian Jackson.
 
-DEB_VER = $(shell dpkg-parsechangelog | sed -ne 's/^Version: \(\([0-9]\+\):\)\?\(.*\)-[0-9]*/\3/p')
+CPPFLAGS:=$(shell dpkg-buildflags --get CPPFLAGS)
+CFLAGS:=$(shell dpkg-buildflags --get CFLAGS) $(CPPFLAGS)
+CXXFLAGS:=$(shell dpkg-buildflags --get CXXFLAGS) $(CPPFLAGS)
+LDFLAGS:=$(shell dpkg-buildflags --get LDFLAGS) -Wl,--as-needed
+FFLAGS:=$(shell dpkg-buildflags --get FFLAGS) $(CPPFLAGS)
+FCFLAGS:=$(shell dpkg-buildflags --get FFLAGS) $(CPPFLAGS)
+export CPPFLAGS CFLAGS CXXFLAGS LDFLAGS FFLAGS FCFLAGS
+
+Q_OPTS = "QMAKE_CXXFLAGS += $(CXXFLAGS)" "QMAKE_LFLAGS += $(LDFLAGS)"
+
+# get-orig-source target may be called from any directory by policy
+PKG_ROOT := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+PKG_ROOT := $(realpath $(PKG_ROOT)/..)
+DEB_VER = $(shell cd $(PKG_ROOT) && dpkg-parsechangelog | sed -ne 's/^Version: \(\([0-9]\+\):\)\?\(.*\)-[0-9]*/\3/p')
 
 package=elmer
-
-# Support multiple makes at once
-ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
-NJOBS := $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
-else
-NJOBS := 1
-endif
 
 ELMER_MODULES = eio matc elmerparam hutiter meshgen2d fem front elmergrid post
 
@@ -40,7 +44,8 @@ BACKUP_FILES = eio/Makefile.in eio/configure eio/include/Makefile.in \
   post/src/graphics/Makefile.in post/src/modules/Makefile.in \
   post/src/objects/Makefile.in post/src/sico2elmer/Makefile.in \
   post/src/tcl/Makefile.in post/src/tk/Makefile.in \
-  post/src/visuals/Makefile.in ElmerGUIlogger/ElmerGUIlogger.pro
+  post/src/visuals/Makefile.in ElmerGUIlogger/ElmerGUIlogger.pro \
+  fem/src/modules/Makefile.in
 
 MISSING_FILES = eio/NEWS eio/README eio/AUTHORS eio/ChangeLog \
   matc/NEWS matc/README matc/AUTHORS matc/ChangeLog matc/COPYING \
@@ -50,7 +55,8 @@ MISSING_FILES = eio/NEWS eio/README eio/AUTHORS eio/ChangeLog \
   front/NEWS front/README front/AUTHORS front/COPYING front/INSTALL \
   elmergrid/NEWS elmergrid/README elmergrid/AUTHORS elmergrid/ChangeLog \
   elmergrid/COPYING elmergrid/INSTALL elmergrid/src/metis/Makefile.am \
-  post/NEWS post/AUTHORS post/ChangeLog post/COPYING post/INSTALL
+  post/NEWS post/AUTHORS post/ChangeLog post/COPYING post/INSTALL \
+  fem/test.cpp
 
 # This needs patch because otherwise ElmerGUI clean won't work
 clean: patch
@@ -116,6 +122,7 @@ stamp-build: patch
 	     FCPPFLAGS="$(FCPPFLAGS) -I$(CURDIR)/debian/tmp/usr/include" \
 	     CFLAGS="$(CFLAGS) -I$(CURDIR)/debian/tmp/usr/include -fPIC" \
 	     CXXFLAGS="$(CXXFLAGS) -I$(CURDIR)/debian/tmp/usr/include -I/usr/include/freetype2 -fPIC" \
+	     FFLAGS="$(FFLAGS) -I$(CURDIR)/debian/tmp/usr/include -fPIC" \
 	     FCFLAGS="$(FCFLAGS) -I$(CURDIR)/debian/tmp/usr/include -fPIC" \
 	     ./configure --prefix=/usr --with-metis=/usr \
 	       --with-mpi-dir=/usr --with-mpi-inc-dir=/usr/include/mpi \
@@ -131,9 +138,9 @@ stamp-build: patch
 	  export DEB_PY_VERSION=$(shell pyversions -d); \
 	  export ELMER_HOME=/usr; \
 	  export ELMERGUI_HOME=/usr/share/ElmerGUI; \
-	  qmake; \
+	  qmake $(Q_OPTS); \
 	  make)
-	(cd ElmerGUIlogger && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake -project && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI make)
+	(cd ElmerGUIlogger && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake -project && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI qmake $(Q_OPTS) && ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI make)
 	echo; echo INSTALLING ELMER MODULE ElmerGUI; echo
 	make -C ElmerGUI install ELMER_HOME=/usr ELMERGUI_HOME=/usr/share/ElmerGUI INSTALL_ROOT=$(CURDIR)/debian/tmp
 	mv debian/tmp/usr/share/ElmerGUI/ElmerGUI debian/tmp/usr/bin/
@@ -143,7 +150,7 @@ stamp-build: patch
 	    debian/tmp/usr/share/ElmerGUI/edf-extra/; \
 	done
 	cp ElmerGUIlogger/ElmerGUIlogger debian/tmp/usr/bin/
-	(cd utils/ElmerClips/ && qmake && make)
+	(cd utils/ElmerClips/ && qmake $(Q_OPTS) && make)
 	install utils/ElmerClips/ElmerClips debian/tmp/usr/bin/ElmerClips
 # Last shifts and cleanups
 	mv debian/tmp/usr/share/elmerpost/modules debian/tmp/usr/lib/elmerpost
@@ -177,7 +184,7 @@ stamp-build: patch
 	chmod -x debian/tmp/usr/share/elmerpost/lib/images/*
 	chmod -x debian/tmp/usr/share/elmerpost/tcl/*
 	chmod -x debian/tmp/usr/lib/R/elmerparam/DESCRIPTION
-	mv debian/tmp/usr/lib/elmersolver debian/tmp/usr/lib/elmersolver-6.1
+	mv debian/tmp/usr/lib/elmersolver debian/tmp/usr/lib/elmersolver-7.0
 	install -d debian/tmp/usr/share/applications
 	cp -a debian/*.desktop debian/tmp/usr/share/applications/
 	mv debian/tmp/usr/bin/ElmerGUI debian/tmp/usr/bin/ElmerGUI.real
@@ -194,6 +201,7 @@ binary-indep: patch
 	dh_movefiles -i
 	dh_installdocs -i
 	dh_installchangelogs -i
+	dh_lintian -i
 	dh_compress -i
 	dh_fixperms -i
 	dh_installdeb -i
@@ -205,14 +213,14 @@ binary-arch:
 	dh_testdir -a
 	dh_testroot -a
 	dh_installdirs -a
-	install -d debian/elmer/usr/share/ElmerGUI/edf
 	dh_movefiles -a
 	dh_installdebconf -a
 	dh_installdocs -a
 	dh_installchangelogs -a
 	dh_strip -pelmer --dbg-package=elmer-dbg
-	dh_strip -plibelmersolver-6.1 --dbg-package=libelmersolver-dbg
+	dh_strip -plibelmersolver-7.0 --dbg-package=libelmersolver-dbg
 	dh_makeshlibs -a
+	dh_lintian -a
 	dh_compress -a
 	dh_fixperms -a
 	dh_installdeb -a
@@ -226,4 +234,5 @@ binary: binary-arch binary-indep
 .PHONY: build binary-indep binary-arch binary
 
 get-orig-source:
-	$(CURDIR)/debian/elmerfem_get-orig-source.sh $(DEB_VER)
+	$(PKG_ROOT)/debian/elmerfem_get-orig-source.sh $(DEB_VER)
+

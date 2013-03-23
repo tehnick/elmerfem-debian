@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -e
+
+# Remove alternatives links
+if [ "$1" = "remove" ]; then
+  update-alternatives --remove elmersolver /usr/lib/elmersolver-7.0
+fi
+
+#DEBHELPER#

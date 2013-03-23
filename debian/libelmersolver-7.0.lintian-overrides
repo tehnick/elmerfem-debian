@@ -1,0 +1,8 @@
+# False positives for lintian tags hardening-no-relro and
+# hardening-no-fortify-functions: these modules are compiled by gfortran,
+# so LDFLAGS and CPPFLAGS variables are not applicable.
+libelmersolver-7.0: hardening-no-fortify-functions usr/lib/elmersolver-7.0/*.so
+libelmersolver-7.0: hardening-no-relro usr/lib/elmersolver-7.0/*.so
+
+# Ignore false positives for lintian tag spelling-error-in-binary.
+libelmersolver-7.0: spelling-error-in-binary usr/lib/elmersolver*/*.so ment meant

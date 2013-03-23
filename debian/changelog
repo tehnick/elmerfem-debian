@@ -1,27 +1,56 @@
-elmerfem (7.0.svn.6034+dfsg-0ppa1~raring1) raring; urgency=low
+elmerfem (7.0.svn.6034+dfsg-1) experimental; urgency=low
 
   * New upstream revision.
+  * Add myself to Uploaders. (See: #691875)
+  * Bump Standards-Version to 3.9.4 (was 3.9.2).
+  * Bump debhelper version to 8 (was 5); update debian/compat.
+  * Rename package libelmersolver-6.1 to libelmersolver-7.0 and update
+    all related files.
+  * Fix lintian notes maintainer-script-without-set-e and
+    package-contains-empty-directory.
+  * Update debian/patches/no-tetgen.patch.
+  * Update debian/patches/libav_071.patch.
+  * Update debian/patches/no-avcore.patch: add description.
+  * Update debian/control:
+    - fix lintian notes binary-control-field-duplicates-source
+    - fix lintian notes conflicts-with-version
+  * Update debian/rules:
+    - fix package build twice a row
+    - use hardening flags in compiler options
+    - add -Wl,--as-needed to LDFLAGS
+    - use bzip2 compression for the binary packages
+    - fix get-orig-source section in according with Debian Policy §4.9
+  * Update debian/elmerfem_get-orig-source.sh:
+    - new version scheme (fix lintian note dfsg-version-with-period)
+    - use xz compression for orig tarball
+    - small cosmetic fixes
+  * Update debian/*.desktop:
+    fix lintian notes desktop-entry-contains-encoding-key.
+  * Add debian/patches/fix-build-with-hardening-compiler-options.patch:
+    fix FTBFS with GCC >= 4.7 and hardening compiler options.
+  * Add debian/patches/add-linking-flags-for-elmerparam-library.patch:
+    use additional linking flags for elmerparam shared library.
+  * Add debian/patches/fix-spelling-errors.patch.
+  * Add debian/libelmersolver-7.0.lintian-overrides:
+    - ignore false positives for lintian tags hardening-no-relro and
+      hardening-no-fortify-functions: these modules are compiled by gfortran,
+      so LDFLAGS and CPPFLAGS variables are not applicable
+    - ignore false positives for lintian tag spelling-error-in-binary
+  * Add debian/elmer.lintian-overrides:
+    - ignore false positives for lintian tag hardening-no-fortify-functions
+    - ignore false positives for lintian tag spelling-error-in-binary
+  * Add debian/libelmer-dev.lintian-overrides:
+    ignore lintian note arch-dep-package-has-big-usr-share:
+    size of compressed package is less than 4 MiB, so there is no reason
+    to move directory usr/share/elmersolver/include/ into separate package.
+  * Add debian/elmer-common.lintian-overrides:
+    ignore lintian notes package-contains-broken-symlink:
+    these symlinks point to directories from other packages.
+  * Add debian/watch: fix lintian note debian-watch-file-is-missing.
+  * Delete debian/README.source: there are no useful information in it.
+  * Update debian/copyright.
 
- -- Boris Pek <tehnick-8@mail.ru>  Tue, 29 Jan 2013 00:51:00 +0200
-
-elmerfem (7.0.svn.6033+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Tue, 22 Jan 2013 20:05:02 +0200
-
-elmerfem (7.0.svn.6031+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-
- -- Boris Pek <tehnick-8@mail.ru>  Mon, 21 Jan 2013 21:09:11 +0200
-
-elmerfem (7.0.svn.6026+dfsg-0ppa1~raring1) raring; urgency=low
-
-  * New upstream revision.
-  * Changelog was cleaned.
-
- -- Boris Pek <tehnick-8@mail.ru>  Sun, 20 Jan 2013 17:36:16 +0200
+ -- Boris Pek <tehnick-8@mail.ru>  Sat, 23 Mar 2013 21:11:03 +0200
 
 elmerfem (6.1.0.svn.5396.dfsg2-1) unstable; urgency=low
 

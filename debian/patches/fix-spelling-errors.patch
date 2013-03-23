@@ -1,0 +1,144 @@
+Description: Fix spelling errors
+Author: Boris Pek <tehnick-8@mail.ru>
+Last-Update: 2013-03-22
+
+--- a/ElmerGUI/Application/plugins/egmesh.cpp
++++ b/ElmerGUI/Application/plugins/egmesh.cpp
+@@ -3755,7 +3755,7 @@ void RenumberMaterialTypes(struct FemType *data,struct BoundaryType *bound,int i
+     }
+   }
+   else {
+-    if(info) printf("Materials ordered continously between %d and %d\n",minmat,maxmat);
++    if(info) printf("Materials ordered continuously between %d and %d\n",minmat,maxmat);
+   }
+   free_Ivector(mapmat,minmat,maxmat);
+ }
+--- a/elmergrid/src/femelmer.c
++++ b/elmergrid/src/femelmer.c
+@@ -3000,7 +3000,7 @@ static int OptimizePartitioningAtBoundary(struct FemType *data,struct BoundaryTy
+       bound[j].parent2[i] = MAX(0, bound[j].parent2[i]);
+   }
+ 
+-  if(0) printf("The partitioning at discontinous gaps was optimized.\n"); 
++  if(0) printf("The partitioning at discontinuous gaps was optimized.\n"); 
+   return(0);
+ }
+ 
+--- a/elmergrid/src/feminfo.c
++++ b/elmergrid/src/feminfo.c
+@@ -636,7 +636,7 @@ int InlineParameters(struct ElmergridType *eg,int argc,char *argv[])
+     }
+     if(strcmp(argv[arg],"-parthypre") == 0) {
+       eg->parthypre = TRUE;
+-      printf("Numbering of partitions will be made continous.\n");
++      printf("Numbering of partitions will be made continuous.\n");
+     }
+     if(strcmp(argv[arg],"-partdual") == 0) {
+       eg->partdual = TRUE;
+--- a/elmergrid/src/femknot.c
++++ b/elmergrid/src/femknot.c
+@@ -2165,7 +2165,7 @@ static int CreateNewNodes(struct FemType *data,int *order,int material,int new)
+ int SetDiscontinuousBoundary(struct FemType *data,struct BoundaryType *bound,
+ 			     int boundtype,int endnodes,int info)
+ /* Create secondary points for a given boundary. 
+-   This feature is handy when one wants to solve problems with discontinous
++   This feature is handy when one wants to solve problems with discontinuous
+    field variables.
+    */
+ {
+@@ -2258,7 +2258,7 @@ int SetDiscontinuousBoundary(struct FemType *data,struct BoundaryType *bound,
+       }
+     }
+     disconttype = maxtype + 1;
+-    if(info) printf("Type of the other side of discontinous boundary set to %d.\n",disconttype);
++    if(info) printf("Type of the other side of discontinuous boundary set to %d.\n",disconttype);
+   }
+   else {
+     disconttype = boundtype;
+--- a/elmergrid/src/fempre.c
++++ b/elmergrid/src/fempre.c
+@@ -563,7 +563,7 @@ int main(int argc, char *argv[])
+     }
+   }
+ 
+-  /* Make the discontinous boundary needed, for example, in poor thermal conduction */
++  /* Make the discontinuous boundary needed, for example, in poor thermal conduction */
+   for(k=0;k<nomeshes;k++) {
+     if(!eg.discont) {
+       for(j=0;j<grids[k].noboundaries;j++) 
+--- a/elmergrid/src/femtypes.h
++++ b/elmergrid/src/femtypes.h
+@@ -242,7 +242,7 @@ struct BoundaryType {
+     mapvf,           /* mappings of the view factors */ 
+     open,            /* is the closure partially open? */
+     echain,          /* does the chain exist? */
+-    ediscont,        /* does the discontinous boundary exist */
++    ediscont,        /* does the discontinuous boundary exist */
+     chainsize;       /* size of the chain */ 
+   int *parent,       /* primary parents of the sides */
+     *parent2,        /* secondary parents of the sides */
+--- a/post/src/sico2elmer/sico2elmerc.c
++++ b/post/src/sico2elmer/sico2elmerc.c
+@@ -1066,7 +1066,7 @@ void STDCALLBULL FC_FUNC(pregrid,PREGRID) (float  *xi, /* unscaled x coordinate
+   fprintf(ptFile,"2\n");
+   fprintf(ptFile,"808 %d\n", number_of_bulk_elements);
+   fprintf(ptFile,"404 %d\n", number_of_boundary_elements);
+-  printf("| succeeded in writting mesh header file %s.\n",filename);
++  printf("| succeeded in writing mesh header file %s.\n",filename);
+   printf("---------------------------------------------------------------\n");
+   fclose(ptFile);
+   /* check min/max values of grid */
+@@ -1165,7 +1165,7 @@ void STDCALLBULL FC_FUNC(pregrid,PREGRID) (float  *xi, /* unscaled x coordinate
+     fclose(ptFile);
+     return;
+   }
+-  printf("| succeeded in writting node file %s.\n",filename);
++  printf("| succeeded in writing node file %s.\n",filename);
+   printf("---------------------------------------------------------------\n");
+   /* writing element file */
+   sprintf(filename,"mesh.elements");
+@@ -1286,7 +1286,7 @@ void STDCALLBULL FC_FUNC(pregrid,PREGRID) (float  *xi, /* unscaled x coordinate
+     free(staggered_grid[0]);free(staggered_grid[1]);free(iced);free(boundary);free(gridmap);free(nodes_of_side_element);free(parent_of_side_element);
+     return;
+   }
+-  printf("| succeeded in writting bulk element file %s.\n",filename);
++  printf("| succeeded in writing bulk element file %s.\n",filename);
+   printf("---------------------------------------------------------------\n");  
+   fclose(ptFile);
+   /* writing boundary element file */
+@@ -1364,7 +1364,7 @@ void STDCALLBULL FC_FUNC(pregrid,PREGRID) (float  *xi, /* unscaled x coordinate
+   if (boundary_nr!=number_of_boundary_elements){
+     printf("ERROR: Number of written boundary elements %d does not match calculated %d.\n", boundary_nr, number_of_boundary_elements);
+   }else{
+-    printf("| succeeded in writting boundary element file %s.\n",filename);
++    printf("| succeeded in writing boundary element file %s.\n",filename);
+     printf("---------------------------------------------------------------\n");
+   }
+   fclose(ptFile);
+@@ -2177,7 +2177,7 @@ void STDCALLBULL FC_FUNC(solvergrid,SOLVERGRID)(float  *xi, /* unscaled x coordi
+   fprintf(ptFile,"404 %d\n", number_of_boundary_elements + sidebulk*elements_in_one_layer);
+   fprintf(ptFile,"808 %d\n", number_of_bulk_elements);
+ 
+-  printf("| succeeded in writting mesh header file %s.\n",filename);
++  printf("| succeeded in writing mesh header file %s.\n",filename);
+   printf("---------------------------------------------------------------\n");
+   fclose(ptFile);
+ 
+@@ -2294,7 +2294,7 @@ void STDCALLBULL FC_FUNC(solvergrid,SOLVERGRID)(float  *xi, /* unscaled x coordi
+   }else{
+     printf("| %d number of bulk elements written.\n", n);
+     printf("| %d number of sidebulk elements written.\n", m);
+-    printf("| succeeded in writting bulk element file %s.\n",filename);
++    printf("| succeeded in writing bulk element file %s.\n",filename);
+     printf("---------------------------------------------------------------\n");
+   }
+   
+@@ -2486,7 +2486,7 @@ void STDCALLBULL FC_FUNC(solvergrid,SOLVERGRID)(float  *xi, /* unscaled x coordi
+   }else{
+     printf("| %d number of boundary elements for bulk written.\n", n);
+     printf("| %d number of boundary elements for sidebulk written.\n", m);
+-    printf("| succeeded in writting boundary element file %s.\n",filename);
++    printf("| succeeded in writing boundary element file %s.\n",filename);
+     printf("---------------------------------------------------------------\n");
+   }
+ 
