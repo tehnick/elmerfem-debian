@@ -1,0 +1,10 @@
+Description: Use additional linking flags for elmerparam shared library
+Author: Boris Pek <tehnick-8@mail.ru>
+Last-Update: 2013-03-23
+
+--- a/elmerparam/src/R/elmerparam/src/Makevars.in
++++ b/elmerparam/src/R/elmerparam/src/Makevars.in
+@@ -1,2 +1,2 @@
+ PKG_CPPFLAGS = -I@prefix@/include -I$(DESTDIR)@prefix@/include
+-PKG_LIBS = -L@prefix@/lib -L$(DESTDIR)@prefix@/lib -lelmerparam -lmatc
++PKG_LIBS = -L@prefix@/lib -L$(DESTDIR)@prefix@/lib -lelmerparam -lmatc -Wl,-z,relro -Wl,--as-needed
