@@ -1,3 +1,13 @@
+elmerfem (7.0.svn.6034+dfsg-1ppa1~raring1) raring; urgency=low
+
+  * Package in Launchpad was sync with package in Debian.
+  * Changelog was cleaned.
+  * Update debian/control:
+    - update Vcs-* fields
+    - package libelmersolver-7.0 replaces and conflicts with libelmersolver-6.1
+
+ -- Boris Pek <tehnick-8@mail.ru>  Sun, 24 Mar 2013 19:36:49 +0200
+
 elmerfem (7.0.svn.6034+dfsg-1) experimental; urgency=low
 
   * New upstream revision.
