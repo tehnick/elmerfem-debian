@@ -1,3 +1,9 @@
+elmerfem (7.0.svn.6035+dfsg-0ppa1~raring1) raring; urgency=low
+
+  * New upstream revision.
+
+ -- Boris Pek <tehnick-8@mail.ru>  Sun, 07 Apr 2013 00:29:33 +0300
+
 elmerfem (7.0.svn.6034+dfsg-1ppa1~raring1) raring; urgency=low
 
   * Package in Launchpad was sync with package in Debian.
